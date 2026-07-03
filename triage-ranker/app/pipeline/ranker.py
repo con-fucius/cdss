@@ -28,6 +28,7 @@ from typing import Any
 from ambulance_cdss_contracts.triage import (
     ClinicalCategory,
     DiagnosisRankItem,
+    ExtractedKeyword,
     SeverityLevel,
     TriageLevel,
 )
@@ -106,7 +107,7 @@ def _map_severity_level(composite_score: float) -> SeverityLevel:
 
 
 def rank_diagnoses(
-    resolved_keywords: list[dict[str, Any]],
+    resolved_keywords: list[dict[str, Any] | ExtractedKeyword],
     gcs_score: int | None = None,
     acvpu: str | None = None,
     sbp: int | None = None,
