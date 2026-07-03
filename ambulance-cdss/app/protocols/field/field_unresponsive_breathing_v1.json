@@ -1,0 +1,64 @@
+{
+  "protocol_id": "field_unresponsive_breathing_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Unresponsive patient — breathing present",
+  "steps": [
+    {
+      "step_id": "ub1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe before approaching. Note any hazards. Don appropriate PPE."
+    },
+    {
+      "step_id": "ub2_consciousness",
+      "title": "Assess consciousness level",
+      "action_type": "assessment",
+      "description": "Assess response to verbal and painful stimuli. Record AVPU score. Determine if patient responds to voice, pain, or is completely unresponsive."
+    },
+    {
+      "step_id": "ub3_airway_breathing",
+      "title": "Assess airway and breathing",
+      "action_type": "assessment",
+      "description": "Confirm patent airway and adequate breathing. Check for: regular breathing pattern, SpO2, signs of respiratory depression (slow/irregular breathing, cyanosis). Note any vomit or foreign body in airway."
+    },
+    {
+      "step_id": "ub4_recovery_position",
+      "title": "Place in recovery position",
+      "action_type": "intervention",
+      "description": "If breathing adequately and no spinal injury suspected: place in lateral (recovery) position. Ensure airway remains patent. Monitor breathing continuously.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol — Recovery Position"
+    },
+    {
+      "step_id": "ub5_c_spine_precaution",
+      "title": "C-spine protection (if trauma suspected)",
+      "action_type": "intervention",
+      "description": "If mechanism suggests spinal injury: maintain manual in-line stabilisation, apply cervical collar, and use log-roll technique. Do NOT place in recovery position until spinal clearance."
+    },
+    {
+      "step_id": "ub6_vitals_initial",
+      "title": "Record initial vitals",
+      "action_type": "vitals",
+      "description": "Record: RR, SpO2, BP (if equipment available), HR, consciousness (AVPU), temperature, GCS (if trained). Note blood glucose if glucometer available."
+    },
+    {
+      "step_id": "ub7_blood_glucose",
+      "title": "Check blood glucose",
+      "action_type": "assessment",
+      "description": "If glucometer available: check blood glucose. Hypoglycaemia (<4 mmol/L or <70 mg/dL) is a common reversible cause of reduced consciousness. Treat with IV glucose if available."
+    },
+    {
+      "step_id": "ub8_vitals_reassessment",
+      "title": "Reassess vitals (every 5 min)",
+      "action_type": "vitals",
+      "description": "Repeat vitals every 5 minutes. Monitor for deterioration: decreasing consciousness, respiratory depression, cardiovascular instability. Document any changes."
+    },
+    {
+      "step_id": "ub9_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility. Ensure receiving facility notified of: consciousness level, vital sign trend, blood glucose result, suspected cause of unresponsiveness, and any treatments given."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

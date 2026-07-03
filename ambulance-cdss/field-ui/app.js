@@ -36,6 +36,9 @@ const state = {
   lastVitals: null, // Phase 6.3: last vitals for pre-population
   isOffline: false, // Phase 6.5: offline detection state
   triageEnrichment: null, // Phase 6.4: triage enrichment from dispatch
+  gpsWatchId: null, // Epic 3.1: geolocation watch ID
+  gpsTimer: null, // Epic 3.1: interval timer for GPS pings
+  incidentStatus: null, // Epic 3.1: track status to stop pings
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -131,6 +134,90 @@ function setOfflineBanner(offline) {
   }
 
   updateOfflineQueueDisplay();
+}
+
+// ── Epic 3.1: GPS auto-push ─────────────────────────────────────────────
+// Pushes POST /incidents/{id}/unit-location every 30 seconds while the
+// incident is open and the device has signal. Uses the existing write
+// queue for offline resilience.
+
+const GPS_PING_INTERVAL_MS = 30000;
+const GPS_TERMINAL_STATUSES = new Set(["handoff_complete", "closed"]);
+
+function updateGpsStatus(status) {
+  const gpsEl = el("gps-status");
+  if (!gpsEl) return;
+  if (status === "active") {
+    gpsEl.textContent = "GPS active";
+    gpsEl.className = "gps-status ok";
+  } else if (status === "unavailable") {
+    gpsEl.textContent = "GPS unavailable";
+    gpsEl.className = "gps-status error";
+  } else if (status === "paused") {
+    gpsEl.textContent = "GPS paused (offline)";
+    gpsEl.className = "gps-status warning";
+  } else {
+    gpsEl.textContent = "GPS off";
+    gpsEl.className = "gps-status";
+  }
+}
+
+async function sendGpsPing(position) {
+  // Don't ping if no incident open or incident has reached terminal status
+  if (!state.incidentId || GPS_TERMINAL_STATUSES.has(state.incidentStatus)) return;
+  const coords = position.coords;
+  const body = {
+    lat: coords.latitude,
+    lon: coords.longitude,
+    recorded_by: state.recordedBy || "field",
+  };
+  // apiCallWithQueue handles network errors via write queue — no try/catch needed
+  const result = await apiCallWithQueue(`/incidents/${state.incidentId}/unit-location`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  updateGpsStatus(result?.queued ? "paused" : "active");
+}
+
+function startGpsTracking() {
+  if (!navigator.geolocation) {
+    updateGpsStatus("unavailable");
+    return;
+  }
+  if (state.gpsWatchId !== null || state.gpsTimer !== null) return;
+
+  // watchPosition fires callback immediately with first known position,
+  // then again on movement. The 30s interval below covers cases where
+  // watchPosition stalls or the device is stationary.
+  state.gpsWatchId = navigator.geolocation.watchPosition(
+    (pos) => sendGpsPing(pos),
+    () => {}, // Ignore repeated errors — permission handled on initial denial
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+  );
+
+  // Interval timer as fallback (covers cases where watchPosition stalls)
+  state.gpsTimer = setInterval(() => {
+    if (!state.incidentId || GPS_TERMINAL_STATUSES.has(state.incidentStatus)) {
+      stopGpsTracking();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => sendGpsPing(pos),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 },
+    );
+  }, GPS_PING_INTERVAL_MS);
+}
+
+function stopGpsTracking() {
+  if (state.gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(state.gpsWatchId);
+    state.gpsWatchId = null;
+  }
+  if (state.gpsTimer !== null) {
+    clearInterval(state.gpsTimer);
+    state.gpsTimer = null;
+  }
 }
 
 // ── Connection check ───────────────────────────────────────────────────────
@@ -294,6 +381,12 @@ el("lookup-form").addEventListener("submit", async (e) => {
     hide(lookupScreen);
     show(workspaceScreen);
     switchTab("checklist");
+
+    // Epic 3.1: Start GPS auto-push on incident open
+    state.incidentStatus = incident.status;
+    if (!GPS_TERMINAL_STATUSES.has(incident.status)) {
+      startGpsTracking();
+    }
   } catch (err) {
     el("lookup-error").textContent = err.message;
     show(el("lookup-error"));
@@ -558,12 +651,13 @@ async function markStep(stepId, status) {
     // reflects the field unit's progress without a separate manual call.
     if (status === "done") {
       const matchingStep = data.steps.find((s) => s.step_id === stepId);
-      if (matchingStep && matchingStep.action_type === "disposition") {
-        try {
+      if (matchingStep && matchingStep.action_type === "disposition") {          try {
           await apiCall(`/incidents/${state.incidentId}/status`, {
             method: "POST",
             body: JSON.stringify({ status: "handoff_complete" }),
           });
+          state.incidentStatus = "handoff_complete";
+          stopGpsTracking();
         } catch (statusErr) {
           // Non-fatal: the field log already recorded the step. Surface
           // the status update failure without blocking the UI.
@@ -1062,12 +1156,16 @@ async function refreshIncidentSummary() {
 // ── Close incident ─────────────────────────────────────────────────────────
 
 el("close-incident-btn").addEventListener("click", () => {
+  // Epic 3.1: Stop GPS tracking on incident close
+  stopGpsTracking();
+
   state.incidentId = null;
   state.recordedBy = null;
   state.fieldProtocolId = null;
   state.checklistState = null;
   state.lastVitals = null;
   state.triageEnrichment = null;
+  state.incidentStatus = null;
   el("lookup-form").reset();
   hide(workspaceScreen);
   show(lookupScreen);
@@ -1075,6 +1173,8 @@ el("close-incident-btn").addEventListener("click", () => {
   // Hide triage context card
   el("triage-context-card").classList.add("hidden");
   el("vitals-prefill-banner").classList.add("hidden");
+
+  updateGpsStatus("");
 });
 
 // ── Utilities ──────────────────────────────────────────────────────────────

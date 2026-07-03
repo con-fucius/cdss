@@ -1,0 +1,57 @@
+{
+  "protocol_id": "field_paediatric_respiratory_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Paediatric respiratory emergency",
+  "steps": [
+    {
+      "step_id": "pr1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe. Note child's approximate age and weight (use Broselow tape or age-based estimate if available)."
+    },
+    {
+      "step_id": "pr2_airway_assessment",
+      "title": "Assess airway and breathing",
+      "action_type": "assessment",
+      "description": "Assess: airway patency, respiratory rate (normal varies by age), work of breathing (retractions, nasal flaring, grunting, head bobbing in infants), SpO2, skin colour. Note any drooling, stridor, or barking cough."
+    },
+    {
+      "step_id": "pr3_positioning",
+      "title": "Position for comfort",
+      "action_type": "intervention",
+      "description": "Position child in position of comfort (usually upright in caregiver's arms for infants/toddlers, sitting for older children). Allow caregiver to stay with child to reduce anxiety."
+    },
+    {
+      "step_id": "pr4_oxygen_therapy",
+      "title": "Apply supplemental oxygen",
+      "action_type": "intervention",
+      "description": "Apply O2 via appropriate device for age: nasal cannula (1-2L/min), paediatric non-rebreather, or bag-valve mask with reservoir. Target SpO2 ≥94% (≥92% in known chronic lung disease)."
+    },
+    {
+      "step_id": "pr5_vitals_initial",
+      "title": "Record initial paediatric vitals",
+      "action_type": "vitals",
+      "description": "Record: RR, SpO2, HR, consciousness (AVPU — note: pre-verbal children cannot use 'V'), temperature. Note capillary refill time (normal <2 seconds). Record weight if known."
+    },
+    {
+      "step_id": "pr6_febrile_management",
+      "title": "Manage fever (if applicable)",
+      "action_type": "intervention",
+      "description": "If temperature >38.5°C: remove excess clothing, apply tepid sponging, administer paracetamol (15mg/kg) or ibuprofen (10mg/kg) per local protocol if available and not contraindicated."
+    },
+    {
+      "step_id": "pr7_reassessment",
+      "title": "Reassess (every 3-5 min)",
+      "action_type": "vitals",
+      "description": "Repeat vitals every 3-5 minutes (paediatric patients deteriorate faster). Document trend. Alert receiving facility immediately of any deterioration."
+    },
+    {
+      "step_id": "pr8_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility. Ensure receiving facility notified of: child's age, weight, vital sign trend, work of breathing, any treatments given. Request paediatric standby if available."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

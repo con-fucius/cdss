@@ -1,0 +1,64 @@
+{
+  "protocol_id": "field_respiratory_distress_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Respiratory distress / choking",
+  "steps": [
+    {
+      "step_id": "rd1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe. Note any environmental hazards (smoke, chemical fumes, low oxygen environment). Don appropriate PPE."
+    },
+    {
+      "step_id": "rd2_airway_assessment",
+      "title": "Assess airway patency",
+      "action_type": "assessment",
+      "description": "Observe for signs of obstruction: stridor, wheeze, use of accessory muscles, tracheal tug, cyanosis. For choking: assess severity (mild vs. severe obstruction)."
+    },
+    {
+      "step_id": "rd3_choking_management",
+      "title": "Manage choking (if applicable)",
+      "action_type": "intervention",
+      "description": "Mild obstruction: encourage coughing. Severe obstruction (unable to speak/cough/breathe): 5 back blows then 5 abdominal thrusts (Heimlich manoeuvre). Repeat cycle until object expelled or patient becomes unconscious.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol — Foreign Body Airway Obstruction"
+    },
+    {
+      "step_id": "rd4_breathing_support",
+      "title": "Provide breathing support",
+      "action_type": "intervention",
+      "description": "Apply supplemental oxygen via appropriate device: nasal cannula (1-4L/min) for mild distress, non-rebreather mask (10-15L/min) for moderate-severe distress. Bag-valve mask if apnoeic."
+    },
+    {
+      "step_id": "rd5_positioning",
+      "title": "Position patient for comfort",
+      "action_type": "intervention",
+      "description": "Position upright (sitting or semi-recumbent) unless contraindicated. Most respiratory distress patients breathe better sitting up. Allow tripod position if preferred."
+    },
+    {
+      "step_id": "rd6_vitals_initial",
+      "title": "Record initial vitals",
+      "action_type": "vitals",
+      "description": "Record: RR, SpO2 (note if on supplemental O2 and at what flow), BP, HR, consciousness (AVPU), temperature. Note work of breathing (accessory muscles, nasal flaring, inability to speak in full sentences)."
+    },
+    {
+      "step_id": "rd7_medical_history",
+      "title": "Obtain relevant medical history",
+      "action_type": "assessment",
+      "description": "Ask about: asthma, COPD, recent illness, allergies, medications (especially inhalers, steroids, home oxygen), previous similar episodes, recent travel (PE risk)."
+    },
+    {
+      "step_id": "rd8_vitals_reassessment",
+      "title": "Reassess vitals (every 5 min)",
+      "action_type": "vitals",
+      "description": "Repeat vitals every 5 minutes. Document SpO2 trend with and without supplemental O2. Alert receiving facility of deterioration."
+    },
+    {
+      "step_id": "rd9_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility and transport mode. Ensure receiving facility notified of: SpO2 readings, work of breathing, medical history, and any treatments given."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

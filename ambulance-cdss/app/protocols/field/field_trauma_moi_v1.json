@@ -1,0 +1,70 @@
+{
+  "protocol_id": "field_trauma_moi_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Trauma — mechanism of injury",
+  "steps": [
+    {
+      "step_id": "tm1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe. Identify mechanism of injury: MVA, fall, penetrating, blast, burn, crush. Note environmental hazards and ensure adequate lighting."
+    },
+    {
+      "step_id": "tm2_extrication",
+      "title": "Assess for entrapment/extrication needs",
+      "action_type": "assessment",
+      "description": "Determine if patient is trapped or requires extrication. If entrapped: stabilise vehicle/structure, protect patient from further harm, contact fire/rescue if needed. Do NOT attempt extrication beyond your training."
+    },
+    {
+      "step_id": "tm3_primary_survey",
+      "title": "Primary survey (ABCDE approach)",
+      "action_type": "assessment",
+      "description": "Rapid structured assessment: Airway (with manual C-spine stabilisation), Breathing (look, listen, feel), Circulation (pulse, skin colour, capillary refill, bleeding), Disability (GCS, pupils, limb movement), Exposure (remove clothing to identify injuries).",
+      "guideline_ref": "Kenya Trauma Protocol — Primary Survey"
+    },
+    {
+      "step_id": "tm4_c_spine",
+      "title": "Manual in-line stabilisation",
+      "action_type": "intervention",
+      "description": "Maintain manual in-line cervical spine stabilisation from initial contact. Apply rigid cervical collar when available and log-roll to place on spinal board."
+    },
+    {
+      "step_id": "tm5_haemorrhage_control",
+      "title": "Control external haemorrhage",
+      "action_type": "intervention",
+      "description": "Apply direct pressure to bleeding wounds. Use haemostatic dressings for deep wounds. Apply tourniquet for life-threatening extremity haemorrhage (note time of application). Pack junctional wounds."
+    },
+    {
+      "step_id": "tm6_vitals_initial",
+      "title": "Record initial vitals",
+      "action_type": "vitals",
+      "description": "Record: RR, SpO2, BP, HR, consciousness (AVPU/GCS), temperature, capillary refill. Note mechanism details: height of fall, speed of impact, intrusion depth, restraint use."
+    },
+    {
+      "step_id": "tm7_iv_access",
+      "title": "Establish IV/IO access",
+      "action_type": "intervention",
+      "description": "Two large-bore peripheral IV lines. If unable to obtain IV within 90 seconds, establish IO access. Begin warmed crystalloid per local trauma protocol."
+    },
+    {
+      "step_id": "tm8_splinting",
+      "title": "Splint suspected fractures",
+      "action_type": "intervention",
+      "description": "Splint all suspected long bone and joint fractures. Check distal pulses, sensation, and motor function before and after splinting. Document neurovascular status."
+    },
+    {
+      "step_id": "tm9_vitals_reassessment",
+      "title": "Reassess vitals (every 5 min)",
+      "action_type": "vitals",
+      "description": "Repeat vital signs every 5 minutes during transport. Document trend. Alert receiving facility of deterioration."
+    },
+    {
+      "step_id": "tm10_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility, transport mode, and trauma team notification status. Ensure receiving facility has: mechanism details, injury pattern, vital sign trend, and treatments given."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

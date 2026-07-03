@@ -1,0 +1,70 @@
+{
+  "protocol_id": "field_obstetric_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Obstetric emergency",
+  "steps": [
+    {
+      "step_id": "ob1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe. Ensure clean environment for delivery if imminent. Prepare delivery kit (sterile gloves, clamps, scissors, cord ties, clean towels)."
+    },
+    {
+      "step_id": "ob2_gestational_age",
+      "title": "Assess gestational age and presentation",
+      "action_type": "assessment",
+      "description": "Determine estimated gestational age (weeks). Ask about: contractions (frequency, duration, intensity), rupture of membranes (time, colour of liquor — clear, meconium-stained, bloody), amount of fluid, any vaginal bleeding."
+    },
+    {
+      "step_id": "ob3_fetal_heart",
+      "title": "Assess fetal heart rate",
+      "action_type": "assessment",
+      "description": "If Doppler or fetoscope available, auscultate fetal heart rate. Normal: 110-160 bpm. Note any bradycardia (<110) or tachycardia (>160). If no equipment, document 'FHR not assessable'."
+    },
+    {
+      "step_id": "ob4_vitals_mother",
+      "title": "Record maternal vitals",
+      "action_type": "vitals",
+      "description": "Record: BP, HR, RR, SpO2, consciousness (AVPU), temperature. Note any signs of pre-eclampsia (BP ≥140/90, headache, visual disturbance, epigastric pain)."
+    },
+    {
+      "step_id": "ob5_delivery_assessment",
+      "title": "Assess for imminent delivery",
+      "action_type": "assessment",
+      "description": "If crowning or urge to push: delivery is imminent. Do NOT delay transport for non-imminent deliveries. If delivery is imminent, prepare for field delivery."
+    },
+    {
+      "step_id": "ob6_field_delivery",
+      "title": "Assist with field delivery (if imminent)",
+      "action_type": "intervention",
+      "description": "Support delivery with gentle controlled traction during contractions. Clear baby's airway. Dry and stimulate. Clamp and cut cord (two clamps, cut between). Note time of delivery.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol — Emergency Delivery"
+    },
+    {
+      "step_id": "ob7_third_stage",
+      "title": "Manage third stage (placenta)",
+      "action_type": "intervention",
+      "description": "After delivery, deliver placenta by controlled cord traction with uterine massage. Do NOT pull on cord. Examine placenta for completeness. Note any excessive bleeding."
+    },
+    {
+      "step_id": "ob8_haemorrhage_assessment",
+      "title": "Assess for postpartum haemorrhage",
+      "action_type": "assessment",
+      "description": "Estimate blood loss. Normal: <500ml. PPH: >500ml. Note: soak count, pool estimation, maternal vital sign changes (tachycardia, hypotension, pallor, altered consciousness)."
+    },
+    {
+      "step_id": "ob9_haemorrhage_management",
+      "title": "Manage haemorrhage",
+      "action_type": "intervention",
+      "description": "Fundal massage (firm uterus in midline). If bleeding continues: bimanual compression. Keep mother warm. Elevate legs if signs of shock. Expedite transport."
+    },
+    {
+      "step_id": "ob10_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility. Ensure receiving facility notified of: gestational age, complications, delivery status, estimated blood loss, maternal and fetal condition. Request standby obstetric team."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

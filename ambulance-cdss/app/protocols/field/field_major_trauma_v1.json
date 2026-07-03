@@ -1,0 +1,71 @@
+{
+  "protocol_id": "field_major_trauma_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Major trauma / motor vehicle accident",
+  "steps": [
+    {
+      "step_id": "mt1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe before approaching. Note hazards (traffic, fire, structural collapse, violence). Ensure adequate PPE including cervical collar and high-visibility vest."
+    },
+    {
+      "step_id": "mt2_mechanism_of_injury",
+      "title": "Assess mechanism of injury",
+      "action_type": "assessment",
+      "description": "Determine mechanism: MVA (frontal, lateral, rollover, pedestrian struck), fall (height), penetrating injury, blast. Note vehicle intrusion, ejection, entrapment, or prolonged extrication."
+    },
+    {
+      "step_id": "mt3_primary_survey",
+      "title": "Primary survey (ABCDE)",
+      "action_type": "assessment",
+      "description": "Rapid structured assessment: Airway (with C-spine protection), Breathing, Circulation (haemorrhage control), Disability (GCS, pupils), Exposure (full body check for hidden injuries).",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol — Trauma Primary Survey"
+    },
+    {
+      "step_id": "mt4_c_spine",
+      "title": "Apply cervical spine protection",
+      "action_type": "intervention",
+      "description": "Apply rigid cervical collar and maintain manual in-line stabilisation until full spinal immobilisation is complete (long board, head blocks, straps).",
+      "guideline_ref": "Kenya Trauma Protocol — Spinal Immobilisation"
+    },
+    {
+      "step_id": "mt5_haemorrhage_control",
+      "title": "Control major haemorrhage",
+      "action_type": "intervention",
+      "description": "Apply direct pressure, haemostatic dressings, or tourniquets for life-threatening external haemorrhage. Pelvic binder for suspected pelvic fracture. Pack junctional wounds."
+    },
+    {
+      "step_id": "mt6_iv_access",
+      "title": "Establish IV/IO access",
+      "action_type": "intervention",
+      "description": "Two large-bore (14-16G) peripheral IV lines in antecubital fossae. If unable to obtain IV access within 90 seconds, establish IO access. Begin warmed crystalloid infusion per local protocol."
+    },
+    {
+      "step_id": "mt7_vitals_primary",
+      "title": "Record initial vitals",
+      "action_type": "vitals",
+      "description": "Record full vital signs: RR, SpO2, BP, HR, consciousness (AVPU/GCS), temperature. Note any asymmetry in pupils or limb movement."
+    },
+    {
+      "step_id": "mt8_fluid_resuscitation",
+      "title": "Initiate fluid resuscitation",
+      "action_type": "intervention",
+      "description": "Permissive hypotension (target SBP 80-90 mmHg) unless traumatic brain injury suspected (target SBP ≥100). Administer warmed crystalloid per protocol. Reassess after each 500ml bolus."
+    },
+    {
+      "step_id": "mt9_vitals_reassessment",
+      "title": "Reassess vitals (every 5 min)",
+      "action_type": "vitals",
+      "description": "Repeat vital signs every 5 minutes during transport. Document trend. Alert receiving facility of any deterioration (BP drop, HR rise, GCS fall, SpO2 drop)."
+    },
+    {
+      "step_id": "mt10_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record destination facility, transport mode (lights/sirens vs. routine), and handoff readiness. Ensure trauma team notification sent via dispatch."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}
