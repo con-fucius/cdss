@@ -30,6 +30,8 @@ from typing import Any
 import httpx
 from cachetools import TTLCache
 
+from ambulance_cdss_contracts.triage import ExtractedKeyword
+
 from ..config import get_umls_api_key, get_umls_api_timeout, is_umls_configured
 
 logger = logging.getLogger(__name__)
@@ -181,14 +183,16 @@ def _l4_fallback(term: str, rules: list[dict[str, Any]]) -> dict[str, Any] | Non
 
 
 async def resolve_keywords(
-    keywords: list[dict[str, Any]],
+    keywords: list[dict[str, Any] | ExtractedKeyword],
     rules: list[dict[str, Any]],
     cache_db_path: str = "cache/umls_cache.db",
 ) -> tuple[list[dict[str, Any]], bool]:
     """Stage 2 — Resolve extracted keywords through four-layer cache.
 
     Args:
-        keywords: Extracted keywords from Stage 1
+        keywords: Extracted keywords from Stage 1.
+            Accepts dicts or Pydantic models (e.g. ExtractedKeyword) —
+            models are accessed via attribute or dict-style access.
         rules: Clinical rules from clinical_rules.yaml
         cache_db_path: Path to SQLite L2 cache
 
