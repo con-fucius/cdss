@@ -55,8 +55,8 @@
       "branch_map": {
         "less_than_1m": "q9_general_conscious",
         "1_to_3m": "q4_fall_landing",
-        "more_than_3m": "q5_fall_head_landing",
-        "unknown": "q5_fall_head_landing"
+        "more_than_3m": "q5_fall_head_first",
+        "unknown": "q5_fall_head_first"
       }
     },
     "q4_fall_landing": {
@@ -363,6 +363,18 @@
         "Keep the patient still and comfortable.",
         "Apply a clean dressing to any wounds.",
         "If anything changes \u00e2\u20ac\u201d increased pain, new bleeding, difficulty breathing, or loss of consciousness \u00e2\u20ac\u201d tell me immediately."
+      ]
+    },
+    "outcome_p2_burn_minor": {
+      "priority_code": "P2_BURNS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Cool the burn with cool (not cold) running water for at least 10 minutes if possible.",
+        "Cover the burn loosely with a clean plastic wrap or cling film.",
+        "Do not apply creams, oils, or toothpaste to the burn.",
+        "Keep the patient warm \u00e2\u20ac\u201d cover uninjured areas with a blanket.",
+        "A smaller burn away from joints, face, or hands can be managed with first aid \u00e2\u20ac\u201d but if you are unsure, stay on the line."
       ]
     }
   }
