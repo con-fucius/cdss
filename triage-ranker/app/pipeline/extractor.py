@@ -183,15 +183,18 @@ def extract_keywords(
                 )
             )
 
-    # Remove duplicate categories — keep the highest-severity match per category
+    # Deduplicate: keep the highest-severity match per category.
+    # Negated keywords are preserved — callers may need to inspect them.
     seen: dict[ClinicalCategory, ExtractedKeyword] = {}
+    negated_keywords: list[ExtractedKeyword] = []
     for kw in keywords:
         if kw.is_negated:
+            negated_keywords.append(kw)
             continue
-        if kw.category not in seen or kw.severity_modifiers and not seen[kw.category].severity_modifiers:
+        if kw.category not in seen or (kw.severity_modifiers and not seen[kw.category].severity_modifiers):
             seen[kw.category] = kw
 
-    result = list(seen.values())
+    result = list(seen.values()) + negated_keywords
 
     # If nothing matched, add a fallback keyword
     if not result:

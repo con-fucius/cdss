@@ -120,7 +120,9 @@ def rank_diagnoses(
     Maps to triage_level (P1-P4) and esi_level (1-5).
 
     Args:
-        resolved_keywords: Keywords from Stage 2 with UMLS resolution
+        resolved_keywords: Keywords from Stage 2 with UMLS resolution.
+            Accepts dicts or Pydantic models (e.g. ExtractedKeyword) —
+            models are converted via model_dump() automatically.
         gcs_score: Glasgow Coma Scale (3-15)
         acvpu: Consciousness level (A/C/V/P/U)
         sbp: Systolic blood pressure
@@ -131,6 +133,17 @@ def rank_diagnoses(
     Returns:
         Ranked list of DiagnosisRankItem. Never empty.
     """
+    # Normalise: convert Pydantic models to dicts for uniform .get() access
+    normalised: list[dict[str, Any]] = []
+    for kw in resolved_keywords:
+        if hasattr(kw, "model_dump"):
+            normalised.append(kw.model_dump())
+        elif isinstance(kw, dict):
+            normalised.append(kw)
+        else:
+            normalised.append(dict(kw))
+    resolved_keywords = normalised
+
     # Compute scoring system components
     gcs_weight, gcs_desc = _compute_gcs_severity(gcs_score)
     shock_index = _compute_shock_index(hr, sbp)
