@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ambulance CDSS — Control Room Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header__title">
+        Ambulance CDSS — Control Room
+        <a href="index.html" class="header-link">Dispatcher Console</a>
+      </div>
+      <div class="app-header__status" id="connection-status">
+        checking connection…
+      </div>
+    </header>
+
+    <main class="app-main dashboard-main">
+      <!-- Stats bar -->
+      <div class="stats-bar" id="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">—</div>
+          <div class="stat-label">Total (24h)</div>
+        </div>
+        <div class="stat-card stat-card--active">
+          <div class="stat-value" id="stat-active">—</div>
+          <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-card stat-card--p1">
+          <div class="stat-value" id="stat-p1">—</div>
+          <div class="stat-label">P1</div>
+        </div>
+        <div class="stat-card stat-card--p2">
+          <div class="stat-value" id="stat-p2">—</div>
+          <div class="stat-label">P2</div>
+        </div>
+        <div class="stat-card stat-card--p3">
+          <div class="stat-value" id="stat-p3">—</div>
+          <div class="stat-label">P3</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-purged">—</div>
+          <div class="stat-label">Closed (24h)</div>
+        </div>
+      </div>
+
+      <!-- Active incidents table -->
+      <div class="dashboard-section">
+        <div class="dashboard-section__header">
+          <h2>Active Incidents</h2>
+          <span class="refresh-indicator" id="refresh-indicator">Auto-refreshing every 30s</span>
+        </div>
+        <div class="incident-table-wrap" aria-live="polite">
+          <table class="incident-table" id="incident-table">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Incident</th>
+                <th>Chief Complaint</th>
+                <th>Status</th>
+                <th>Unit</th>
+                <th>ETA</th>
+                <th>Age</th>
+              </tr>
+            </thead>
+            <tbody id="incident-tbody">
+              <tr>
+                <td colspan="7" class="empty-row">Loading incidents…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Shift handover -->
+      <div class="dashboard-section">
+        <div class="dashboard-section__header">
+          <h2>Shift Handover</h2>
+        </div>
+        <div class="handover-controls">
+          <div class="field-row">
+            <div>
+              <label for="shift-start">Shift start</label>
+              <input type="datetime-local" id="shift-start" />
+            </div>
+            <div>
+              <label for="shift-end">Shift end</label>
+              <input type="datetime-local" id="shift-end" />
+            </div>
+          </div>
+          <button id="handover-btn" class="btn-primary">Generate handover report</button>
+        </div>
+        <div id="handover-result" class="hidden">
+          <pre id="handover-text" class="handover-text"></pre>
+          <button id="copy-handover-btn" class="btn-secondary">Copy to clipboard</button>
+        </div>
+      </div>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>

@@ -679,3 +679,229 @@ button {
   color: var(--text-dim);
   margin-bottom: 12px;
 }
+
+/* ── Header nav link ────────────────────────────────────────────── */
+
+.header-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: 16px;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+
+.header-link:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Dashboard ─────────────────────────────────────────────────── */
+
+.dashboard-main {
+  max-width: 1200px;
+}
+
+.stats-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  flex: 1;
+  min-width: 120px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-card--active { border-left: 3px solid var(--accent); }
+.stat-card--p1 { border-left: 3px solid var(--danger); }
+.stat-card--p2 { border-left: 3px solid var(--warning); }
+.stat-card--p3 { border-left: 3px solid var(--success); }
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 4px;
+}
+
+/* ── Dashboard sections ─────────────────────────────────────────── */
+
+.dashboard-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.dashboard-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-section__header h2 {
+  font-size: 15px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.refresh-indicator {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ── Incident table ─────────────────────────────────────────────── */
+
+.incident-table-wrap {
+  overflow-x: auto;
+}
+
+.incident-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.incident-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+.incident-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.incident-table tr:last-child td {
+  border-bottom: none;
+}
+
+.incident-table tr:hover td {
+  background: rgba(47, 125, 225, 0.05);
+}
+
+.cell-priority {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.cell-id {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.empty-row {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 24px !important;
+  font-style: italic;
+}
+
+/* ── Priority row colors ────────────────────────────────────────── */
+
+.row--p1 td { background: rgba(211, 64, 47, 0.08); }
+.row--p1 .cell-priority { color: var(--danger); }
+
+.row--p2 td { background: rgba(217, 137, 32, 0.08); }
+.row--p2 .cell-priority { color: var(--warning); }
+
+.row--p3 td { background: rgba(47, 168, 106, 0.08); }
+.row--p3 .cell-priority { color: var(--success); }
+
+/* Blinking for overdue P1s */
+.row--blink td {
+  animation: blink-row 1.2s ease-in-out infinite;
+}
+
+@keyframes blink-row {
+  0%, 100% { background: rgba(211, 64, 47, 0.08); }
+  50% { background: rgba(211, 64, 47, 0.22); }
+}
+
+/* ── Status badges ──────────────────────────────────────────────── */
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-received { background: rgba(47, 125, 225, 0.15); color: var(--accent); }
+.status-dispatched { background: rgba(217, 137, 32, 0.15); color: var(--warning); }
+.status-on_scene { background: rgba(155, 111, 214, 0.15); color: var(--guidance); }
+.status-transporting { background: rgba(47, 168, 106, 0.15); color: var(--success); }
+.status-closed { background: var(--bg-card); color: var(--text-dim); }
+
+/* ── Shift handover ─────────────────────────────────────────────── */
+
+.handover-controls {
+  padding: 18px;
+}
+
+.handover-text {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+}
+
+.handover-controls .field-row {
+  margin-bottom: 14px;
+}
+
+.handover-controls label {
+  margin-bottom: 4px;
+  display: block;
+}
+
+.handover-controls input[type="datetime-local"] {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: var(--font);
+  width: 100%;
+}
