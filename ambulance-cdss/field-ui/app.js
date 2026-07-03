@@ -61,7 +61,9 @@ function saveWriteQueue(queue) {
 function addToWriteQueue(endpoint, method, body) {
   const queue = getWriteQueue();
   if (queue.length >= MAX_QUEUE_SIZE) {
-    alert("Write queue is full (50 actions). Some actions may be lost. Please note important actions on paper.");
+    alert(
+      "Write queue is full (50 actions). Some actions may be lost. Please note important actions on paper.",
+    );
     return false;
   }
   queue.push({
@@ -173,7 +175,7 @@ function scrollToSection(sectionId) {
   document.querySelectorAll(".mobile-nav__btn").forEach((btn) => {
     btn.classList.toggle(
       "mobile-nav__btn--active",
-      btn.dataset.section === sectionId.replace("tab-", "")
+      btn.dataset.section === sectionId.replace("tab-", ""),
     );
   });
 
@@ -200,7 +202,9 @@ function scrollToSection(sectionId) {
   if (incidentId && recorder) {
     // Small delay to ensure DOM is ready
     setTimeout(() => {
-      el("lookup-form").dispatchEvent(new Event("submit", { cancelable: true }));
+      el("lookup-form").dispatchEvent(
+        new Event("submit", { cancelable: true }),
+      );
     }, 100);
   }
 })();
@@ -215,7 +219,7 @@ async function apiCall(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const error = new Error(
-      data.detail?.message || data.detail || `Request failed (${res.status})`
+      data.detail?.message || data.detail || `Request failed (${res.status})`,
     );
     error.status = res.status;
     error.body = data;
@@ -233,10 +237,20 @@ async function apiCallWithQueue(path, options = {}) {
     return result;
   } catch (err) {
     // If it's a network error, queue the action
-    if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+    if (
+      err.message.includes("Failed to fetch") ||
+      err.message.includes("NetworkError")
+    ) {
       if (options.method && options.method !== "GET") {
-        addToWriteQueue(path, options.method, options.body ? JSON.parse(options.body) : {});
-        return { queued: true, message: "Action queued for sync when connection is restored" };
+        addToWriteQueue(
+          path,
+          options.method,
+          options.body ? JSON.parse(options.body) : {},
+        );
+        return {
+          queued: true,
+          message: "Action queued for sync when connection is restored",
+        };
       }
     }
     throw err;
@@ -325,7 +339,9 @@ function renderTriageContext(enrichment) {
   levelBadge.textContent = enrichment.triage_level || "Unknown";
   levelBadge.className = "triage-level-badge";
   if (enrichment.triage_level) {
-    levelBadge.classList.add(`triage-level-${enrichment.triage_level.toLowerCase()}`);
+    levelBadge.classList.add(
+      `triage-level-${enrichment.triage_level.toLowerCase()}`,
+    );
   }
 
   // Set diagnosis
@@ -334,7 +350,9 @@ function renderTriageContext(enrichment) {
 
   // Set ESI
   const esiEl = el("triage-esi");
-  esiEl.textContent = enrichment.esi_level ? `${enrichment.esi_level} of 5` : "Not calculated";
+  esiEl.textContent = enrichment.esi_level
+    ? `${enrichment.esi_level} of 5`
+    : "Not calculated";
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -362,7 +380,8 @@ async function loadFieldProtocols() {
     const data = await apiCall("/field-protocols");
     select.innerHTML = "";
     if (data.active.length === 0) {
-      select.innerHTML = '<option value="">No field protocols available</option>';
+      select.innerHTML =
+        '<option value="">No field protocols available</option>';
       return;
     }
     data.active.forEach((p) => {
@@ -382,10 +401,13 @@ el("select-protocol-btn").addEventListener("click", async () => {
   if (!protocolId) return;
 
   try {
-    const data = await apiCallWithQueue(`/incidents/${state.incidentId}/field-protocol`, {
-      method: "POST",
-      body: JSON.stringify({ protocol_id: protocolId }),
-    });
+    const data = await apiCallWithQueue(
+      `/incidents/${state.incidentId}/field-protocol`,
+      {
+        method: "POST",
+        body: JSON.stringify({ protocol_id: protocolId }),
+      },
+    );
     if (!data.queued) {
       state.fieldProtocolId = protocolId;
       state.checklistState = data;
@@ -409,7 +431,9 @@ function showProtocolSelected() {
 }
 
 async function refreshChecklist() {
-  const data = await apiCall(`/incidents/${state.incidentId}/field-protocol/state`);
+  const data = await apiCall(
+    `/incidents/${state.incidentId}/field-protocol/state`,
+  );
   state.checklistState = data;
   renderChecklist(data);
 }
@@ -417,7 +441,8 @@ async function refreshChecklist() {
 function renderChecklist(data) {
   el("checklist-protocol-name").textContent = state.fieldProtocolId;
   const doneCount = data.steps.filter((s) => s.status !== "pending").length;
-  el("checklist-progress").textContent = `${doneCount} / ${data.steps.length} addressed`;
+  el("checklist-progress").textContent =
+    `${doneCount} / ${data.steps.length} addressed`;
 
   const list = el("step-list");
   list.innerHTML = "";
@@ -438,9 +463,15 @@ function renderChecklist(data) {
 
     if (step.status === "pending") {
       actions.append(
-        makeStepActionButton("Mark done", "action-done", () => markStep(step.step_id, "done")),
-        makeStepActionButton("Skip", "action-skip", () => markStep(step.step_id, "skipped")),
-        makeStepActionButton("Not applicable", "", () => markStep(step.step_id, "not_applicable"))
+        makeStepActionButton("Mark done", "action-done", () =>
+          markStep(step.step_id, "done"),
+        ),
+        makeStepActionButton("Skip", "action-skip", () =>
+          markStep(step.step_id, "skipped"),
+        ),
+        makeStepActionButton("Not applicable", "", () =>
+          markStep(step.step_id, "not_applicable"),
+        ),
       );
     } else {
       const note = document.createElement("span");
@@ -477,7 +508,11 @@ async function markStep(stepId, status) {
   // Phase 6.2: Optimistic UI — immediately show "Pending..." state
   if (stepElement) {
     stepElement.classList.add("status-pending");
-    stepElement.classList.remove("status-done", "status-skipped", "status-not_applicable");
+    stepElement.classList.remove(
+      "status-done",
+      "status-skipped",
+      "status-not_applicable",
+    );
     const statusSpan = stepElement.querySelector(".step-item__status");
     if (statusSpan) statusSpan.textContent = "pending...";
 
@@ -491,10 +526,17 @@ async function markStep(stepId, status) {
   }
 
   try {
-    const data = await apiCallWithQueue(`/incidents/${state.incidentId}/field-protocol/step`, {
-      method: "POST",
-      body: JSON.stringify({ step_id: stepId, status, recorded_by: state.recordedBy }),
-    });
+    const data = await apiCallWithQueue(
+      `/incidents/${state.incidentId}/field-protocol/step`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          step_id: stepId,
+          status,
+          recorded_by: state.recordedBy,
+        }),
+      },
+    );
 
     if (data.queued) {
       // Phase 6.2: Show "Failed — queued" on optimistic UI
@@ -502,7 +544,8 @@ async function markStep(stepId, status) {
         stepElement.classList.remove("status-pending");
         stepElement.classList.add("status-queued");
         const statusSpan = stepElement.querySelector(".step-item__status");
-        if (statusSpan) statusSpan.textContent = "queued — will sync when online";
+        if (statusSpan)
+          statusSpan.textContent = "queued — will sync when online";
       }
       return;
     }
@@ -514,7 +557,7 @@ async function markStep(stepId, status) {
     // the incident status to handoff_complete so the dispatcher dashboard
     // reflects the field unit's progress without a separate manual call.
     if (status === "done") {
-      const matchingStep = data.steps.find(s => s.step_id === stepId);
+      const matchingStep = data.steps.find((s) => s.step_id === stepId);
       if (matchingStep && matchingStep.action_type === "disposition") {
         try {
           await apiCall(`/incidents/${state.incidentId}/status`, {
@@ -524,7 +567,10 @@ async function markStep(stepId, status) {
         } catch (statusErr) {
           // Non-fatal: the field log already recorded the step. Surface
           // the status update failure without blocking the UI.
-          console.warn("Status update to handoff_complete failed:", statusErr.message);
+          console.warn(
+            "Status update to handoff_complete failed:",
+            statusErr.message,
+          );
         }
       }
     }
@@ -554,20 +600,30 @@ function prefillVitalsFromLastRecording() {
   const v = state.lastVitals;
 
   // Pre-fill form fields with last known values
-  if (v.respiratory_rate !== null && v.respiratory_rate !== undefined) el("v-rr").value = v.respiratory_rate;
+  if (v.respiratory_rate !== null && v.respiratory_rate !== undefined)
+    el("v-rr").value = v.respiratory_rate;
   if (v.spo2 !== null && v.spo2 !== undefined) el("v-spo2").value = v.spo2;
-  if (v.spo2_scale !== null && v.spo2_scale !== undefined) el("v-spo2-scale").value = v.spo2_scale;
+  if (v.spo2_scale !== null && v.spo2_scale !== undefined)
+    el("v-spo2-scale").value = v.spo2_scale;
   if (v.supplemental_o2 !== null && v.supplemental_o2 !== undefined) {
     el("v-supp-o2").value = v.supplemental_o2 ? "true" : "false";
   }
-  if (v.bp_systolic !== null && v.bp_systolic !== undefined) el("v-bp-sys").value = v.bp_systolic;
-  if (v.bp_diastolic !== null && v.bp_diastolic !== undefined) el("v-bp-dia").value = v.bp_diastolic;
-  if (v.heart_rate !== null && v.heart_rate !== undefined) el("v-hr").value = v.heart_rate;
-  if (v.consciousness !== null && v.consciousness !== undefined) el("v-consciousness").value = v.consciousness;
-  if (v.temperature !== null && v.temperature !== undefined) el("v-temp").value = v.temperature;
-  if (v.gcs_eye !== null && v.gcs_eye !== undefined) el("v-gcs-eye").value = v.gcs_eye;
-  if (v.gcs_verbal !== null && v.gcs_verbal !== undefined) el("v-gcs-verbal").value = v.gcs_verbal;
-  if (v.gcs_motor !== null && v.gcs_motor !== undefined) el("v-gcs-motor").value = v.gcs_motor;
+  if (v.bp_systolic !== null && v.bp_systolic !== undefined)
+    el("v-bp-sys").value = v.bp_systolic;
+  if (v.bp_diastolic !== null && v.bp_diastolic !== undefined)
+    el("v-bp-dia").value = v.bp_diastolic;
+  if (v.heart_rate !== null && v.heart_rate !== undefined)
+    el("v-hr").value = v.heart_rate;
+  if (v.consciousness !== null && v.consciousness !== undefined)
+    el("v-consciousness").value = v.consciousness;
+  if (v.temperature !== null && v.temperature !== undefined)
+    el("v-temp").value = v.temperature;
+  if (v.gcs_eye !== null && v.gcs_eye !== undefined)
+    el("v-gcs-eye").value = v.gcs_eye;
+  if (v.gcs_verbal !== null && v.gcs_verbal !== undefined)
+    el("v-gcs-verbal").value = v.gcs_verbal;
+  if (v.gcs_motor !== null && v.gcs_motor !== undefined)
+    el("v-gcs-motor").value = v.gcs_motor;
 
   // Show prefill banner
   timestampEl.textContent = formatTimestamp(v.recorded_at);
@@ -580,9 +636,18 @@ el("vitals-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   hide(el("vitals-error"));
 
-  const num = (id) => { const v = el(id).value; return v === "" ? null : Number(v); };
-  const bool = (id) => { const v = el(id).value; return v === "" ? null : v === "true"; };
-  const str = (id) => { const v = el(id).value; return v === "" ? null : v; };
+  const num = (id) => {
+    const v = el(id).value;
+    return v === "" ? null : Number(v);
+  };
+  const bool = (id) => {
+    const v = el(id).value;
+    return v === "" ? null : v === "true";
+  };
+  const str = (id) => {
+    const v = el(id).value;
+    return v === "" ? null : v;
+  };
 
   const body = {
     recorded_by: state.recordedBy,
@@ -601,10 +666,13 @@ el("vitals-form").addEventListener("submit", async (e) => {
   };
 
   try {
-    const data = await apiCallWithQueue(`/incidents/${state.incidentId}/vitals`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const data = await apiCallWithQueue(
+      `/incidents/${state.incidentId}/vitals`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
     e.target.reset();
     el("vitals-prefill-banner").classList.add("hidden");
 
@@ -633,14 +701,18 @@ async function loadVitalsHistory() {
     }
 
     if (history.length === 0) {
-      container.innerHTML = '<div class="record-empty">No vitals recorded yet.</div>';
+      container.innerHTML =
+        '<div class="record-empty">No vitals recorded yet.</div>';
       return;
     }
     container.innerHTML = "";
-    history.slice().reverse().forEach((v) => {
-      const div = document.createElement("div");
-      div.className = "record-item";
-      div.innerHTML = `
+    history
+      .slice()
+      .reverse()
+      .forEach((v) => {
+        const div = document.createElement("div");
+        div.className = "record-item";
+        div.innerHTML = `
         <div class="record-item__meta">${formatTimestamp(v.recorded_at)} — recorded by ${escapeHtml(v.recorded_by)}</div>
         <div class="record-item__body">
           ${vitalField("RR", v.respiratory_rate, "/min")}
@@ -653,8 +725,8 @@ async function loadVitalsHistory() {
           ${v.gcs_total !== null && v.gcs_total !== undefined ? `<span class="record-item__field"><strong>GCS</strong> ${v.gcs_total}${scoreFlag(gcsFlagLevel(v.gcs_total))}</span>` : ""}
         </div>
       `;
-      container.appendChild(div);
-    });
+        container.appendChild(div);
+      });
     renderMedicationHistoryFromFull(full);
   } catch (err) {
     container.innerHTML = `<div class="record-empty">Could not load vitals history: ${escapeHtml(err.message)}</div>`;
@@ -695,7 +767,8 @@ function renderTrendAlert(alert) {
   }
 
   const shouldShow =
-    alert.trend === "rapid_deterioration" || alert.crossed_risk_boundary === true;
+    alert.trend === "rapid_deterioration" ||
+    alert.crossed_risk_boundary === true;
 
   if (!shouldShow) {
     hide(container);
@@ -728,7 +801,8 @@ function renderGcsTrendAlert(alert) {
   }
 
   const shouldShow =
-    alert.trend === "rapid_deterioration" || alert.crossed_severity_threshold === true;
+    alert.trend === "rapid_deterioration" ||
+    alert.crossed_severity_threshold === true;
 
   if (!shouldShow) {
     hide(container);
@@ -788,7 +862,8 @@ async function loadMedicationSuggestions() {
   try {
     const data = await apiCall("/formulary");
     if (Array.isArray(data.drugs) && data.drugs.length > 0) {
-      select.innerHTML = '<option value="">Select suggestion or type below...</option>';
+      select.innerHTML =
+        '<option value="">Select suggestion or type below...</option>';
       data.drugs.forEach((drug) => {
         const opt = document.createElement("option");
         opt.value = drug;
@@ -796,11 +871,13 @@ async function loadMedicationSuggestions() {
         select.appendChild(opt);
       });
     } else {
-      select.innerHTML = '<option value="">No suggestions configured — enter name below</option>';
+      select.innerHTML =
+        '<option value="">No suggestions configured — enter name below</option>';
     }
   } catch (_err) {
     // /formulary being unreachable does not block medication logging.
-    select.innerHTML = '<option value="">Suggestions unavailable — enter name below</option>';
+    select.innerHTML =
+      '<option value="">Suggestions unavailable — enter name below</option>';
   }
 }
 
@@ -818,7 +895,8 @@ el("medication-form").addEventListener("submit", async (e) => {
   const drug = drugFromSelect || drugFromText;
   const dose = el("m-dose").value.trim();
   const route = el("m-route").value.trim();
-  const administered = !el("m-not-administered") || !el("m-not-administered").checked;
+  const administered =
+    !el("m-not-administered") || !el("m-not-administered").checked;
 
   if (!drug) {
     el("medication-error").textContent = "Drug name is required.";
@@ -852,17 +930,19 @@ function renderMedicationHistoryFromFull(full) {
   // Historical entries recorded via field-log before the dedicated
   // /medication endpoint existed. Read-only — no new writes go here.
   const fromFieldLogFallback = (full.field_log || []).filter(
-    (entry) => entry.step_id === "medication_given"
+    (entry) => entry.step_id === "medication_given",
   );
 
   if (fromDedicatedTable.length === 0 && fromFieldLogFallback.length === 0) {
-    container.innerHTML = '<div class="record-empty">No medications recorded yet.</div>';
+    container.innerHTML =
+      '<div class="record-empty">No medications recorded yet.</div>';
     return;
   }
 
   container.innerHTML = "";
   fromDedicatedTable.forEach((m) => {
-    const administeredLabel = m.administered === false ? " (not administered)" : "";
+    const administeredLabel =
+      m.administered === false ? " (not administered)" : "";
     const div = document.createElement("div");
     div.className = "record-item";
     div.innerHTML = `
@@ -932,20 +1012,26 @@ async function loadFieldLog() {
     const full = await apiCall(`/incidents/${state.incidentId}/full`);
     const entries = full.field_log || [];
     if (entries.length === 0) {
-      container.innerHTML = '<div class="record-empty">No field log entries yet.</div>';
+      container.innerHTML =
+        '<div class="record-empty">No field log entries yet.</div>';
     } else {
       container.innerHTML = "";
-      entries.slice().reverse().forEach((entry) => {
-        const div = document.createElement("div");
-        div.className = "record-item";
-        const detail =
-          entry.data.note || entry.data.step_title || JSON.stringify(entry.data);
-        div.innerHTML = `
+      entries
+        .slice()
+        .reverse()
+        .forEach((entry) => {
+          const div = document.createElement("div");
+          div.className = "record-item";
+          const detail =
+            entry.data.note ||
+            entry.data.step_title ||
+            JSON.stringify(entry.data);
+          div.innerHTML = `
           <div class="record-item__meta">${formatTimestamp(entry.timestamp)} — ${escapeHtml(entry.action_type)} — ${escapeHtml(entry.recorded_by)}</div>
           <div class="record-item__body">${escapeHtml(String(detail))}</div>
         `;
-        container.appendChild(div);
-      });
+          container.appendChild(div);
+        });
     }
     renderMedicationHistoryFromFull(full);
   } catch (err) {
@@ -993,8 +1079,12 @@ el("close-incident-btn").addEventListener("click", () => {
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
-function show(node) { node.classList.remove("hidden"); }
-function hide(node) { node.classList.add("hidden"); }
+function show(node) {
+  node.classList.remove("hidden");
+}
+function hide(node) {
+  node.classList.add("hidden");
+}
 
 function escapeHtml(str) {
   const d = document.createElement("div");
@@ -1004,5 +1094,9 @@ function escapeHtml(str) {
 
 function formatTimestamp(iso) {
   if (!iso) return "\u2014";
-  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }

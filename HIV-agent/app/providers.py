@@ -1,5 +1,4 @@
-"""
-Shared OpenAI-compatible LLM provider utilities for CDSS.
+"""Shared OpenAI-compatible LLM provider utilities for CDSS.
 
 Mistral support is intentionally deprecated here. Runtime chat uses the
 OpenAI-compatible pathway so development can run against Puter and production
@@ -10,7 +9,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -46,7 +44,7 @@ def get_llm_model() -> str:
     return os.getenv("QUERY_LLM_MODEL", "openai/gpt-4o-mini")
 
 
-def provider_has_credentials(provider: Optional[str] = None) -> bool:
+def provider_has_credentials(provider: str | None = None) -> bool:
     p = provider or get_llm_provider()
     if p == "groq":
         return bool(os.getenv("GROQ_API_KEY"))
@@ -55,7 +53,7 @@ def provider_has_credentials(provider: Optional[str] = None) -> bool:
     return False
 
 
-def provider_models_url(provider: str) -> Optional[str]:
+def provider_models_url(provider: str) -> str | None:
     if provider == "puter":
         # Puter's OpenAI-compatible path is used for chat completions, but the
         # `/models` compatibility endpoint can return 404. Do not use it as a
@@ -66,7 +64,7 @@ def provider_models_url(provider: str) -> Optional[str]:
     }.get(provider)
 
 
-def provider_auth_header(provider: str) -> Dict[str, str]:
+def provider_auth_header(provider: str) -> dict[str, str]:
     if provider == "groq":
         return {"Authorization": f"Bearer {os.getenv('GROQ_API_KEY', '')}"}
     if provider == "puter":
@@ -80,7 +78,8 @@ def provider_chat_endpoint(provider: str) -> str:
         "puter": os.getenv(
             "PUTER_OPENAI_BASE_URL",
             "https://api.puter.com/puterai/openai/v1",
-        ).rstrip("/") + "/chat/completions",
+        ).rstrip("/")
+        + "/chat/completions",
     }.get(provider, "")
 
 

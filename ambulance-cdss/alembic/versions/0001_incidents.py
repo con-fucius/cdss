@@ -88,9 +88,7 @@ def upgrade() -> None:
         sa.Column("question_text", sa.Text, nullable=False),
         sa.Column("answer", sa.Text, nullable=False),
         sa.Column("protocol_version", sa.String(64), nullable=False),
-        sa.Column(
-            "is_backtrack", sa.Boolean, nullable=False, server_default=sa.false()
-        ),
+        sa.Column("is_backtrack", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.Column(
             "timestamp",
             sa.DateTime(timezone=True),
@@ -98,9 +96,7 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index(
-        "idx_dispatch_log_incident", "incident_dispatch_log", ["incident_id"]
-    )
+    op.create_index("idx_dispatch_log_incident", "incident_dispatch_log", ["incident_id"])
 
     op.create_table(
         "incident_field_log",
@@ -118,9 +114,7 @@ def upgrade() -> None:
         ),
         sa.Column("step_id", sa.String(128), nullable=False),
         sa.Column("action_type", sa.String(32), nullable=False),
-        sa.Column(
-            "data", postgresql.JSONB, nullable=False, server_default=sa.text("'{}'")
-        ),
+        sa.Column("data", postgresql.JSONB, nullable=False, server_default=sa.text("'{}'")),
         sa.Column("recorded_by", sa.String(128), nullable=False),
         sa.Column(
             "timestamp",
@@ -196,9 +190,7 @@ def upgrade() -> None:
         ),
         sa.Column("given_by", sa.String(128), nullable=False),
     )
-    op.create_index(
-        "idx_meds_given_incident", "incident_medications_given", ["incident_id"]
-    )
+    op.create_index("idx_meds_given_incident", "incident_medications_given", ["incident_id"])
 
     op.create_table(
         "guidance_lookup_log",
@@ -225,9 +217,7 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index(
-        "idx_guidance_log_incident", "guidance_lookup_log", ["incident_id"]
-    )
+    op.create_index("idx_guidance_log_incident", "guidance_lookup_log", ["incident_id"])
 
 
 def downgrade() -> None:

@@ -1,5 +1,4 @@
-"""
-search_agent.py — Clinical decision support agent and tool registry.
+"""search_agent.py — Clinical decision support agent and tool registry.
 
 Architecture decision (Phase 7 onwards):
 The pydantic-ai Mistral agent path has been RETIRED from the live request
@@ -25,7 +24,7 @@ Do not rebuild the tool definitions here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .config import DISEASE_CONFIG
 from .search_tools import SearchIndex
@@ -36,7 +35,7 @@ class SearchDeps:
     index: SearchIndex
     session_id: str
     query_id: str
-    available_diseases: List[str]
+    available_diseases: list[str]
 
 
 BASE_PROMPT = """
@@ -78,10 +77,10 @@ Available knowledge bases:
 
 
 def build_system_prompt(
-    available_diseases: List[str],
-    context_block: Optional[str] = None,
+    available_diseases: list[str],
+    context_block: str | None = None,
 ) -> str:
-    lines: List[str] = []
+    lines: list[str] = []
     for disease in available_diseases:
         cfg = DISEASE_CONFIG.get(disease.lower(), {})
         name = cfg.get("guideline_name", "Official guidelines")
@@ -92,9 +91,7 @@ def build_system_prompt(
         lines.append(line)
 
     disease_context = (
-        "\n".join(lines)
-        if lines
-        else "- No indexed guideline tables are currently available."
+        "\n".join(lines) if lines else "- No indexed guideline tables are currently available."
     )
     context_section = context_block or ""
 
@@ -105,11 +102,10 @@ def build_system_prompt(
 
 
 def build_agent(
-    available_diseases: List[str],
-    context_block: Optional[str] = None,
+    available_diseases: list[str],
+    context_block: str | None = None,
 ):
-    """
-    Build the pydantic-ai agent.
+    """Build the pydantic-ai agent.
 
     NOT called by the live request path (api.py uses Groq/Puter directly).
     Retained for integration tests, future provider additions, and CLI use.
@@ -128,19 +124,15 @@ def build_agent(
     async def search_guidelines(
         ctx: RunContext[SearchDeps],
         query: str,
-        disease: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Search official Kenya clinical guidelines for relevant passages.
+        disease: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search official Kenya clinical guidelines for relevant passages.
 
         Pass disease=None for comorbidity or cross-disease queries — all indexed
         tables are searched in parallel.  Use a specific disease key when the
         query clearly targets one condition.
         """
-        use_hyde = bool(
-            disease
-            and DISEASE_CONFIG.get(disease.lower(), {}).get("use_hyde")
-        )
+        use_hyde = bool(disease and DISEASE_CONFIG.get(disease.lower(), {}).get("use_hyde"))
         results = await ctx.deps.index.search_guidelines(
             query=query,
             disease=disease,
@@ -170,9 +162,8 @@ def build_agent(
         ctx: RunContext[SearchDeps],
         section_id: str,
         disease: str,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Fetch the full text of a known guideline section by section ID.
+    ) -> dict[str, Any] | None:
+        """Fetch the full text of a known guideline section by section ID.
 
         Use when search_guidelines returned a chunk and you need the complete
         parent section — e.g. the full dosing table a child chunk belongs to.
@@ -195,10 +186,9 @@ def build_agent(
         ctx: RunContext[SearchDeps],
         query_type: str,
         disease: str,
-        filters: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Exact lookup against validated structured KB tables.
+        filters: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Exact lookup against validated structured KB tables.
 
         Use for regimen lookup, dosing criteria, diagnostic thresholds, and
         monitoring schedules where an exact structured answer exists.
@@ -225,7 +215,7 @@ def build_agent(
 
 def init_agent(
     index: SearchIndex,
-    available_diseases: Optional[List[str]] = None,
+    available_diseases: list[str] | None = None,
 ):
     """DEPRECATED: kept for Streamlit/CLI compatibility."""
     return build_agent(available_diseases or index.available_diseases())

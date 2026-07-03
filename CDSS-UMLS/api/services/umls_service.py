@@ -1,110 +1,97 @@
-"""
-UMLS terminology service
-"""
-from typing import List, Optional, Dict
-from api.config import settings
-import httpx
+"""UMLS terminology service."""
+
 import logging
+
+import httpx
+
+from api.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class UMLSService:
-    """Service for interacting with UMLS terminology"""
-    
+    """Service for interacting with UMLS terminology."""
+
     def __init__(self):
         self.api_key = settings.UMLS_API_KEY
         self.api_url = settings.UMLS_API_URL
         self.client = httpx.AsyncClient()
-    
+
     async def search_concepts(
-        self,
-        query: str,
-        max_results: int = 10,
-        semantic_types: Optional[List[str]] = None
-    ) -> List[Dict]:
-        """Search UMLS concepts"""
+        self, query: str, max_results: int = 10, semantic_types: list[str] | None = None
+    ) -> list[dict]:
+        """Search UMLS concepts."""
         try:
-            params = {
-                "string": query,
-                "apiKey": self.api_key,
-                "pageSize": max_results
-            }
-            
+            params = {"string": query, "apiKey": self.api_key, "pageSize": max_results}
+
             if semantic_types:
                 params["sabs"] = ",".join(semantic_types)
-            
-            response = await self.client.get(
-                f"{self.api_url}/search/current",
-                params=params
-            )
+
+            response = await self.client.get(f"{self.api_url}/search/current", params=params)
             response.raise_for_status()
-            
+
             data = response.json()
             results = []
-            
+
             for result in data.get("result", {}).get("results", []):
                 # Extract semantic type names from objects
                 semantic_types_raw = result.get("semanticTypes", [])
                 semantic_types = [
-                    st.get("name", st) if isinstance(st, dict) else st
-                    for st in semantic_types_raw
+                    st.get("name", st) if isinstance(st, dict) else st for st in semantic_types_raw
                 ]
-                
-                results.append({
-                    "cui": result.get("ui", ""),
-                    "preferred_name": result.get("name", ""),
-                    "definition": result.get("definition", ""),
-                    "semantic_types": semantic_types,
-                    "synonyms": result.get("synonyms", [])
-                })
-            
+
+                results.append(
+                    {
+                        "cui": result.get("ui", ""),
+                        "preferred_name": result.get("name", ""),
+                        "definition": result.get("definition", ""),
+                        "semantic_types": semantic_types,
+                        "synonyms": result.get("synonyms", []),
+                    }
+                )
+
             return results
         except Exception as e:
             logger.error(f"UMLS search error: {e}")
             return []
-    
-    async def get_concept(self, cui: str) -> Optional[Dict]:
-        """Get concept details by CUI"""
+
+    async def get_concept(self, cui: str) -> dict | None:
+        """Get concept details by CUI."""
         try:
             response = await self.client.get(
-                f"{self.api_url}/content/current/CUI/{cui}",
-                params={"apiKey": self.api_key}
+                f"{self.api_url}/content/current/CUI/{cui}", params={"apiKey": self.api_key}
             )
             response.raise_for_status()
-            
+
             data = response.json()
             result = data.get("result", {})
-            
+
             # Extract semantic type names from objects
             semantic_types_raw = result.get("semanticTypes", [])
             semantic_types = [
-                st.get("name", st) if isinstance(st, dict) else st
-                for st in semantic_types_raw
+                st.get("name", st) if isinstance(st, dict) else st for st in semantic_types_raw
             ]
-            
+
             return {
                 "cui": cui,
                 "preferred_name": result.get("name", ""),
                 "definition": result.get("definition", ""),
                 "semantic_types": semantic_types,
-                "synonyms": result.get("synonyms", [])
+                "synonyms": result.get("synonyms", []),
             }
         except Exception as e:
             logger.error(f"UMLS concept retrieval error: {e}")
             return None
-    
+
     async def get_semantic_relations(
-        self,
-        cui: str,
-        relation_type: Optional[str] = None
-    ) -> List[Dict]:
-        """Get semantic relations for a concept"""
+        self, cui: str, relation_type: str | None = None
+    ) -> list[dict]:
+        """Get semantic relations for a concept."""
         # TODO: Implement semantic relation retrieval
         return []
-    
-    async def get_semantic_types(self) -> List[str]:
-        """Get list of available semantic types"""
+
+    async def get_semantic_types(self) -> list[str]:
+        """Get list of available semantic types."""
         # Common UMLS semantic types
         return [
             "T001",  # Organism
@@ -227,4 +214,3 @@ class UMLSService:
             "T201",  # Clinical Attribute
             "T203",  # Drug Delivery Device
         ]
-

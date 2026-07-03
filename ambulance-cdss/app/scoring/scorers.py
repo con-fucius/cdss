@@ -1,5 +1,4 @@
-"""
-app/scoring/scorers.py
+"""app/scoring/scorers.py.
 
 Prehospital-relevant scoring only — NEWS2 and Glasgow Coma Scale.
 Per docs/OUT_OF_SCOPE.md: no Child-Pugh, no CVD risk charts, no HbA1c
@@ -20,13 +19,13 @@ silently defaulting — a missing input must never produce a false score.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class ScoringError(ValueError):
     """Raised when required scoring inputs are missing or out of range."""
 
-    def __init__(self, message: str, missing_fields: Optional[List[str]] = None):
+    def __init__(self, message: str, missing_fields: list[str] | None = None):
         super().__init__(message)
         self.missing_fields = missing_fields or []
 
@@ -36,7 +35,7 @@ class ScoringResult:
     score: int
     risk_level: str
     escalation_required: bool
-    component_scores: Dict[str, int] = field(default_factory=dict)
+    component_scores: dict[str, int] = field(default_factory=dict)
     trigger: str = ""
     source_guideline: str = ""
 
@@ -139,9 +138,8 @@ def _score_temperature(temp: float) -> int:
     return 2  # >= 39.1
 
 
-def compute_news2(vitals: Dict[str, Any]) -> ScoringResult:
-    """
-    NEWS2 score from six physiological parameters.
+def compute_news2(vitals: dict[str, Any]) -> ScoringResult:
+    """NEWS2 score from six physiological parameters.
 
     Required keys in `vitals`: respiratory_rate (int), spo2 (int),
     bp_systolic (int), heart_rate (int), consciousness (str: A/V/P/U),
@@ -188,9 +186,7 @@ def compute_news2(vitals: Dict[str, Any]) -> ScoringResult:
     escalation_required = total >= 5 or any_param_is_3
 
     trigger_parts = [
-        f"{k}={vitals.get(k, 'n/a')} (score {v})"
-        for k, v in components.items()
-        if v >= 2
+        f"{k}={vitals.get(k, 'n/a')} (score {v})" for k, v in components.items() if v >= 2
     ]
     trigger = "; ".join(trigger_parts) if trigger_parts else "No high-scoring parameters"
 
@@ -214,8 +210,7 @@ _GCS_MOTOR_RANGE = (1, 6)
 
 
 def compute_gcs_total(eye: int, verbal: int, motor: int) -> int:
-    """
-    Raw GCS total (3-15). Caller is responsible for collecting the three
+    """Raw GCS total (3-15). Caller is responsible for collecting the three
     component scores (eye 1-4, verbal 1-5, motor 1-6) via a structured
     field-side input — this function only sums and validates range.
     """

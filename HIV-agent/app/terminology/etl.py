@@ -1,5 +1,4 @@
-"""
-app/terminology/etl.py
+"""app/terminology/etl.py.
 
 ETL adapter: reads UMLS-repo processed output and loads it into
 the CDSS Postgres terminology tables.
@@ -44,9 +43,9 @@ import asyncio
 import csv
 import json
 import logging
-import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -66,7 +65,7 @@ logging.basicConfig(
 # ─────────────────────────────────────────────────────────────────────────────
 
 # TUI codes for semantic types we keep
-CLINICAL_TUIS: Set[str] = {
+CLINICAL_TUIS: set[str] = {
     "T047",  # Disease or Syndrome
     "T048",  # Mental or Behavioral Dysfunction
     "T191",  # Neoplastic Process
@@ -101,10 +100,19 @@ KEPT_RELATION_TYPES = {"RB", "RN", "CHD", "PAR", "RO", "SIB"}
 
 # Relation labels we definitely want regardless of relation type
 KEPT_RELATION_LABELS = {
-    "may_treat", "treats", "has_ingredient", "ingredient_of",
-    "may_prevent", "prevents", "is_diagnosed_by", "diagnoses",
-    "associated_with", "has_manifestation", "manifestation_of",
-    "has_contraindication", "contraindicated_with",
+    "may_treat",
+    "treats",
+    "has_ingredient",
+    "ingredient_of",
+    "may_prevent",
+    "prevents",
+    "is_diagnosed_by",
+    "diagnoses",
+    "associated_with",
+    "has_manifestation",
+    "manifestation_of",
+    "has_contraindication",
+    "contraindicated_with",
 }
 
 # Batch sizes for bulk upsert
@@ -113,9 +121,9 @@ _ALIAS_BATCH = 5000
 _RELATION_BATCH = 5000
 
 
-def _semantic_type_values(concept: Dict[str, Any]) -> List[str]:
+def _semantic_type_values(concept: dict[str, Any]) -> list[str]:
     """Return searchable semantic type names plus TUI codes from source JSON."""
-    values: Set[str] = set()
+    values: set[str] = set()
     for item in concept.get("semantic_types") or []:
         if item:
             values.add(str(item).strip())
@@ -133,14 +141,15 @@ def _semantic_type_values(concept: Dict[str, Any]) -> List[str]:
 # Readers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _iter_concepts(
     path: Path,
     disease_filter: bool,
-    limit: Optional[int],
-) -> Iterator[Dict[str, Any]]:
+    limit: int | None,
+) -> Iterator[dict[str, Any]]:
     """Stream concepts.jsonl and yield those that pass the clinical scope filter."""
     count = 0
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -152,7 +161,11 @@ def _iter_concepts(
 
             if disease_filter:
                 stypes = set(concept.get("semantic_types") or [])
-                tuis = {st.get("tui") for st in concept.get("semantic_type_details") or [] if st.get("tui")}
+                tuis = {
+                    st.get("tui")
+                    for st in concept.get("semantic_type_details") or []
+                    if st.get("tui")
+                }
                 if not (stypes | tuis) & CLINICAL_TUIS:
                     # Check by TUI codes directly
                     tui_codes = {
@@ -173,12 +186,12 @@ def _iter_concepts(
 
 def _iter_relations(
     path: Path,
-    kept_cuis: Optional[Set[str]],
-    limit: Optional[int],
-) -> Iterator[Dict[str, Any]]:
+    kept_cuis: set[str] | None,
+    limit: int | None,
+) -> Iterator[dict[str, Any]]:
     """Stream relations.csv and yield clinically relevant rows."""
     count = 0
-    with open(path, "r", encoding="utf-8", newline="") as fh:
+    with open(path, encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             rel_type = (row.get("relation") or "").strip()
@@ -211,17 +224,18 @@ def _iter_relations(
 # Bulk upsert helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _upsert_concepts(
-    concepts: List[Dict[str, Any]],
-) -> Set[str]:
+    concepts: list[dict[str, Any]],
+) -> set[str]:
     """Bulk-upsert a batch of concepts. Returns the set of CUIs loaded."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from ..db import get_session
     from .models import TerminologyAlias, TerminologyConcept
 
-    cui_set: Set[str] = set()
-    alias_rows: List[Dict[str, Any]] = []
+    cui_set: set[str] = set()
+    alias_rows: list[dict[str, Any]] = []
 
     concept_rows = []
     for c in concepts:
@@ -290,9 +304,7 @@ async def _upsert_concepts(
             for i in range(0, len(deduped_aliases), _ALIAS_BATCH):
                 batch = deduped_aliases[i : i + _ALIAS_BATCH]
                 alias_stmt = pg_insert(TerminologyAlias).values(batch)
-                alias_stmt = alias_stmt.on_conflict_do_nothing(
-                    constraint="uq_alias_cui_alias"
-                )
+                alias_stmt = alias_stmt.on_conflict_do_nothing(constraint="uq_alias_cui_alias")
                 await session.execute(alias_stmt)
 
         await session.commit()
@@ -300,7 +312,7 @@ async def _upsert_concepts(
     return cui_set
 
 
-async def _upsert_relations(relations: List[Dict[str, Any]]) -> None:
+async def _upsert_relations(relations: list[dict[str, Any]]) -> None:
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from ..db import get_session
@@ -323,15 +335,15 @@ async def _upsert_relations(relations: List[Dict[str, Any]]) -> None:
 # Main ETL entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def load_umls(
     concepts_path: Path,
     relations_path: Path,
     disease_filter: bool = True,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     skip_relations: bool = False,
-) -> Dict[str, int]:
-    """
-    Load UMLS processed output into Postgres terminology tables.
+) -> dict[str, int]:
+    """Load UMLS processed output into Postgres terminology tables.
 
     concepts_path:  Path to concepts.jsonl from combine_umls.py output.
     relations_path: Path to relations.csv from combine_umls.py output.
@@ -358,8 +370,8 @@ async def load_umls(
 
     # ── Concepts ──────────────────────────────────────────────────────
     total_concepts = 0
-    loaded_cuis: Set[str] = set()
-    batch: List[Dict[str, Any]] = []
+    loaded_cuis: set[str] = set()
+    batch: list[dict[str, Any]] = []
 
     for concept in _iter_concepts(concepts_path, disease_filter, limit):
         batch.append(concept)
@@ -381,7 +393,7 @@ async def load_umls(
     # ── Relations ──────────────────────────────────────────────────────
     total_relations = 0
     if not skip_relations and relations_path.exists():
-        rel_batch: List[Dict[str, Any]] = []
+        rel_batch: list[dict[str, Any]] = []
         for relation in _iter_relations(relations_path, loaded_cuis, limit):
             rel_batch.append(relation)
             if len(rel_batch) >= _RELATION_BATCH:
@@ -406,6 +418,7 @@ async def load_umls(
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     import argparse

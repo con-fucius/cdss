@@ -1,1 +1,1 @@
-"""facility-mapper/scripts/__init__.py"""
+"""facility-mapper/scripts/__init__.py."""

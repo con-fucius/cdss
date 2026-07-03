@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/main.py
+"""triage-ranker/app/main.py.
 
 FastAPI app entrypoint for the Triage Ranker service.
 
@@ -23,8 +22,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import yaml
 from fastapi import FastAPI, HTTPException, Security
@@ -45,8 +43,6 @@ from .pipeline.resolver import purge_caches, resolve_keywords
 from .schemas import (
     TriageLevel,
     TriageRequest,
-    TriageResponse,
-    TriageMetadata,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -64,7 +60,7 @@ def _load_clinical_rules() -> list[dict]:
     global _clinical_rules
     rules_path = get_clinical_rules_path()
     try:
-        with open(rules_path, "r", encoding="utf-8") as f:
+        with open(rules_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         _clinical_rules = data.get("rules", [])
         logger.info("Loaded %d clinical rules from %s", len(_clinical_rules), rules_path)
@@ -81,13 +77,13 @@ def _load_spacy_model():
     model_path = get_spacy_model_path()
     try:
         import spacy
+
         _spacy_model = spacy.load(model_path)
         _model_loaded = True
         logger.info("spaCy model loaded from %s", model_path)
     except Exception as exc:
         logger.warning(
-            "spaCy model not available (%s). NLP extraction will use "
-            "regex-only fallback.",
+            "spaCy model not available (%s). NLP extraction will use regex-only fallback.",
             exc,
         )
         _model_loaded = False
@@ -130,7 +126,7 @@ async def _require_admin_key(key: str | None = Security(_admin_key_header)) -> N
 
 # ── Request/Response models ─────────────────────────────────────────────────
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class TriageResultResponse(BaseModel):
@@ -151,11 +147,13 @@ class TriageResultResponse(BaseModel):
 @app.get("/health")
 async def health():
     """Service health with UMLS reachability (non-blocking), cache stats,
-    model loaded status."""
+    model loaded status.
+    """
     from .pipeline.resolver import _l1_cache
 
     umls_reachable = "not_configured"
     from .config import is_umls_configured
+
     if is_umls_configured():
         umls_reachable = "configured"
 
@@ -182,8 +180,7 @@ async def readiness():
 
 @app.post("/triage")
 async def triage(request: TriageRequest):
-    """
-    POST /triage — main endpoint.
+    """POST /triage — main endpoint.
 
     Validates TriageRequest, runs all three pipeline stages, returns
     TriageResponse. No patient text in any log output.
@@ -248,10 +245,10 @@ async def triage(request: TriageRequest):
 
     # Build response
     from ambulance_cdss_contracts.triage import (
-        DiagnosisRankItem,
         TriageMetadata,
         TriageResponse,
     )
+    from .pipeline.resolver import _l1_cache
 
     metadata = TriageMetadata(
         request_id=request_id,
@@ -298,7 +295,7 @@ async def reload_rules():
     return {
         "status": "ok",
         "rules_count": len(rules),
-        "reloaded_at": datetime.now(timezone.utc).isoformat(),
+        "reloaded_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -309,5 +306,5 @@ async def purge_cache():
     return {
         "status": "ok",
         "message": "L1 and L2 caches purged.",
-        "purged_at": datetime.now(timezone.utc).isoformat(),
+        "purged_at": datetime.now(UTC).isoformat(),
     }

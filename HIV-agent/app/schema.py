@@ -1,35 +1,35 @@
-"""
-Unified schema for CDSS document indexing.
+"""Unified schema for CDSS document indexing.
 Defines the IndexedChunk structure used across extractors, chunkers, and LanceDB.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
 import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
 
 @dataclass
 class IndexedChunk:
-    text: str               # Level 3 chunk text (indexed, embedded)
-    parent_text: str        # Level 2 section full text (returned to agent)
-    disease: str            # "hiv" | "diabetes" | "cvd" | "tb" | "mental_health"
-    guideline_name: str     # "Kenya ARV Guidelines 2022"
-    section_title: str      # "First-line ART for Adults"
+    text: str  # Level 3 chunk text (indexed, embedded)
+    parent_text: str  # Level 2 section full text (returned to agent)
+    disease: str  # "hiv" | "diabetes" | "cvd" | "tb" | "mental_health"
+    guideline_name: str  # "Kenya ARV Guidelines 2022"
+    section_title: str  # "First-line ART for Adults"
     page: int
-    
+
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    parent_id: Optional[str] = None          # Level 2 section ID
+    parent_id: str | None = None  # Level 2 section ID
     guideline_version: str = "1.0"
     guideline_year: int = 2022
     source_url: str = "https://www.health.go.ke/"
     section_number: str = ""
-    content_type: str = "narrative"          # "narrative"|"table"|"list"|"criteria"|"algorithm"
-    population_tags: List[str] = field(default_factory=list)   # ["adult", "treatment-naive"]
-    clinical_tags: List[str] = field(default_factory=list)     # ["first-line", "regimen", "dosing"]
-    extraction_quality: str = "full"         # "full"|"degraded"
-    
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    content_type: str = "narrative"  # "narrative"|"table"|"list"|"criteria"|"algorithm"
+    population_tags: list[str] = field(default_factory=list)  # ["adult", "treatment-naive"]
+    clinical_tags: list[str] = field(default_factory=list)  # ["first-line", "regimen", "dosing"]
+    extraction_quality: str = "full"  # "full"|"degraded"
 
-    def to_dict(self, vector: Optional[List[float]] = None) -> Dict[str, Any]:
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self, vector: list[float] | None = None) -> dict[str, Any]:
         """Convert to dictionary for LanceDB ingestion."""
         d = {
             "chunk_id": self.chunk_id,

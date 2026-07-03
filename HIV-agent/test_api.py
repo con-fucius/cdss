@@ -1,15 +1,14 @@
+import os
 import unittest
 from unittest.mock import patch
-import os
 
 os.environ.setdefault("CDSS_AUDIT_DB_PATH", ":memory:")
 os.environ.setdefault("CDSS_SESSION_STORAGE_BACKEND", "memory")
 os.environ.setdefault("CDSS_RUN_MIGRATIONS_ON_STARTUP", "false")
 
-from fastapi.testclient import TestClient
-
 from app.api import app
 from app.logs import _hash_patient_ref
+from fastapi.testclient import TestClient
 
 
 class ApiSmokeTests(unittest.TestCase):
@@ -110,7 +109,11 @@ class ApiSmokeTests(unittest.TestCase):
                 json={
                     "session_id": session_id,
                     "message": "What is first line ART?",
-                    "context": {"active_conditions": ["hiv"], "clinical_params": {}, "medications": []},
+                    "context": {
+                        "active_conditions": ["hiv"],
+                        "clinical_params": {},
+                        "medications": [],
+                    },
                 },
             ) as response:
                 self.assertEqual(response.status_code, 200)
@@ -118,12 +121,10 @@ class ApiSmokeTests(unittest.TestCase):
                 self.assertIn('"type": "chunk"', body)
                 self.assertIn('"type": "sources"', body)
                 self.assertIn('"type": "stream_end"', body)
-            sessions = client.get(
-                "/admin/sessions", headers={"X-User-Role": "ADMIN"}
-            ).json()["sessions"]
-            self.assertTrue(
-                any(row["session_id"] == session_id for row in sessions)
-            )
+            sessions = client.get("/admin/sessions", headers={"X-User-Role": "ADMIN"}).json()[
+                "sessions"
+            ]
+            self.assertTrue(any(row["session_id"] == session_id for row in sessions))
 
     def test_patient_context_requires_medications_array(self):
         with TestClient(app) as client:
@@ -132,7 +133,11 @@ class ApiSmokeTests(unittest.TestCase):
                 json={
                     "session_id": "test-session",
                     "message": "What is first line ART?",
-                    "context": {"active_conditions": ["hiv"], "clinical_params": {}, "medications": "TDF"},
+                    "context": {
+                        "active_conditions": ["hiv"],
+                        "clinical_params": {},
+                        "medications": "TDF",
+                    },
                 },
             )
             self.assertEqual(response.status_code, 422)

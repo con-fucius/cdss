@@ -1,5 +1,4 @@
-"""
-app/protocols/field_runner.py
+"""app/protocols/field_runner.py.
 
 Field-side protocol runner — Phase 4.
 
@@ -36,7 +35,6 @@ Consequences of that distinction, encoded here:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from .schema import FieldProtocol, FieldProtocolStep
 
@@ -51,8 +49,7 @@ class FieldStepState:
 
 @dataclass
 class FieldRunState:
-    """
-    In-memory checklist progress for one incident's field protocol run.
+    """In-memory checklist progress for one incident's field protocol run.
     Not persisted as its own table — see module docstring: the durable
     record of what happened is incident_field_log, written independently
     by the field UI/API for every actual action. This state exists purely
@@ -62,7 +59,7 @@ class FieldRunState:
     """
 
     protocol: FieldProtocol
-    steps: Dict[str, FieldStepState] = field(default_factory=dict)
+    steps: dict[str, FieldStepState] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.steps:
@@ -79,7 +76,7 @@ class FieldRunState:
             )
         self.steps[step_id].status = status
 
-    def next_pending_step(self) -> Optional[FieldProtocolStep]:
+    def next_pending_step(self) -> FieldProtocolStep | None:
         for step in self.protocol.steps:
             if self.steps[step.step_id].status == "pending":
                 return step
@@ -88,7 +85,7 @@ class FieldRunState:
     def is_complete(self) -> bool:
         return all(s.status != "pending" for s in self.steps.values())
 
-    def summary(self) -> List[Dict[str, str]]:
+    def summary(self) -> list[dict[str, str]]:
         return [
             {
                 "step_id": s.step.step_id,
@@ -101,11 +98,8 @@ class FieldRunState:
         ]
 
 
-def rebuild_from_field_log(
-    protocol: FieldProtocol, field_log_entries: List[Dict]
-) -> FieldRunState:
-    """
-    Reconstructs checklist progress from the incident's actual
+def rebuild_from_field_log(protocol: FieldProtocol, field_log_entries: list[dict]) -> FieldRunState:
+    """Reconstructs checklist progress from the incident's actual
     incident_field_log rows rather than trusting any client-held state —
     this is what makes the field log the real source of truth (per module
     docstring) rather than this runner's in-memory state. A step is

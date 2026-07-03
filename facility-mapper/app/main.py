@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/main.py
+"""facility-mapper/app/main.py.
 
 FastAPI app entrypoint for the Facility Mapper service.
 
@@ -20,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +34,7 @@ from .config import (
     validate_startup_config,
 )
 from .data import get_ball_tree
-from .db import check_database, close_engine, init_engine, get_session
+from .db import check_database, close_engine, get_session, init_engine
 from .geocoding import clear_cache
 from .matcher import find_nearest_by_coords, find_nearest_by_location
 from .models import DataImport, Facility
@@ -45,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── Admin API key dependency ───────────────────────────────────────────────
@@ -54,8 +53,7 @@ _admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 
 
 async def _require_admin_key(key: str | None = Security(_admin_key_header)) -> None:
-    """
-    Validates the X-Admin-Key header for admin endpoints.
+    """Validates the X-Admin-Key header for admin endpoints.
     If ADMIN_API_KEY is not configured (empty string), the check is
     bypassed — this is the development default.
     """
@@ -98,9 +96,7 @@ async def lifespan(app: FastAPI):
                 "run load_facilities.py to import facility data."
             )
     else:
-        logger.warning(
-            "DATABASE_URL not configured. Service running in degraded mode."
-        )
+        logger.warning("DATABASE_URL not configured. Service running in degraded mode.")
     yield
     if is_database_configured():
         await close_engine()
@@ -121,8 +117,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    """
-    Service health with facility count and data currency.
+    """Service health with facility count and data currency.
     Always includes data_as_of so the dispatcher UI can display it.
     """
     tree = get_ball_tree()
@@ -166,8 +161,7 @@ async def health():
 
 @app.get("/ready")
 async def readiness():
-    """
-    K8s-style readiness probe. 503 until BallTree built and at least
+    """K8s-style readiness probe. 503 until BallTree built and at least
     1 facility loaded.
     """
     tree = get_ball_tree()
@@ -191,13 +185,10 @@ async def facilities_nearest(
     lon: float = Query(..., description="Longitude of search origin"),
     radius_km: float = Query(50.0, ge=1.0, le=200.0, description="Search radius in km"),
     level_min: int = Query(1, ge=1, le=6, description="Minimum facility level"),
-    required_services: str | None = Query(
-        None, description="Comma-separated required services"
-    ),
+    required_services: str | None = Query(None, description="Comma-separated required services"),
     max_results: int = Query(3, ge=1, le=10, description="Max results"),
 ):
-    """
-    Find nearest facilities by coordinates.
+    """Find nearest facilities by coordinates.
     Returns FacilitySearchResponse from shared contracts.
     """
     services = None
@@ -217,8 +208,7 @@ async def facilities_nearest(
 
 @app.post("/facilities/nearest-by-location")
 async def facilities_nearest_by_location(request: NearestByLocationRequest):
-    """
-    Find nearest facilities by text location. Geocodes using Nominatim
+    """Find nearest facilities by text location. Geocodes using Nominatim
     then performs the same BallTree search as /facilities/nearest.
     """
     response = await find_nearest_by_location(
@@ -244,9 +234,7 @@ async def facilities_nearest_by_location(request: NearestByLocationRequest):
 async def facility_detail(facility_id: str):
     """Single facility detail."""
     async with get_session() as session:
-        result = await session.execute(
-            select(Facility).where(Facility.facility_id == facility_id)
-        )
+        result = await session.execute(select(Facility).where(Facility.facility_id == facility_id))
         facility = result.scalar_one_or_none()
 
     if facility is None:
@@ -296,8 +284,7 @@ async def data_currency():
 
 @app.post("/admin/reload-facilities", dependencies=[Security(_require_admin_key)])
 async def reload_facilities():
-    """
-    Clear in-process cache and rebuild BallTree from DB.
+    """Clear in-process cache and rebuild BallTree from DB.
     Also clears geocoding cache.
     """
     clear_cache()

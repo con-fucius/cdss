@@ -1,5 +1,4 @@
-"""
-tests/test_version_mismatch.py
+"""tests/test_version_mismatch.py.
 
 Improvement 3.2 — tests for protocol version mismatch detection.
 

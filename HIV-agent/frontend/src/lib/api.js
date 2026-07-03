@@ -1,11 +1,13 @@
-const DEFAULT_API_BASE = '';
+const DEFAULT_API_BASE = "";
 
-export const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE).replace(/\/$/, '');
+export const API_BASE = (
+  import.meta.env.VITE_API_URL || DEFAULT_API_BASE
+).replace(/\/$/, "");
 
 export class ApiError extends Error {
   constructor(message, { status, payload } = {}) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.payload = payload;
   }
@@ -14,22 +16,26 @@ export class ApiError extends Error {
 export function normalizeContext(context) {
   if (!context) return context;
   if (!Array.isArray(context.medications)) {
-    throw new TypeError('patientContext.medications must be an array');
+    throw new TypeError("patientContext.medications must be an array");
   }
   return {
     ...context,
     filters: Array.isArray(context.filters) ? context.filters : [],
-    active_conditions: Array.isArray(context.active_conditions) ? context.active_conditions : [],
+    active_conditions: Array.isArray(context.active_conditions)
+      ? context.active_conditions
+      : [],
     clinical_params: context.clinical_params || {},
-    medications: context.medications.map(item => String(item).trim()).filter(Boolean)
+    medications: context.medications
+      .map((item) => String(item).trim())
+      .filter(Boolean),
   };
 }
 
 function normalizeBody(body) {
-  if (!body || typeof body !== 'string') return body;
+  if (!body || typeof body !== "string") return body;
   try {
     const payload = JSON.parse(body);
-    if (payload && typeof payload === 'object' && payload.context) {
+    if (payload && typeof payload === "object" && payload.context) {
       payload.context = normalizeContext(payload.context);
       return JSON.stringify(payload);
     }
@@ -40,18 +46,22 @@ function normalizeBody(body) {
 }
 
 function sessionHeader(body) {
-  if (!body || typeof body !== 'string') return {};
+  if (!body || typeof body !== "string") return {};
   try {
     const payload = JSON.parse(body);
     const sessionId = payload?.session_id;
-    return sessionId ? { 'X-Session-Id': String(sessionId) } : {};
+    return sessionId ? { "X-Session-Id": String(sessionId) } : {};
   } catch (_error) {
     return {};
   }
 }
 
 function currentUserRole() {
-  return sessionStorage.getItem('kini_user_role') || localStorage.getItem('kini_user_role') || '';
+  return (
+    sessionStorage.getItem("kini_user_role") ||
+    localStorage.getItem("kini_user_role") ||
+    ""
+  );
 }
 
 export function getStoredUserRole() {
@@ -59,24 +69,26 @@ export function getStoredUserRole() {
 }
 
 export function setStoredUserRole(role) {
-  const normalized = String(role || '').trim().toUpperCase();
+  const normalized = String(role || "")
+    .trim()
+    .toUpperCase();
   if (!normalized) {
-    sessionStorage.removeItem('kini_user_role');
-    localStorage.removeItem('kini_user_role');
+    sessionStorage.removeItem("kini_user_role");
+    localStorage.removeItem("kini_user_role");
     return;
   }
-  sessionStorage.setItem('kini_user_role', normalized);
-  localStorage.removeItem('kini_user_role');
+  sessionStorage.setItem("kini_user_role", normalized);
+  localStorage.removeItem("kini_user_role");
 }
 
 function roleHeader() {
   const role = currentUserRole();
-  return role ? { 'X-User-Role': role } : {};
+  return role ? { "X-User-Role": role } : {};
 }
 
 async function parseResponse(response) {
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
     return response.json();
   }
   return response.text();
@@ -88,11 +100,11 @@ export async function request(path, options = {}) {
     ...options,
     body,
     headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
       ...roleHeader(),
       ...sessionHeader(body),
-      ...(options.headers || {})
-    }
+      ...(options.headers || {}),
+    },
   });
 
   if (!response.ok) {
@@ -103,7 +115,10 @@ export async function request(path, options = {}) {
       payload = null;
     }
     const detail = payload?.detail || payload?.message || response.statusText;
-    throw new ApiError(`${detail} (HTTP ${response.status})`, { status: response.status, payload });
+    throw new ApiError(`${detail} (HTTP ${response.status})`, {
+      status: response.status,
+      payload,
+    });
   }
 
   return parseResponse(response);
@@ -115,37 +130,43 @@ export function streamRequest(path, options = {}) {
     ...options,
     body,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...roleHeader(),
       ...sessionHeader(body),
-      ...(options.headers || {})
-    }
+      ...(options.headers || {}),
+    },
   });
 }
 
 const terminologyAutocompleteCache = new Map();
 
 export async function autocompleteTerm(query) {
-  const term = String(query || '').trim();
+  const term = String(query || "").trim();
   if (term.length < 2) return [];
   if (terminologyAutocompleteCache.has(term)) {
     return terminologyAutocompleteCache.get(term);
   }
-  const data = await request('/terminology/autocomplete', {
-    method: 'POST',
+  const data = await request("/terminology/autocomplete", {
+    method: "POST",
     body: JSON.stringify({ query: term, top_k: 8 }),
   });
   const results = Array.isArray(data.results) ? data.results : [];
   if (terminologyAutocompleteCache.size >= 50) {
-    terminologyAutocompleteCache.delete(terminologyAutocompleteCache.keys().next().value);
+    terminologyAutocompleteCache.delete(
+      terminologyAutocompleteCache.keys().next().value,
+    );
   }
   terminologyAutocompleteCache.set(term, results);
   return results;
 }
 
-export async function createEncounter(patientContext, encounterType = 'initial', diseaseScope = 'all') {
-  return request('/patient/encounter', {
-    method: 'POST',
+export async function createEncounter(
+  patientContext,
+  encounterType = "initial",
+  diseaseScope = "all",
+) {
+  return request("/patient/encounter", {
+    method: "POST",
     body: JSON.stringify({
       patient_context: normalizeContext(patientContext),
       encounter_type: encounterType,
@@ -160,29 +181,44 @@ export async function getPatientState(patientRefHash) {
 }
 
 export async function addVitals(patientRefHash, encounterId, vitals) {
-  return request('/patient/vitals', {
-    method: 'POST',
-    body: JSON.stringify({ patient_ref_hash: patientRefHash, encounter_id: encounterId, vitals }),
+  return request("/patient/vitals", {
+    method: "POST",
+    body: JSON.stringify({
+      patient_ref_hash: patientRefHash,
+      encounter_id: encounterId,
+      vitals,
+    }),
   });
 }
 
 export async function addLabs(patientRefHash, encounterId, labs) {
-  return request('/patient/labs', {
-    method: 'POST',
-    body: JSON.stringify({ patient_ref_hash: patientRefHash, encounter_id: encounterId, labs }),
+  return request("/patient/labs", {
+    method: "POST",
+    body: JSON.stringify({
+      patient_ref_hash: patientRefHash,
+      encounter_id: encounterId,
+      labs,
+    }),
   });
 }
 
 export async function computeScore(scorer, inputs, patientRef = null) {
-  return request('/clinical/score', {
-    method: 'POST',
+  return request("/clinical/score", {
+    method: "POST",
     body: JSON.stringify({ scorer, inputs, patient_ref: patientRef }),
   });
 }
 
-export async function overrideAlert(alertType, alertLevel, alertSummary, overrideReason, sessionId, patientRefHash = null) {
-  return request('/alerts/override', {
-    method: 'POST',
+export async function overrideAlert(
+  alertType,
+  alertLevel,
+  alertSummary,
+  overrideReason,
+  sessionId,
+  patientRefHash = null,
+) {
+  return request("/alerts/override", {
+    method: "POST",
     body: JSON.stringify({
       session_id: sessionId,
       patient_ref_hash: patientRefHash,
@@ -208,29 +244,34 @@ export function streamDDx(request, onEvent) {
   (async () => {
     try {
       const res = await fetch(`${API_BASE}/clinical/ddx`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request),
         signal,
       });
       if (!res.ok) throw new Error(`DDx request failed: ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
+        const lines = buffer.split("\n");
         buffer = lines.pop();
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try { onEvent(JSON.parse(line.slice(6))); } catch (_) { /* ignore */ }
+          if (line.startsWith("data: ")) {
+            try {
+              onEvent(JSON.parse(line.slice(6)));
+            } catch (_) {
+              /* ignore */
+            }
           }
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') onEvent({ type: 'error', message: err.message });
+      if (err.name !== "AbortError")
+        onEvent({ type: "error", message: err.message });
     }
   })();
 
@@ -240,7 +281,7 @@ export function streamDDx(request, onEvent) {
 // ── Pathway API ──────────────────────────────────────────────────────────────
 
 export async function listPathways() {
-  return request('/clinical/pathways');
+  return request("/clinical/pathways");
 }
 
 export function streamPathway(pathwayId, patientRef, onEvent) {
@@ -250,29 +291,37 @@ export function streamPathway(pathwayId, patientRef, onEvent) {
   (async () => {
     try {
       const res = await fetch(`${API_BASE}/clinical/pathway/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pathway_id: pathwayId, patient_ref: patientRef }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pathway_id: pathwayId,
+          patient_ref: patientRef,
+        }),
         signal,
       });
       if (!res.ok) throw new Error(`Pathway run failed: ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
+        const lines = buffer.split("\n");
         buffer = lines.pop();
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try { onEvent(JSON.parse(line.slice(6))); } catch (_) { /* ignore */ }
+          if (line.startsWith("data: ")) {
+            try {
+              onEvent(JSON.parse(line.slice(6)));
+            } catch (_) {
+              /* ignore */
+            }
           }
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') onEvent({ type: 'error', message: err.message });
+      if (err.name !== "AbortError")
+        onEvent({ type: "error", message: err.message });
     }
   })();
 
@@ -281,9 +330,14 @@ export function streamPathway(pathwayId, patientRef, onEvent) {
 
 // ── Document API ─────────────────────────────────────────────────────────────
 
-export async function generateDocument(documentType, patientRef, encounterId, additionalContext = null) {
-  return request('/clinical/documents/generate', {
-    method: 'POST',
+export async function generateDocument(
+  documentType,
+  patientRef,
+  encounterId,
+  additionalContext = null,
+) {
+  return request("/clinical/documents/generate", {
+    method: "POST",
     body: JSON.stringify({
       document_type: documentType,
       patient_ref: patientRef,
@@ -298,12 +352,17 @@ export async function getDocument(documentId) {
 }
 
 export async function listPatientDocuments(patientRef) {
-  return request(`/clinical/documents/patient/${encodeURIComponent(patientRef)}`);
+  return request(
+    `/clinical/documents/patient/${encodeURIComponent(patientRef)}`,
+  );
 }
 
 export async function reviewDocument(documentId, reviewedBy) {
-  return request(`/clinical/documents/${encodeURIComponent(documentId)}/review`, {
-    method: 'PATCH',
-    body: JSON.stringify({ reviewed_by: reviewedBy }),
-  });
+  return request(
+    `/clinical/documents/${encodeURIComponent(documentId)}/review`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ reviewed_by: reviewedBy }),
+    },
+  );
 }

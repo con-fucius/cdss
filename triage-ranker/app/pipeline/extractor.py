@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/pipeline/extractor.py
+"""triage-ranker/app/pipeline/extractor.py.
 
 Stage 1 — NLP entity extraction.
 
@@ -22,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 from ambulance_cdss_contracts.triage import ClinicalCategory, ExtractedKeyword
@@ -30,13 +29,21 @@ from ambulance_cdss_contracts.triage import ClinicalCategory, ExtractedKeyword
 logger = logging.getLogger(__name__)
 
 # Compiled pattern cache for clinical rules
-_rules_cache: Optional[List[Dict[str, Any]]] = None
-_compiled_patterns: Optional[List[Tuple[re.Pattern, Dict[str, Any]]]] = None
+_rules_cache: list[dict[str, Any]] | None = None
+_compiled_patterns: list[tuple[re.Pattern, dict[str, Any]]] | None = None
 
 # Negation cues for simple negation detection
 _NEGATION_CUES = [
-    "no", "not", "denies", "denied", "without", "hakuna",
-    "sijawahi", "hajawahi", "haina", "hamna",
+    "no",
+    "not",
+    "denies",
+    "denied",
+    "without",
+    "hakuna",
+    "sijawahi",
+    "hajawahi",
+    "haina",
+    "hamna",
 ]
 
 # Severity modifier cues
@@ -52,12 +59,12 @@ _SEVERITY_MODIFIERS = {
 }
 
 
-def _load_rules(rules_path: str) -> List[Dict[str, Any]]:
+def _load_rules(rules_path: str) -> list[dict[str, Any]]:
     """Load clinical_rules.yaml. Cached after first load."""
     global _rules_cache
     if _rules_cache is None:
         try:
-            with open(rules_path, "r", encoding="utf-8") as f:
+            with open(rules_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             _rules_cache = data.get("rules", [])
             logger.info("Loaded %d clinical rules from %s", len(_rules_cache), rules_path)
@@ -67,7 +74,9 @@ def _load_rules(rules_path: str) -> List[Dict[str, Any]]:
     return _rules_cache
 
 
-def _build_compiled_patterns(rules: List[Dict[str, Any]]) -> List[Tuple[re.Pattern, Dict[str, Any]]]:
+def _build_compiled_patterns(
+    rules: list[dict[str, Any]],
+) -> list[tuple[re.Pattern, dict[str, Any]]]:
     """Build compiled regex patterns for fast matching."""
     global _compiled_patterns
     if _compiled_patterns is not None:
@@ -80,7 +89,7 @@ def _build_compiled_patterns(rules: List[Dict[str, Any]]) -> List[Tuple[re.Patte
         # Escape and join with OR
         escaped = [re.escape(t.lower()) for t in terms]
         pattern_str = "|".join(escaped)
-        compiled = re.compile(r"\b(?:%s)\b" % pattern_str, re.IGNORECASE)
+        compiled = re.compile(rf"\b(?:{pattern_str})\b", re.IGNORECASE)
         patterns.append((compiled, rule))
 
     _compiled_patterns = patterns
@@ -88,19 +97,15 @@ def _build_compiled_patterns(rules: List[Dict[str, Any]]) -> List[Tuple[re.Patte
 
 
 def _detect_negation(text: str, match_start: int, match_end: int) -> bool:
-    """
-    Simple negation detection: check if any negation cue appears
+    """Simple negation detection: check if any negation cue appears
     within 5 words before the match.
     """
     # Look at the 50 characters before the match
     prefix = text[max(0, match_start - 50) : match_start].lower().split()
-    for cue in _NEGATION_CUES:
-        if cue in prefix[-5:]:
-            return True
-    return False
+    return any(cue in prefix[-5:] for cue in _NEGATION_CUES)
 
 
-def _detect_severity_modifiers(text: str, match_start: int, match_end: int) -> List[str]:
+def _detect_severity_modifiers(text: str, match_start: int, match_end: int) -> list[str]:
     """Detect severity modifiers near the match."""
     # Look at the 30 characters around the match
     context = text[max(0, match_start - 30) : match_end + 30].lower()
@@ -115,9 +120,8 @@ def extract_keywords(
     incident_desc: str,
     rules_path: str,
     spacy_model_path: str = "en_core_web_md",
-) -> List[ExtractedKeyword]:
-    """
-    Stage 1 — Extract clinical keywords from incident description.
+) -> list[ExtractedKeyword]:
+    """Stage 1 — Extract clinical keywords from incident description.
 
     Applies clinical_rules.yaml term matching after NLP tokenisation.
     Handles Swahili terms not recognised by spaCy model via keyword matching.
@@ -131,7 +135,7 @@ def extract_keywords(
     Returns:
         List of ExtractedKeyword from shared contracts
     """
-    keywords: List[ExtractedKeyword] = []
+    keywords: list[ExtractedKeyword] = []
 
     # Load rules
     rules = _load_rules(rules_path)
@@ -142,11 +146,11 @@ def extract_keywords(
     patterns = _build_compiled_patterns(rules)
 
     # Try spaCy tokenisation (may fail if model not available)
-    doc = None
     try:
         import spacy
+
         nlp = spacy.load(spacy_model_path, disable=["parser", "ner"])
-        doc = nlp(incident_desc)
+        nlp(incident_desc)
     except Exception as exc:
         logger.warning("spaCy model not available (%s). Using regex-only extraction.", exc)
 
@@ -180,13 +184,11 @@ def extract_keywords(
             )
 
     # Remove duplicate categories — keep the highest-severity match per category
-    seen: Dict[ClinicalCategory, ExtractedKeyword] = {}
+    seen: dict[ClinicalCategory, ExtractedKeyword] = {}
     for kw in keywords:
         if kw.is_negated:
             continue
-        if kw.category not in seen:
-            seen[kw.category] = kw
-        elif kw.severity_modifiers and not seen[kw.category].severity_modifiers:
+        if kw.category not in seen or kw.severity_modifiers and not seen[kw.category].severity_modifiers:
             seen[kw.category] = kw
 
     result = list(seen.values())

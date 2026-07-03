@@ -8,13 +8,15 @@ produce adequate page summaries for retrieval purposes.
 
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 import httpx
 import lancedb
@@ -34,7 +36,7 @@ PAGEINDEX_TABLE = "pageindex_chunks"
 _BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # Cheap models for page summarisation — never the expensive reasoning model
-_SUMMARISE_MODELS: Dict[str, str] = {
+_SUMMARISE_MODELS: dict[str, str] = {
     "groq": "llama-3.1-8b-instant",
     "puter": "openai/gpt-4o-mini",
 }
@@ -48,7 +50,7 @@ class PageIndexRow:
     section_path: str
     summary: str
     text: str
-    vector: List[float]
+    vector: list[float]
 
 
 def _clean_text(text: str) -> str:
@@ -61,7 +63,7 @@ def _extractive_summary(text: str, max_chars: int = 700) -> str:
     if len(cleaned) <= max_chars:
         return cleaned
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
-    selected: List[str] = []
+    selected: list[str] = []
     total = 0
     for sentence in sentences:
         if not sentence:
@@ -73,7 +75,7 @@ def _extractive_summary(text: str, max_chars: int = 700) -> str:
     return " ".join(selected).strip() or cleaned[:max_chars].rstrip()
 
 
-def _batched(items: List[str], batch_size: int) -> Iterable[List[str]]:
+def _batched(items: list[str], batch_size: int) -> Iterable[list[str]]:
     for idx in range(0, len(items), batch_size):
         yield items[idx : idx + batch_size]
 
@@ -84,7 +86,7 @@ class PageIndexBuilder:
     def __init__(
         self,
         db_path: str = DEFAULT_DB_PATH,
-        embedding_cache_dir: Optional[str] = None,
+        embedding_cache_dir: str | None = None,
         batch_size: int = 32,
     ):
         self.db_path = db_path
@@ -106,8 +108,7 @@ class PageIndexBuilder:
             raise RuntimeError(f"PageIndex extracted zero pages from {pdf_path}")
 
         summaries = [
-            await self._summarise_page(disease, page["page"], page["text"])
-            for page in pages
+            await self._summarise_page(disease, page["page"], page["text"]) for page in pages
         ]
         vectors = self._embed_summaries(summaries)
 
@@ -142,13 +143,13 @@ class PageIndexBuilder:
         )
         return len(rows)
 
-    def _extract_pages(self, pdf_path: str) -> List[Dict[str, Any]]:
+    def _extract_pages(self, pdf_path: str) -> list[dict[str, Any]]:
         try:
             return self._extract_pages_pypdf(pdf_path)
         except Exception:
             return self._extract_pages_pdfplumber(pdf_path)
 
-    def _extract_pages_pypdf(self, pdf_path: str) -> List[Dict[str, Any]]:
+    def _extract_pages_pypdf(self, pdf_path: str) -> list[dict[str, Any]]:
         from pypdf import PdfReader
 
         reader = PdfReader(pdf_path)
@@ -166,7 +167,7 @@ class PageIndexBuilder:
                 )
         return rows
 
-    def _extract_pages_pdfplumber(self, pdf_path: str) -> List[Dict[str, Any]]:
+    def _extract_pages_pdfplumber(self, pdf_path: str) -> list[dict[str, Any]]:
         import pdfplumber
 
         rows = []
@@ -192,8 +193,7 @@ class PageIndexBuilder:
         return "Page summary"
 
     async def _summarise_page(self, disease: str, page: int, text: str) -> str:
-        """
-        Summarise one page for retrieval.  Uses the cheap provider model;
+        """Summarise one page for retrieval.  Uses the cheap provider model;
         falls back to extractive summary if credentials are missing or call fails.
         """
         provider = get_llm_provider()
@@ -234,29 +234,24 @@ class PageIndexBuilder:
         except Exception:
             return _extractive_summary(text)
 
-    def _embed_summaries(self, summaries: List[str]) -> List[List[float]]:
-        vectors: List[List[float]] = []
+    def _embed_summaries(self, summaries: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
         list(self.embedding_model.embed(["warmup"]))
         for batch in _batched(summaries, self.batch_size):
             vectors.extend(
                 vector.tolist()
-                for vector in self.embedding_model.embed(
-                    [f"{_BGE_QUERY_PREFIX}{s}" for s in batch]
-                )
+                for vector in self.embedding_model.embed([f"{_BGE_QUERY_PREFIX}{s}" for s in batch])
             )
         return vectors
 
-    def _existing_rows_except(self, disease: str) -> List[Dict[str, Any]]:
+    def _existing_rows_except(self, disease: str) -> list[dict[str, Any]]:
         if PAGEINDEX_TABLE not in self._table_names():
             return []
         table = self.db.open_table(PAGEINDEX_TABLE)
         df = table.search().limit(100000).to_pandas()
         if df.empty:
             return []
-        return [
-            row.dropna().to_dict()
-            for _, row in df[df["disease"] != disease].iterrows()
-        ]
+        return [row.dropna().to_dict() for _, row in df[df["disease"] != disease].iterrows()]
 
     def _existing_diseases(self) -> set[str]:
         if PAGEINDEX_TABLE not in self._table_names():
@@ -273,18 +268,16 @@ class PageIndexBuilder:
         except Exception:
             return 0
 
-    def _table_names(self) -> List[str]:
+    def _table_names(self) -> list[str]:
         tables = self.db.list_tables()
         if hasattr(tables, "tables"):
             return list(tables.tables)
         return list(tables)
 
-    def _create_indexes(
-        self, table: Any, vector_dim: int, row_count: int
-    ) -> None:
+    def _create_indexes(self, table: Any, vector_dim: int, row_count: int) -> None:
         num_partitions = max(2, int(math.sqrt(max(row_count, 1))))
         num_sub_vectors = max(1, vector_dim // 8)
-        try:
+        with contextlib.suppress(Exception):
             table.create_index(
                 metric="cosine",
                 vector_column_name="vector",
@@ -292,9 +285,5 @@ class PageIndexBuilder:
                 num_sub_vectors=num_sub_vectors,
                 replace=True,
             )
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             table.create_fts_index("summary", replace=True)
-        except Exception:
-            pass

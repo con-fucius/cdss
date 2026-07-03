@@ -1,5 +1,4 @@
-"""
-app/protocols/registry.py
+"""app/protocols/registry.py.
 
 Protocol registry loader.
 
@@ -22,7 +21,6 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from .schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
 
@@ -40,9 +38,9 @@ class ProtocolMatchResult:
     """Result of chief-complaint protocol matching with confidence scoring."""
 
     protocol: DispatchProtocol
-    matched_triggers: List[str]
+    matched_triggers: list[str]
     confidence: float  # 0.0–1.0, len(matched_triggers) / len(protocol.chief_complaint_trigger)
-    alternatives: List[ProtocolMatchResult] = field(default_factory=list)
+    alternatives: list[ProtocolMatchResult] = field(default_factory=list)
 
 
 def _parse_protocol(raw: dict, source_path: Path) -> DispatchProtocol:
@@ -59,11 +57,9 @@ def _parse_protocol(raw: dict, source_path: Path) -> DispatchProtocol:
     ]
     missing = [k for k in required_top_level if k not in raw]
     if missing:
-        raise ProtocolRejectedError(
-            f"{source_path.name}: missing required fields {missing}"
-        )
+        raise ProtocolRejectedError(f"{source_path.name}: missing required fields {missing}")
 
-    questions: Dict[str, ProtocolQuestion] = {}
+    questions: dict[str, ProtocolQuestion] = {}
     for qid, qraw in raw["questions"].items():
         questions[qid] = ProtocolQuestion(
             question_id=qid,
@@ -76,7 +72,7 @@ def _parse_protocol(raw: dict, source_path: Path) -> DispatchProtocol:
             guidance_note=qraw.get("guidance_note"),
         )
 
-    terminal_outcomes: Dict[str, TerminalOutcome] = {}
+    terminal_outcomes: dict[str, TerminalOutcome] = {}
     for tid, traw in raw["terminal_outcomes"].items():
         terminal_outcomes[tid] = TerminalOutcome(
             priority_code=traw["priority_code"],
@@ -109,21 +105,16 @@ def _parse_protocol(raw: dict, source_path: Path) -> DispatchProtocol:
 
 
 def _validate_branch_integrity(protocol: DispatchProtocol, source_path: Path) -> None:
-    """
-    Confirm every branch_map target resolves to either a real question_id
+    """Confirm every branch_map target resolves to either a real question_id
     or a real terminal_outcome key. A dangling branch reference is a
     governance defect — the protocol is rejected, not loaded with a hole
     in it that would surface as a runtime crash mid-call.
     """
-    valid_targets = set(protocol.questions.keys()) | set(
-        protocol.terminal_outcomes.keys()
-    )
-    errors: List[str] = []
+    valid_targets = set(protocol.questions.keys()) | set(protocol.terminal_outcomes.keys())
+    errors: list[str] = []
 
     if protocol.entry_question_id not in protocol.questions:
-        errors.append(
-            f"entry_question_id {protocol.entry_question_id!r} is not a defined question"
-        )
+        errors.append(f"entry_question_id {protocol.entry_question_id!r} is not a defined question")
 
     for qid, question in protocol.questions.items():
         for answer, target in question.branch_map.items():
@@ -134,14 +125,11 @@ def _validate_branch_integrity(protocol: DispatchProtocol, source_path: Path) ->
                 )
 
     if errors:
-        raise ProtocolRejectedError(
-            f"{source_path.name}: branch integrity check failed: {errors}"
-        )
+        raise ProtocolRejectedError(f"{source_path.name}: branch integrity check failed: {errors}")
 
 
 def _validate_protocol_reachability(protocol: DispatchProtocol, source_path: Path) -> None:
-    """
-    Confirm every question and every terminal outcome is reachable from
+    """Confirm every question and every terminal outcome is reachable from
     entry_question_id via branch_map targets. A question or outcome that
     can never be reached — because no branch points at it — is dead code
     in the protocol: an authored question nobody will ever see, or a
@@ -150,7 +138,7 @@ def _validate_protocol_reachability(protocol: DispatchProtocol, source_path: Pat
     """
     # BFS from entry_question_id across branch_map targets
     queue: deque[str] = deque()
-    visited: Set[str] = set()
+    visited: set[str] = set()
 
     # Entry point must be a defined question (already validated by
     # _validate_branch_integrity, but guard defensively)
@@ -179,7 +167,7 @@ def _validate_protocol_reachability(protocol: DispatchProtocol, source_path: Pat
     unreachable_questions = set(protocol.questions.keys()) - reachable_questions
     unreachable_outcomes = set(protocol.terminal_outcomes.keys()) - reachable_outcomes
 
-    errors: List[str] = []
+    errors: list[str] = []
     if unreachable_questions:
         errors.append(
             f"unreachable questions (never reached from entry_question_id "
@@ -192,24 +180,20 @@ def _validate_protocol_reachability(protocol: DispatchProtocol, source_path: Pat
         )
 
     if errors:
-        raise ProtocolRejectedError(
-            f"{source_path.name}: reachability check failed: {errors}"
-        )
+        raise ProtocolRejectedError(f"{source_path.name}: reachability check failed: {errors}")
 
 
 class ProtocolRegistry:
     def __init__(self, protocols_dir: Path = DISPATCH_PROTOCOLS_DIR):
         self._protocols_dir = protocols_dir
-        self._active: Dict[str, DispatchProtocol] = {}
-        self._rejected: List[Dict[str, str]] = []
+        self._active: dict[str, DispatchProtocol] = {}
+        self._rejected: list[dict[str, str]] = []
 
     def load_all(self) -> None:
         self._active.clear()
         self._rejected.clear()
         if not self._protocols_dir.exists():
-            logger.warning(
-                "Protocol directory does not exist: %s", self._protocols_dir
-            )
+            logger.warning("Protocol directory does not exist: %s", self._protocols_dir)
             return
 
         for path in sorted(self._protocols_dir.glob("*.json")):
@@ -231,12 +215,11 @@ class ProtocolRegistry:
                 logger.error("Protocol file unparseable: %s — %s", path.name, exc)
                 self._rejected.append({"file": path.name, "reason": str(exc)})
 
-    def get(self, protocol_id: str) -> Optional[DispatchProtocol]:
+    def get(self, protocol_id: str) -> DispatchProtocol | None:
         return self._active.get(protocol_id)
 
-    def find_by_chief_complaint(self, chief_complaint: str) -> Optional[DispatchProtocol]:
-        """
-        Returns the best-matching active protocol for a chief complaint string.
+    def find_by_chief_complaint(self, chief_complaint: str) -> DispatchProtocol | None:
+        """Returns the best-matching active protocol for a chief complaint string.
 
         Matching rules (in order of priority):
         1. A trigger must appear as a whole word or phrase boundary match in
@@ -252,9 +235,10 @@ class ProtocolRegistry:
            be resolved by the protocol author.
         """
         import re
+
         cc_lower = chief_complaint.strip().lower()
 
-        best_protocol: Optional[DispatchProtocol] = None
+        best_protocol: DispatchProtocol | None = None
         best_trigger_len: int = -1
         best_trigger: str = ""
 
@@ -305,11 +289,8 @@ class ProtocolRegistry:
             )
         return best_protocol
 
-    def match_by_chief_complaint(
-        self, chief_complaint: str
-    ) -> Optional[ProtocolMatchResult]:
-        """
-        Returns a ProtocolMatchResult with confidence scoring for the
+    def match_by_chief_complaint(self, chief_complaint: str) -> ProtocolMatchResult | None:
+        """Returns a ProtocolMatchResult with confidence scoring for the
         best-matching active protocol, plus any alternative protocols that
         also partially matched.
 
@@ -331,10 +312,10 @@ class ProtocolRegistry:
         cc_lower = chief_complaint.strip().lower()
 
         # Collect all protocols with at least one trigger match
-        all_matches: List[ProtocolMatchResult] = []
+        all_matches: list[ProtocolMatchResult] = []
 
         for protocol in self._active.values():
-            matched_triggers: List[str] = []
+            matched_triggers: list[str] = []
             for trigger in protocol.chief_complaint_trigger:
                 t = trigger.strip().lower()
                 if not t:
@@ -347,9 +328,7 @@ class ProtocolRegistry:
                 continue
 
             total_triggers = len(protocol.chief_complaint_trigger)
-            confidence = (
-                len(matched_triggers) / total_triggers if total_triggers > 0 else 0.0
-            )
+            confidence = len(matched_triggers) / total_triggers if total_triggers > 0 else 0.0
             all_matches.append(
                 ProtocolMatchResult(
                     protocol=protocol,
@@ -390,7 +369,7 @@ class ProtocolRegistry:
 
         return winner
 
-    def list_active(self) -> List[Dict[str, str]]:
+    def list_active(self) -> list[dict[str, str]]:
         return [
             {
                 "protocol_id": p.protocol_id,
@@ -402,7 +381,7 @@ class ProtocolRegistry:
             for p in self._active.values()
         ]
 
-    def list_rejected(self) -> List[Dict[str, str]]:
+    def list_rejected(self) -> list[dict[str, str]]:
         return list(self._rejected)
 
 

@@ -1,5 +1,4 @@
-"""
-tests/test_status_transitions.py
+"""tests/test_status_transitions.py.
 
 Exercises the status transition enforcement in app/repositories.py
 (VALID_TRANSITIONS and InvalidStatusTransitionError) and the
@@ -16,12 +15,12 @@ import inspect
 
 from app.models import IncidentStatus
 from app.repositories import (
-    InvalidStatusTransitionError,
     VALID_TRANSITIONS,
+    InvalidStatusTransitionError,
 )
 
-
 # ── Transition table completeness ─────────────────────────────────────────
+
 
 def test_valid_transitions_covers_all_statuses():
     """Every IncidentStatus value must be a key in VALID_TRANSITIONS."""
@@ -76,6 +75,7 @@ def test_transporting_allows_handoff_complete_and_closed():
 
 
 # ── Invalid transitions (NOT in allowed set) ──────────────────────────────
+
 
 def test_closed_to_dispatched_not_allowed():
     """CLOSED → DISPATCHED is not in the allowed set."""
@@ -169,6 +169,7 @@ def test_transporting_to_dispatched_not_allowed():
 
 # ── InvalidStatusTransitionError ──────────────────────────────────────────
 
+
 def test_error_has_correct_fields():
     """InvalidStatusTransitionError carries structured data for API responses."""
     err = InvalidStatusTransitionError(
@@ -185,18 +186,14 @@ def test_error_has_correct_fields():
 
 def test_error_is_value_error():
     """InvalidStatusTransitionError is a ValueError subclass."""
-    err = InvalidStatusTransitionError(
-        IncidentStatus.CLOSED, IncidentStatus.DISPATCHED, set()
-    )
+    err = InvalidStatusTransitionError(IncidentStatus.CLOSED, IncidentStatus.DISPATCHED, set())
     assert isinstance(err, ValueError)
 
 
 def test_error_with_nonempty_allowed():
     """Error carries the allowed set for the response body."""
     allowed = {IncidentStatus.ON_SCENE, IncidentStatus.CLOSED}
-    err = InvalidStatusTransitionError(
-        IncidentStatus.DISPATCHED, IncidentStatus.RECEIVED, allowed
-    )
+    err = InvalidStatusTransitionError(IncidentStatus.DISPATCHED, IncidentStatus.RECEIVED, allowed)
     assert err.allowed_statuses == allowed
     assert IncidentStatus.ON_SCENE in err.allowed_statuses
     assert IncidentStatus.CLOSED in err.allowed_statuses
@@ -204,9 +201,11 @@ def test_error_with_nonempty_allowed():
 
 # ── Repository function signature ─────────────────────────────────────────
 
+
 def test_update_incident_status_signature():
     """update_incident_status must accept incident_id, status, and timestamp kwargs."""
     from app.repositories import update_incident_status
+
     sig = inspect.signature(update_incident_status)
     params = list(sig.parameters.keys())
     assert "incident_id" in params
@@ -215,9 +214,11 @@ def test_update_incident_status_signature():
 
 # ── Endpoint catches InvalidStatusTransitionError ─────────────────────────
 
+
 def test_endpoint_catches_invalid_status_transition_error():
     """The update_incident_status endpoint imports and catches InvalidStatusTransitionError."""
     from app import main
+
     source = inspect.getsource(main.update_incident_status)
     assert "InvalidStatusTransitionError" in source
 
@@ -225,6 +226,7 @@ def test_endpoint_catches_invalid_status_transition_error():
 def test_endpoint_returns_422_detail_structure():
     """The 422 detail must have error, current, requested, allowed keys."""
     from app import main
+
     source = inspect.getsource(main.update_incident_status)
     assert '"error": "invalid_status_transition"' in source
     assert '"current"' in source

@@ -1,5 +1,4 @@
-"""
-tests/test_dashboard.py
+"""tests/test_dashboard.py.
 
 Phase 6 — unit tests for dashboard sort ordering and stats aggregation.
 
@@ -13,10 +12,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
-from app.repositories import _priority_sort, _PRIORITY_SORT_KEY
 from app.models import IncidentStatus
+from app.repositories import _priority_sort
 
 
 class TestPrioritySort:
@@ -64,8 +61,7 @@ class TestPrioritySort:
 
 
 class TestDashboardStatsAggregationLogic:
-    """
-    Exercises the aggregation logic extracted from get_dashboard_stats
+    """Exercises the aggregation logic extracted from get_dashboard_stats
     without a live database, by replicating the loop against
     SimpleNamespace rows. This confirms the counting logic is correct
     independently of the DB query.
@@ -80,12 +76,12 @@ class TestDashboardStatsAggregationLogic:
             priority_key = row.priority_code or "no_outcome_yet"
             by_priority[priority_key] = by_priority.get(priority_key, 0) + 1
         active_count = sum(
-            1 for r in rows
+            1
+            for r in rows
             if r.status not in (IncidentStatus.CLOSED, IncidentStatus.HANDOFF_COMPLETE)
         )
         critical_count = sum(
-            1 for r in rows
-            if r.priority_code and r.priority_code.startswith("P1_")
+            1 for r in rows if r.priority_code and r.priority_code.startswith("P1_")
         )
         return {
             "total": len(rows),
@@ -115,7 +111,9 @@ class TestDashboardStatsAggregationLogic:
         rows = [
             SimpleNamespace(status=IncidentStatus.DISPATCHED, priority_code="P2_AIRWAY_PARTIAL"),
             SimpleNamespace(status=IncidentStatus.CLOSED, priority_code="P3_TRAUMA_MINOR"),
-            SimpleNamespace(status=IncidentStatus.HANDOFF_COMPLETE, priority_code="P1_AIRWAY_COMPLETE"),
+            SimpleNamespace(
+                status=IncidentStatus.HANDOFF_COMPLETE, priority_code="P1_AIRWAY_COMPLETE"
+            ),
         ]
         result = self._aggregate(rows)
         assert result["active"] == 1
@@ -123,7 +121,9 @@ class TestDashboardStatsAggregationLogic:
     def test_critical_count_only_p1(self):
         rows = [
             SimpleNamespace(status=IncidentStatus.DISPATCHED, priority_code="P1_AIRWAY_COMPLETE"),
-            SimpleNamespace(status=IncidentStatus.DISPATCHED, priority_code="P1_TRAUMA_SEVERE_BLEEDING"),
+            SimpleNamespace(
+                status=IncidentStatus.DISPATCHED, priority_code="P1_TRAUMA_SEVERE_BLEEDING"
+            ),
             SimpleNamespace(status=IncidentStatus.ON_SCENE, priority_code="P2_AIRWAY_PARTIAL"),
             SimpleNamespace(status=IncidentStatus.RECEIVED, priority_code=None),
         ]

@@ -1,5 +1,4 @@
-"""
-Unit tests for facility-mapper BallTreeIndex, ETA computation, and coordinate validation.
+"""Unit tests for facility-mapper BallTreeIndex, ETA computation, and coordinate validation.
 
 Tests the core spatial matching logic without a database or network:
 - BallTreeIndex.find_nearest with synthetic facility data
@@ -11,13 +10,11 @@ Tests the core spatial matching logic without a database or network:
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from unittest.mock import patch
 
+import numpy as np
 from app.data import BallTreeIndex, validate_coordinates
 from app.matcher import _compute_eta_minutes
-
 
 # ── Test coordinate validation ────────────────────────────────────────────
 
@@ -161,8 +158,17 @@ class TestBallTreeIndex:
 
     def test_find_nearest_services_filter(self):
         facilities = [
-            self._make_facility("F1", "General Hospital", -1.292, 36.822, level=4, services=["surgery"]),
-            self._make_facility("F2", "Specialist Hospital", -1.293, 36.823, level=5, services=["surgery", "icu", "cardiac"]),
+            self._make_facility(
+                "F1", "General Hospital", -1.292, 36.822, level=4, services=["surgery"]
+            ),
+            self._make_facility(
+                "F2",
+                "Specialist Hospital",
+                -1.293,
+                36.823,
+                level=5,
+                services=["surgery", "icu", "cardiac"],
+            ),
             self._make_facility("F3", "Clinic", -1.294, 36.824, level=3, services=["basic"]),
         ]
         index = self._make_index(facilities)
@@ -214,8 +220,10 @@ class TestBallTreeIndex:
         assert index.is_ready() is False
         assert index.facility_count == 0
 
-        index = self._make_index([
-            self._make_facility("F1", "H1", -1.29, 36.82, level=4),
-        ])
+        index = self._make_index(
+            [
+                self._make_facility("F1", "H1", -1.29, 36.82, level=4),
+            ]
+        )
         assert index.is_ready() is True
         assert index.facility_count == 1

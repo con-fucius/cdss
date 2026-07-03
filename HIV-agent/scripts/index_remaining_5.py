@@ -1,5 +1,4 @@
-"""
-DEPRECATED: do not use as a bulk remediation entrypoint.
+r"""DEPRECATED: do not use as a bulk remediation entrypoint.
 
 This script retries HIV plus four other PDFs in one long process and can
 recreate the prior failure mode where one problematic PDF blocks unrelated
@@ -12,14 +11,16 @@ Index the remaining 5 diseases in one process. Logs to file.
 Run from D:\\Projects\\CDSS\\HIV-agent:
     .\\.venv\\Scripts\\python.exe -m scripts.index_remaining_5
 """
+
 import os
+
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
+import logging
 import sys
 import time
 import traceback
-import logging
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,8 +45,9 @@ def main():
     log.info("STEP 2: Manager init (loads bge model — ~4 min once)")
     log.info("=" * 60)
     t = time.time()
-    from app.ingest import IngestionManager, list_lancedb_tables
     from app.config import DISEASE_CONFIG
+    from app.ingest import IngestionManager, list_lancedb_tables
+
     mgr = IngestionManager()
     log.info("Manager ready in %.1fs. Tables: %s", time.time() - t, list_lancedb_tables(mgr.db))
 

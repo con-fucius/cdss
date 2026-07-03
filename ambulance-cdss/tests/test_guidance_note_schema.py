@@ -1,5 +1,4 @@
-"""
-tests/test_guidance_note_schema.py
+"""tests/test_guidance_note_schema.py.
 
 Confirms the Mode 2 guidance_note field is loaded from protocol JSON and
 that all three allow_guidance_lookup=true questions across the proving

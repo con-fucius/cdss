@@ -1,2 +1,1 @@
-"""API Routers"""
-
+"""API Routers."""

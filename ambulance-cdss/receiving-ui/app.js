@@ -14,8 +14,12 @@ const TOKEN = "__TOKEN__";
 
 const el = (id) => document.getElementById(id);
 
-function show(node) { node.classList.remove("hidden"); }
-function hide(node) { node.classList.add("hidden"); }
+function show(node) {
+  node.classList.remove("hidden");
+}
+function hide(node) {
+  node.classList.add("hidden");
+}
 
 function escapeHtml(str) {
   const d = document.createElement("div");
@@ -25,15 +29,25 @@ function escapeHtml(str) {
 
 function formatTimestamp(iso) {
   if (!iso) return "\u2014";
-  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }
 
 function formatTimestampShort(iso) {
   if (!iso) return "\u2014";
   try {
     const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch { return iso; }
+    return d.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
 function scoreClass(level) {
@@ -53,13 +67,15 @@ function gcsFlag(total) {
 
 async function loadHandoff() {
   if (INCIDENT_ID === "__INCIDENT_ID__" || TOKEN === "__TOKEN__") {
-    showError("This page must be accessed via a valid handoff link from the dispatcher.");
+    showError(
+      "This page must be accessed via a valid handoff link from the dispatcher.",
+    );
     return;
   }
 
   try {
     const res = await fetch(
-      `${API_BASE}/incidents/${encodeURIComponent(INCIDENT_ID)}/handoff`
+      `${API_BASE}/incidents/${encodeURIComponent(INCIDENT_ID)}/handoff`,
     );
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -89,13 +105,16 @@ function renderHandoff(data) {
   const code = data.priority_code || "PRIORITY NOT RECORDED";
   el("priority-code").textContent = code;
   if (code.startsWith("P2")) banner.className = "priority-banner priority-p2";
-  else if (code.startsWith("P3") || code.startsWith("P4")) banner.className = "priority-banner priority-p3";
+  else if (code.startsWith("P3") || code.startsWith("P4"))
+    banner.className = "priority-banner priority-p3";
   else if (code.startsWith("P1")) banner.className = "priority-banner";
   else banner.className = "priority-banner";
 
   el("incident-id").textContent = `ID: ${data.incident_id}`;
-  el("status-value").textContent = `Status: ${(data.status || "").replace(/_/g, " ")}`;
-  el("unit-value").textContent = `Unit: ${data.assigned_unit_id || "not assigned"}`;
+  el("status-value").textContent =
+    `Status: ${(data.status || "").replace(/_/g, " ")}`;
+  el("unit-value").textContent =
+    `Unit: ${data.assigned_unit_id || "not assigned"}`;
 
   // Chief complaint
   el("chief-complaint").textContent = data.chief_complaint || "not recorded";
@@ -104,18 +123,24 @@ function renderHandoff(data) {
   const facilityName = data.routed_facility_name || data.routed_facility_id;
   el("facility-name").textContent = facilityName || "No facility routed";
   if (data.routed_facility_id && data.routed_facility_name) {
-    el("facility-detail").textContent = `Facility ID: ${data.routed_facility_id}`;
+    el("facility-detail").textContent =
+      `Facility ID: ${data.routed_facility_id}`;
   }
 
   // Protocol
   const parts = [];
   if (data.dispatch_protocol_id) {
-    parts.push(`Dispatch: ${data.dispatch_protocol_id} (v${data.dispatch_protocol_version || "-"})`);
+    parts.push(
+      `Dispatch: ${data.dispatch_protocol_id} (v${data.dispatch_protocol_version || "-"})`,
+    );
   }
   if (data.field_protocol_id) {
-    parts.push(`Field: ${data.field_protocol_id} (v${data.field_protocol_version || "-"})`);
+    parts.push(
+      `Field: ${data.field_protocol_id} (v${data.field_protocol_version || "-"})`,
+    );
   }
-  el("protocol-info").textContent = parts.length > 0 ? parts.join(" | ") : "No protocol recorded";
+  el("protocol-info").textContent =
+    parts.length > 0 ? parts.join(" | ") : "No protocol recorded";
 
   // Dispatch Q&A
   renderDispatchQA(data.dispatch_qa || []);
@@ -136,13 +161,15 @@ function renderHandoff(data) {
   renderFieldActions(data.field_actions || []);
 
   // Footer
-  el("generated-at").textContent = `Generated at: ${formatTimestamp(new Date().toISOString())}`;
+  el("generated-at").textContent =
+    `Generated at: ${formatTimestamp(new Date().toISOString())}`;
 }
 
 function renderDispatchQA(qa) {
   const container = el("dispatch-qa");
   if (qa.length === 0) {
-    container.innerHTML = '<div class="empty-data">No dispatch answers recorded.</div>';
+    container.innerHTML =
+      '<div class="empty-data">No dispatch answers recorded.</div>';
     return;
   }
   container.innerHTML = "";
@@ -177,27 +204,41 @@ function renderClinicalAlerts(data) {
 
   // NEWS2 alert
   const news2Alert = el("news2-alert");
-  if (data.highest_news2 && data.highest_news2.news2_score !== null && data.highest_news2.news2_score !== undefined) {
+  if (
+    data.highest_news2 &&
+    data.highest_news2.news2_score !== null &&
+    data.highest_news2.news2_score !== undefined
+  ) {
     hasAlerts = true;
     show(news2Alert);
     const score = data.highest_news2.news2_score;
     const level = data.highest_news2.news2_risk_level || "";
-    const flag = score.includes("high") ? "critical" : (score.includes("medium") ? "elevated" : "");
+    const flag = score.includes("high")
+      ? "critical"
+      : score.includes("medium")
+        ? "elevated"
+        : "";
     news2Alert.className = `alert-card ${flag}`;
     el("news2-value").textContent = score;
-    el("news2-detail").textContent = `${level} at ${formatTimestampShort(data.highest_news2.recorded_at)}`;
+    el("news2-detail").textContent =
+      `${level} at ${formatTimestampShort(data.highest_news2.recorded_at)}`;
   }
 
   // GCS alert
   const gcsAlert = el("gcs-alert");
-  if (data.lowest_gcs && data.lowest_gcs.gcs_total !== null && data.lowest_gcs.gcs_total !== undefined) {
+  if (
+    data.lowest_gcs &&
+    data.lowest_gcs.gcs_total !== null &&
+    data.lowest_gcs.gcs_total !== undefined
+  ) {
     hasAlerts = true;
     show(gcsAlert);
     const total = data.lowest_gcs.gcs_total;
-    const flag = total <= 8 ? "critical" : (total <= 12 ? "elevated" : "");
+    const flag = total <= 8 ? "critical" : total <= 12 ? "elevated" : "";
     gcsAlert.className = `alert-card ${flag}`;
     el("gcs-value").textContent = total;
-    el("gcs-detail").textContent = `at ${formatTimestampShort(data.lowest_gcs.recorded_at)}`;
+    el("gcs-detail").textContent =
+      `at ${formatTimestampShort(data.lowest_gcs.recorded_at)}`;
   }
 
   if (hasAlerts) {
@@ -234,9 +275,10 @@ function renderVitalsTimeline(vitals) {
 
   vitals.forEach((v) => {
     const tr = document.createElement("tr");
-    const bp = (v.bp_systolic !== null && v.bp_systolic !== undefined)
-      ? `${v.bp_systolic}/${v.bp_diastolic || "?"}`
-      : "\u2014";
+    const bp =
+      v.bp_systolic !== null && v.bp_systolic !== undefined
+        ? `${v.bp_systolic}/${v.bp_diastolic || "?"}`
+        : "\u2014";
     const news2Class = scoreClass(v.news2_risk_level);
     const gcsClass = gcsFlag(v.gcs_total);
 
@@ -263,7 +305,8 @@ function renderVitalsTimeline(vitals) {
 function renderMedications(meds) {
   const container = el("medications");
   if (meds.length === 0) {
-    container.innerHTML = '<div class="empty-data">No medications or items recorded.</div>';
+    container.innerHTML =
+      '<div class="empty-data">No medications or items recorded.</div>';
     return;
   }
 
@@ -292,7 +335,8 @@ function renderMedications(meds) {
   if (notAdministered.length > 0) {
     const group = document.createElement("div");
     group.className = "medication-group";
-    group.innerHTML = '<div class="medication-group__title">Carried / considered, NOT administered</div>';
+    group.innerHTML =
+      '<div class="medication-group__title">Carried / considered, NOT administered</div>';
     notAdministered.forEach((m) => {
       const item = document.createElement("div");
       item.className = "medication-item not-administered";
@@ -310,7 +354,8 @@ function renderMedications(meds) {
 function renderFieldActions(actions) {
   const container = el("field-actions");
   if (actions.length === 0) {
-    container.innerHTML = '<div class="empty-data">No field actions recorded.</div>';
+    container.innerHTML =
+      '<div class="empty-data">No field actions recorded.</div>';
     return;
   }
   container.innerHTML = "";
@@ -321,7 +366,7 @@ function renderFieldActions(actions) {
 
     const detail = isConfirmation
       ? `Pre-arrival instructions confirmed by ${escapeHtml(a.data?.confirmed_by || "?")}`
-      : (a.data?.note || a.data?.step_title || JSON.stringify(a.data || {}));
+      : a.data?.note || a.data?.step_title || JSON.stringify(a.data || {});
 
     div.innerHTML = `
       <div class="action-item__header">

@@ -1,5 +1,4 @@
-"""
-PyMuPDF-based PDF extractor (Fallback 1).
+"""PyMuPDF-based PDF extractor (Fallback 1).
 
 Phase 0 fix: Previously returned one giant markdown blob typed as "markdown"
 which HierarchicalIndexer never matched, producing zero chunks.
@@ -11,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 import pymupdf4llm
 
@@ -27,16 +26,15 @@ _TABLE_ROW_RE = re.compile(r"^\|.+\|$")
 
 def _parse_markdown_into_sections(
     md_text: str,
-) -> List[Dict[str, Any]]:
-    """
-    Split a markdown string into section and table items.
+) -> list[dict[str, Any]]:
+    """Split a markdown string into section and table items.
     Each section starts at a header line and runs until the next header.
     Contiguous table rows are collected into table items.
     """
-    sections: List[Dict[str, Any]] = []
+    sections: list[dict[str, Any]] = []
     current_title = "General"
-    current_lines: List[str] = []
-    table_lines: List[str] = []
+    current_lines: list[str] = []
+    table_lines: list[str] = []
     in_table = False
     # pymupdf4llm does not give page numbers per section; page 0 marks unknown.
     # The chunk will still carry correct text content
@@ -57,9 +55,7 @@ def _parse_markdown_into_sections(
     def flush_table() -> None:
         body = "\n".join(table_lines).strip()
         if body and len(table_lines) > 1:
-            sections.append(
-                {"text": body, "title": f"Table", "page": page, "type": "table"}
-            )
+            sections.append({"text": body, "title": "Table", "page": page, "type": "table"})
 
     for line in md_text.splitlines():
         header_match = _HEADER_RE.match(line)
@@ -104,9 +100,7 @@ class PyMuPDFExtractor(BaseExtractor):
         sections = _parse_markdown_into_sections(md_text)
 
         quality = self.get_quality_score(sections)
-        logger.info(
-            "PyMuPDFExtractor: %d items, quality=%.2f", len(sections), quality
-        )
+        logger.info("PyMuPDFExtractor: %d items, quality=%.2f", len(sections), quality)
         return ExtractedDocument(
             content=sections,
             quality_score=quality,

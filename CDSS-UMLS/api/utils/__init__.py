@@ -1,2 +1,1 @@
-"""Utility Functions"""
-
+"""Utility Functions."""

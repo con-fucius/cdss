@@ -1,5 +1,4 @@
-"""
-Search tools for CDSS.
+"""Search tools for CDSS.
 
 The runtime supports per-disease LanceDB tables and the legacy ``documents``
 table so the system remains queryable during remediation.
@@ -25,7 +24,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import lancedb
@@ -35,7 +34,6 @@ from .config import DISEASE_CONFIG
 from .logs import log_retrieval
 from .providers import (
     get_llm_provider,
-    get_llm_model,
     provider_auth_header,
     provider_chat_endpoint,
     provider_has_credentials,
@@ -59,7 +57,7 @@ class RetrievedChunk:
     parent_text: str
     section_title: str
     page: int
-    score: float          # Always in [0, 1]; 1.0 = most similar
+    score: float  # Always in [0, 1]; 1.0 = most similar
     disease: str
     chunk_id: str
     parent_id: str
@@ -70,7 +68,7 @@ class RetrievedChunk:
 
 @dataclass
 class KBResult:
-    data: Dict[str, Any]
+    data: dict[str, Any]
     text: str
     source: str
     disease: str
@@ -94,15 +92,14 @@ def _sigmoid(x: float) -> float:
 
 
 def _cosine_distance_to_similarity(distance: float) -> float:
-    """
-    LanceDB returns cosine *distance* in [0, 2] for unit vectors.
+    """LanceDB returns cosine *distance* in [0, 2] for unit vectors.
     BGE embeddings are L2-normalised so distance ∈ [0, 2].
     Similarity = 1 - distance/2  →  [0, 1].
     """
     return max(0.0, 1.0 - float(distance) / 2.0)
 
 
-def _table_names(db: Any) -> List[str]:
+def _table_names(db: Any) -> list[str]:
     if hasattr(db, "table_names"):
         names = db.table_names()
         return list(names)
@@ -113,21 +110,19 @@ def _table_names(db: Any) -> List[str]:
 
 
 class SearchIndex:
-    _instance: Optional["SearchIndex"] = None
+    _instance: SearchIndex | None = None
 
-    def __new__(cls, db_path: Optional[str] = None):
+    def __new__(cls, db_path: str | None = None):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         if self._initialized:
             return
 
-        configured_path = (
-            db_path or os.getenv("LANCEDB_PATH") or str(DEFAULT_DB_PATH)
-        )
+        configured_path = db_path or os.getenv("LANCEDB_PATH") or str(DEFAULT_DB_PATH)
         self.db_path = Path(configured_path).resolve()
         self.db = lancedb.connect(str(self.db_path))
         self._embedding_model = None
@@ -140,13 +135,13 @@ class SearchIndex:
     # Table helpers                                                         #
     # ------------------------------------------------------------------ #
 
-    def table_names(self) -> List[str]:
+    def table_names(self) -> list[str]:
         return _table_names(self.db)
 
-    def guideline_tables(self) -> List[str]:
+    def guideline_tables(self) -> list[str]:
         return [n for n in self.table_names() if n.endswith("_guidelines")]
 
-    def available_diseases(self) -> List[str]:
+    def available_diseases(self) -> list[str]:
         diseases = [n.removesuffix("_guidelines") for n in self.guideline_tables()]
         if "documents" in self.table_names() and "hiv" not in diseases:
             diseases.append("hiv")
@@ -173,7 +168,7 @@ class SearchIndex:
                 if "already exists" not in msg and "exists" not in msg:
                     logger.warning("PageIndex FTS index check failed: %s", exc)
 
-    def _get_table_names(self, disease: Optional[str] = None) -> List[str]:
+    def _get_table_names(self, disease: str | None = None) -> list[str]:
         all_tables = self.table_names()
         if disease:
             target = f"{disease.lower()}_guidelines"
@@ -194,26 +189,23 @@ class SearchIndex:
     def _get_embedding_model(self):
         if self._embedding_model is None:
             from fastembed import TextEmbedding
+
             self._embedding_model = TextEmbedding(model_name="BAAI/bge-base-en-v1.5")
         return self._embedding_model
 
     def _get_reranker(self):
         if self._reranker is None:
             from rerankers import Reranker
-            self._reranker = Reranker(
-                "BAAI/bge-reranker-base", model_type="cross-encoder"
-            )
+
+            self._reranker = Reranker("BAAI/bge-reranker-base", model_type="cross-encoder")
         return self._reranker
 
     # ------------------------------------------------------------------ #
     # HyDE — provider-aware, uses cheap model, non-fatal                   #
     # ------------------------------------------------------------------ #
 
-    async def _generate_hyde_hypothesis(
-        self, query: str, disease: Optional[str]
-    ) -> str:
-        """
-        Generate a hypothetical guideline excerpt for better embedding alignment.
+    async def _generate_hyde_hypothesis(self, query: str, disease: str | None) -> str:
+        """Generate a hypothetical guideline excerpt for better embedding alignment.
         Uses the configured provider's cheapest model.
         Falls back to the raw query on any error.
         """
@@ -257,9 +249,7 @@ class SearchIndex:
                     },
                 )
                 if res.status_code == 200:
-                    hypothesis = (
-                        res.json()["choices"][0]["message"]["content"].strip()
-                    )
+                    hypothesis = res.json()["choices"][0]["message"]["content"].strip()
                     return f"{query} {hypothesis}"
         except Exception as exc:
             logger.warning("HyDE generation failed (%s): %s", provider, exc)
@@ -270,9 +260,7 @@ class SearchIndex:
     # Row → chunk conversion                                               #
     # ------------------------------------------------------------------ #
 
-    def _row_to_chunk(
-        self, row: Any, score: float, table_name: str
-    ) -> RetrievedChunk:
+    def _row_to_chunk(self, row: Any, score: float, table_name: str) -> RetrievedChunk:
         LOW_CONFIDENCE_THRESHOLD = 0.45
 
         if table_name == "documents":
@@ -330,9 +318,7 @@ class SearchIndex:
             line = re.sub(r"\s+", " ", raw).strip(" -\t")
             if not line:
                 continue
-            if line.lower().startswith(
-                "kenya hiv prevention and treatment guidelines"
-            ):
+            if line.lower().startswith("kenya hiv prevention and treatment guidelines"):
                 continue
             if line == source:
                 continue
@@ -346,7 +332,7 @@ class SearchIndex:
             title = f"{title[:93].rstrip()}..."
         return f"Page {page}: {title}"
 
-    def legacy_toc(self, limit: int = 1000) -> List[Dict[str, Any]]:
+    def legacy_toc(self, limit: int = 1000) -> list[dict[str, Any]]:
         if "documents" not in self.table_names():
             return []
         table = self.db.open_table("documents")
@@ -354,13 +340,9 @@ class SearchIndex:
         if df.empty:
             return []
         toc = []
-        for page, page_df in df.sort_values(["page", "id"]).groupby(
-            "page", sort=True
-        ):
+        for page, page_df in df.sort_values(["page", "id"]).groupby("page", sort=True):
             first = page_df.iloc[0]
-            source = str(
-                first.get("source", "Kenya-ARV-Guidelines-2022-Final-1.pdf")
-            )
+            source = str(first.get("source", "Kenya-ARV-Guidelines-2022-Final-1.pdf"))
             page_number = int(page or 0)
             toc.append(
                 {
@@ -381,9 +363,7 @@ class SearchIndex:
     # Per-table search                                                     #
     # ------------------------------------------------------------------ #
 
-    async def _search_legacy_documents(
-        self, query: str, k_final: int
-    ) -> List[RetrievedChunk]:
+    async def _search_legacy_documents(self, query: str, k_final: int) -> list[RetrievedChunk]:
         def _sync() -> pd.DataFrame:
             return (
                 self.db.open_table("documents")
@@ -393,11 +373,9 @@ class SearchIndex:
             )
 
         results: pd.DataFrame = await asyncio.to_thread(_sync)
-        chunks: List[RetrievedChunk] = []
+        chunks: list[RetrievedChunk] = []
         for _, row in results.iterrows():
-            raw_score = float(
-                row.get("_score", row.get("_relevance_score", 1.0)) or 1.0
-            )
+            raw_score = float(row.get("_score", row.get("_relevance_score", 1.0)) or 1.0)
             # FTS scores are not distances; keep as-is and clip to [0,1]
             score = min(1.0, max(0.0, raw_score))
             chunks.append(self._row_to_chunk(row, score, "documents"))
@@ -410,10 +388,9 @@ class SearchIndex:
         search_query: str,
         k_initial: int,
         k_final: int,
-        timing_breakdowns: Optional[List[Dict[str, float]]] = None,
-    ) -> List[RetrievedChunk]:
-        """
-        Vector search with BGE instruction prefix → cosine similarity normalisation
+        timing_breakdowns: list[dict[str, float]] | None = None,
+    ) -> list[RetrievedChunk]:
+        """Vector search with BGE instruction prefix → cosine similarity normalisation
         → cross-encoder reranking with sigmoid normalisation.
         FTS is used as fallback on vector search failure.
         Both paths use the raw query string (no instruction prefix) for text matching.
@@ -428,9 +405,7 @@ class SearchIndex:
             table = self.db.open_table(table_name)
             embed_start = time.perf_counter()
             try:
-                vec = list(
-                    self._get_embedding_model().embed([embedded_query])
-                )[0].tolist()
+                vec = list(self._get_embedding_model().embed([embedded_query]))[0].tolist()
             finally:
                 embed_ms = (time.perf_counter() - embed_start) * 1000
 
@@ -512,7 +487,7 @@ class SearchIndex:
                     for idx in range(min(k_final, len(results)))
                 ]
 
-        chunks: List[RetrievedChunk] = []
+        chunks: list[RetrievedChunk] = []
         for idx, score in ordered:
             row = results.iloc[int(idx)]
             chunks.append(self._row_to_chunk(row, score, table_name))
@@ -535,21 +510,21 @@ class SearchIndex:
     async def search_guidelines(
         self,
         query: str,
-        disease: Optional[List[str]] = None,
+        disease: list[str] | None = None,
         session_id: str = "default",
         query_id: str = "default",
         k_initial: int = 20,
         k_final: int = 5,
         use_hyde: bool = False,
-        search_query: Optional[str] = None,
-    ) -> List[RetrievedChunk]:
+        search_query: str | None = None,
+    ) -> list[RetrievedChunk]:
         start_time = time.time()
         disease_values = (
             [d.lower() for d in disease if d]
             if isinstance(disease, list)
             else [disease.lower() if disease else None]
         )[:3]
-        tables: List[str] = []
+        tables: list[str] = []
         for disease_value in disease_values:
             for table_name in self._get_table_names(disease_value):
                 if table_name not in tables:
@@ -567,9 +542,9 @@ class SearchIndex:
             search_query = search_query or query
 
         # Parallel fan-out across tables
-        timing_breakdowns: List[Dict[str, float]] = []
+        timing_breakdowns: list[dict[str, float]] = []
 
-        async def _search_one(table_name: str) -> List[RetrievedChunk]:
+        async def _search_one(table_name: str) -> list[RetrievedChunk]:
             try:
                 async with asyncio.timeout(SEARCH_TASK_TIMEOUT_SECONDS):
                     if table_name == "documents":
@@ -589,10 +564,10 @@ class SearchIndex:
                 logger.warning("Search failed for %s: %s", table_name, exc)
                 return []
 
-        results_nested: List[List[RetrievedChunk]] = await asyncio.gather(
+        results_nested: list[list[RetrievedChunk]] = await asyncio.gather(
             *[_search_one(t) for t in tables]
         )
-        chunks: List[RetrievedChunk] = [c for sub in results_nested for c in sub]
+        chunks: list[RetrievedChunk] = [c for sub in results_nested for c in sub]
         if not chunks:
             chunks = await self._fallback_table_scan(tables, k_final)
         chunks.sort(key=lambda c: c.score, reverse=True)
@@ -608,9 +583,7 @@ class SearchIndex:
             top_score=final_chunks[0].score if final_chunks else 0.0,
             latency_ms=latency,
             embed_ms=sum(item["embed_ms"] for item in timing_breakdowns),
-            vector_search_ms=sum(
-                item["vector_search_ms"] for item in timing_breakdowns
-            ),
+            vector_search_ms=sum(item["vector_search_ms"] for item in timing_breakdowns),
             rerank_ms=sum(item["rerank_ms"] for item in timing_breakdowns),
             expanded_query=search_query if search_query != query else None,
         )
@@ -618,12 +591,13 @@ class SearchIndex:
 
     async def _fallback_table_scan(
         self,
-        tables: List[str],
+        tables: list[str],
         k_final: int,
-    ) -> List[RetrievedChunk]:
+    ) -> list[RetrievedChunk]:
         """Last-resort bounded scan so offline mode does not return empty text."""
-        def _sync() -> List[RetrievedChunk]:
-            fallback: List[RetrievedChunk] = []
+
+        def _sync() -> list[RetrievedChunk]:
+            fallback: list[RetrievedChunk] = []
             for table_name in tables:
                 try:
                     df = self.db.open_table(table_name).search().limit(k_final).to_pandas()
@@ -642,9 +616,7 @@ class SearchIndex:
     # Section fetch                                                        #
     # ------------------------------------------------------------------ #
 
-    def get_section(
-        self, section_id: str, disease: str
-    ) -> Optional[RetrievedChunk]:
+    def get_section(self, section_id: str, disease: str) -> RetrievedChunk | None:
         table_names = self._get_table_names(disease)
         if not table_names:
             return None
@@ -658,26 +630,17 @@ class SearchIndex:
                     page = int(section_id.replace("legacy-page-", "", 1))
                 except ValueError:
                     return None
-                results = (
-                    table.search()
-                    .where(f"page = {page}")
-                    .limit(100)
-                    .to_pandas()
-                )
+                results = table.search().where(f"page = {page}").limit(100).to_pandas()
                 if results.empty:
                     return None
                 results = results.sort_values("id")
                 first = results.iloc[0]
-                source = str(
-                    first.get("source", "Kenya-ARV-Guidelines-2022-Final-1.pdf")
-                )
+                source = str(first.get("source", "Kenya-ARV-Guidelines-2022-Final-1.pdf"))
                 combined = "\n\n".join(results["text"].astype(str).tolist())
                 return RetrievedChunk(
                     text=combined,
                     parent_text=combined,
-                    section_title=self.legacy_section_title(
-                        combined, page, source
-                    ),
+                    section_title=self.legacy_section_title(combined, page, source),
                     page=page,
                     score=1.0,
                     disease="hiv",
@@ -687,19 +650,9 @@ class SearchIndex:
                     guideline_name=DISEASE_CONFIG["hiv"]["guideline_name"],
                     low_confidence=False,
                 )
-            results = (
-                table.search()
-                .where(f"id = '{section_id}'")
-                .limit(1)
-                .to_pandas()
-            )
+            results = table.search().where(f"id = '{section_id}'").limit(1).to_pandas()
         else:
-            results = (
-                table.search()
-                .where(f"parent_id = '{section_id}'")
-                .limit(1)
-                .to_pandas()
-            )
+            results = table.search().where(f"parent_id = '{section_id}'").limit(1).to_pandas()
 
         if results.empty:
             return None
@@ -713,10 +666,10 @@ class SearchIndex:
         self,
         query_type: str,
         disease: str,
-        filters: Dict[str, Any],
+        filters: dict[str, Any],
         session_id: str = "default",
         query_id: str = "default",
-    ) -> Optional[KBResult]:
+    ) -> KBResult | None:
         table_name = f"{disease.lower()}_kb_tables"
         if table_name not in self.table_names():
             return None
@@ -735,10 +688,7 @@ class SearchIndex:
 
         for _, row in results.iterrows():
             row_data = json.loads(row["raw_json"])
-            if all(
-                str(v).lower() in str(row_data.get(k, "")).lower()
-                for k, v in filters.items()
-            ):
+            if all(str(v).lower() in str(row_data.get(k, "")).lower() for k, v in filters.items()):
                 return KBResult(
                     data=row_data,
                     text=row["text"],
@@ -752,18 +702,18 @@ class SearchIndex:
     async def query_pageindex(
         self,
         query: str,
-        disease: Optional[str] = None,
+        disease: str | None = None,
         top_k: int = 3,
-    ) -> List[PageIndexResult]:
+    ) -> list[PageIndexResult]:
         """Search page-level summaries before escalating to chunk retrieval."""
         if "pageindex_chunks" not in self.table_names():
             return []
 
         def _vector_search() -> pd.DataFrame:
             table = self.db.open_table("pageindex_chunks")
-            vec = list(
-                self._get_embedding_model().embed([f"{_BGE_QUERY_PREFIX}{query}"])
-            )[0].tolist()
+            vec = list(self._get_embedding_model().embed([f"{_BGE_QUERY_PREFIX}{query}"]))[
+                0
+            ].tolist()
             search = table.search(vec)
             if disease:
                 search = search.where(f"disease = '{disease.lower()}'")
@@ -788,7 +738,7 @@ class SearchIndex:
                 logger.warning("PageIndex FTS search failed: %s", fts_exc)
                 return []
 
-        results: List[PageIndexResult] = []
+        results: list[PageIndexResult] = []
         for _, row in df.iterrows():
             raw_score = float(row.get("_score", 0.5) or 0.5)
             distance = float(row.get("_distance", 1.0) or 1.0)
@@ -805,7 +755,7 @@ class SearchIndex:
             )
         return results
 
-    def pageindex_stats(self) -> Dict[str, Any]:
+    def pageindex_stats(self) -> dict[str, Any]:
         """Return row counts for the page-level index by disease."""
         if "pageindex_chunks" not in self.table_names():
             return {"total": 0, "by_disease": {}}
@@ -827,7 +777,8 @@ class SearchIndex:
 # DEPRECATED shim — kept for backward-compat with PoC code
 # ---------------------------------------------------------------------------
 
-def text_search(query: str) -> List[str]:
+
+def text_search(query: str) -> list[str]:
     """DEPRECATED: use SearchIndex.search_guidelines."""
     idx = SearchIndex()
     try:

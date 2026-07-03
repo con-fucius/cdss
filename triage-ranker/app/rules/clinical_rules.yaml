@@ -351,9 +351,11 @@ rules:
     icd10_prefix: "T67"
     snomed_hint: "240623003"
 
-  # ── SEVERITY MODIFIERS (matched as modifiers, not primary terms) ─────
-  # These are not standalone terms but modify the severity of matched terms.
-  modifiers:
+  # (end of rules list)
+
+# ── SEVERITY MODIFIERS (matched as modifiers, not primary terms) ─────
+# These are not standalone terms but modify the severity of matched terms.
+modifiers:
     - term: "severe"
       equivalents: ["mkali", "extreme", "terrible", "awful"]
       modifier_class: SEVERITY_SEVERE

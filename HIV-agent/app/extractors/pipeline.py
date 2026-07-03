@@ -1,14 +1,16 @@
 """Extraction pipeline to orchestrate resource-aware fallback logic."""
+
+import logging
 import os
 from pathlib import Path
-from typing import List
+
 from .base import BaseExtractor, ExtractedDocument
-from .pymupdf_ext import PyMuPDFExtractor
 from .pdfplumber_ext import PDFPlumberExtractor
+from .pymupdf_ext import PyMuPDFExtractor
 from .pypdf_ext import PyPDFExtractor
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ExtractionPipeline:
     def __init__(self, quality_threshold: float = 0.5):
@@ -21,21 +23,25 @@ class ExtractionPipeline:
             try:
                 result = extractor.extract(pdf_path)
                 if result.quality_score >= self.quality_threshold:
-                    logger.info(f"Extractor {result.extractor_name} succeeded for {disease} with score {result.quality_score}")
+                    logger.info(
+                        f"Extractor {result.extractor_name} succeeded for {disease} with score {result.quality_score}"
+                    )
                     return result
                 last_result = result
             except Exception as e:
                 logger.error(f"Extractor {extractor.__class__.__name__} failed: {e}")
                 continue
-        
+
         if last_result:
-            logger.warning(f"No extractor passed threshold. Using {last_result.extractor_name} with score {last_result.quality_score}")
+            logger.warning(
+                f"No extractor passed threshold. Using {last_result.extractor_name} with score {last_result.quality_score}"
+            )
             return last_result
-            
+
         raise RuntimeError(f"All extractors failed for {pdf_path}")
 
-    def _extractors_for(self, pdf_path: str) -> List[BaseExtractor]:
-        extractors: List[BaseExtractor] = []
+    def _extractors_for(self, pdf_path: str) -> list[BaseExtractor]:
+        extractors: list[BaseExtractor] = []
         if self._should_try_docling(pdf_path):
             try:
                 from .docling_ext import DoclingExtractor
@@ -47,8 +53,7 @@ class ExtractionPipeline:
         return extractors
 
     def _should_try_docling(self, pdf_path: str) -> bool:
-        """
-        Use Docling when explicitly enabled or when an auto resource gate passes.
+        """Use Docling when explicitly enabled or when an auto resource gate passes.
 
         CDSS_DOCLING_MODE:
           - auto: default; skip Docling for large PDFs likely to OOM locally

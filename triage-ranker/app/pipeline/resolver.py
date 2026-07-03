@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/pipeline/resolver.py
+"""triage-ranker/app/pipeline/resolver.py.
 
 Stage 2 — UMLS resolution with four-layer cache.
 
@@ -22,12 +21,11 @@ Design constraints:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from cachetools import TTLCache
@@ -40,7 +38,7 @@ logger = logging.getLogger(__name__)
 _l1_cache: TTLCache = TTLCache(maxsize=1000, ttl=3600)
 
 # L2: SQLite connection (lazy init)
-_l2_conn: Optional[sqlite3.Connection] = None
+_l2_conn: sqlite3.Connection | None = None
 
 
 def _init_l2_cache(db_path: str) -> None:
@@ -68,7 +66,7 @@ def _init_l2_cache(db_path: str) -> None:
         _l2_conn = None
 
 
-def _l2_get(term: str) -> Optional[Dict[str, Any]]:
+def _l2_get(term: str) -> dict[str, Any] | None:
     """Look up a term in the L2 SQLite cache."""
     if _l2_conn is None:
         return None
@@ -90,7 +88,7 @@ def _l2_get(term: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _l2_put(term: str, result: Dict[str, Any]) -> None:
+def _l2_put(term: str, result: dict[str, Any]) -> None:
     """Write a term to the L2 SQLite cache."""
     if _l2_conn is None:
         return
@@ -107,7 +105,7 @@ def _l2_put(term: str, result: Dict[str, Any]) -> None:
                 result.get("snomed_code"),
                 result.get("icd10_code"),
                 result.get("semantic_type"),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         _l2_conn.commit()
@@ -115,9 +113,8 @@ def _l2_put(term: str, result: Dict[str, Any]) -> None:
         logger.warning("L2 cache write failed for %s: %s", term, exc)
 
 
-async def _l3_umls_api(term: str) -> Optional[Dict[str, Any]]:
-    """
-    L3: UMLS REST API lookup. 3s timeout.
+async def _l3_umls_api(term: str) -> dict[str, Any] | None:
+    """L3: UMLS REST API lookup. 3s timeout.
     Returns None on any failure — never raises.
     """
     if not is_umls_configured():
@@ -147,7 +144,7 @@ async def _l3_umls_api(term: str) -> Optional[Dict[str, Any]]:
             return {
                 "cui": r.get("ui", ""),
                 "snomed_code": "",  # Would need additional API call
-                "icd10_code": "",   # Would need additional API call
+                "icd10_code": "",  # Would need additional API call
                 "semantic_type": r.get("semanticTypes", [{}])[0].get("name", ""),
             }
 
@@ -159,11 +156,8 @@ async def _l3_umls_api(term: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _l4_fallback(
-    term: str, rules: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    """
-    L4: Fallback from clinical_rules.yaml icd10_prefix/snomed_hint.
+def _l4_fallback(term: str, rules: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """L4: Fallback from clinical_rules.yaml icd10_prefix/snomed_hint.
     Uses pre-loaded rules to provide basic coding without API.
     """
     term_lower = term.lower()
@@ -187,12 +181,11 @@ def _l4_fallback(
 
 
 async def resolve_keywords(
-    keywords: List[Dict[str, Any]],
-    rules: List[Dict[str, Any]],
+    keywords: list[dict[str, Any]],
+    rules: list[dict[str, Any]],
     cache_db_path: str = "cache/umls_cache.db",
-) -> tuple[List[Dict[str, Any]], bool]:
-    """
-    Stage 2 — Resolve extracted keywords through four-layer cache.
+) -> tuple[list[dict[str, Any]], bool]:
+    """Stage 2 — Resolve extracted keywords through four-layer cache.
 
     Args:
         keywords: Extracted keywords from Stage 1
@@ -216,14 +209,14 @@ async def resolve_keywords(
         # L1: In-process TTLCache
         l1_result = _l1_cache.get(text_lower)
         if l1_result:
-            resolved.append({**kw, "umls_resolution": l1_result})
+            resolved.append({**kw.model_dump(), "umls_resolution": l1_result})
             continue
 
         # L2: SQLite persistent cache (run sync I/O in thread)
         l2_result = await asyncio.to_thread(_l2_get, text_lower)
         if l2_result:
             _l1_cache[text_lower] = l2_result
-            resolved.append({**kw, "umls_resolution": l2_result})
+            resolved.append({**kw.model_dump(), "umls_resolution": l2_result})
             continue
 
         # L3: UMLS REST API (only if configured)
@@ -232,18 +225,18 @@ async def resolve_keywords(
             # Write to L2 and L1 (sync I/O in thread)
             await asyncio.to_thread(_l2_put, text_lower, l3_result)
             _l1_cache[text_lower] = l3_result
-            resolved.append({**kw, "umls_resolution": l3_result})
+            resolved.append({**kw.model_dump(), "umls_resolution": l3_result})
             continue
 
         # L4: Fallback from rules
         l4_result = _l4_fallback(text, rules)
         if l4_result:
             degraded_mode = True
-            resolved.append({**kw, "umls_resolution": l4_result})
+            resolved.append({**kw.model_dump(), "umls_resolution": l4_result})
         else:
             # No resolution at all — still add the keyword
             degraded_mode = True
-            resolved.append({**kw, "umls_resolution": None})
+            resolved.append({**kw.model_dump(), "umls_resolution": None})
 
     return resolved, degraded_mode
 

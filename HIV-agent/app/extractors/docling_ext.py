@@ -1,5 +1,4 @@
-"""
-Docling-based PDF extractor.
+"""Docling-based PDF extractor.
 
 Phase 0 fixes:
 - prov guard checks for empty list, not just None
@@ -10,9 +9,10 @@ Phase 0 fixes:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -26,20 +26,13 @@ logger = logging.getLogger(__name__)
 class DoclingExtractor(BaseExtractor):
     def __init__(self) -> None:
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = (
-            os.getenv("CDSS_DOCLING_OCR", "false").strip().lower() == "true"
-        )
+        pipeline_options.do_ocr = os.getenv("CDSS_DOCLING_OCR", "false").strip().lower() == "true"
         pipeline_options.do_table_structure = (
-            os.getenv("CDSS_DOCLING_TABLE_STRUCTURE", "false").strip().lower()
-            == "true"
+            os.getenv("CDSS_DOCLING_TABLE_STRUCTURE", "false").strip().lower() == "true"
         )
 
         self.converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options
-                )
-            }
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
 
     def _page_no(self, item: Any) -> int:
@@ -50,8 +43,7 @@ class DoclingExtractor(BaseExtractor):
         return 0
 
     def _label_str(self, item: Any) -> str:
-        """
-        Return a normalised label string from a Docling item.
+        """Return a normalised label string from a Docling item.
         DocItemLabel is an enum; .value gives the plain string e.g. 'section_header'.
         str() on the enum returns 'DocItemLabel.SECTION_HEADER' which breaks comparisons.
         """
@@ -68,7 +60,7 @@ class DoclingExtractor(BaseExtractor):
         result = self.converter.convert(pdf_path)
         doc = result.document
 
-        sections: List[Dict[str, Any]] = []
+        sections: list[dict[str, Any]] = []
         current_title = "General"
 
         for item, level in doc.iterate_items():
@@ -116,10 +108,8 @@ class DoclingExtractor(BaseExtractor):
             if md.strip():
                 # Try to get a caption; fall back to positional label
                 caption = ""
-                try:
+                with contextlib.suppress(Exception):
                     caption = table.caption_text(doc) or ""
-                except Exception:
-                    pass
                 sections.append(
                     {
                         "text": md,
@@ -130,9 +120,7 @@ class DoclingExtractor(BaseExtractor):
                 )
 
         quality = self.get_quality_score(sections)
-        logger.info(
-            "DoclingExtractor: %d items, quality=%.2f", len(sections), quality
-        )
+        logger.info("DoclingExtractor: %d items, quality=%.2f", len(sections), quality)
         return ExtractedDocument(
             content=sections,
             quality_score=quality,
@@ -140,7 +128,7 @@ class DoclingExtractor(BaseExtractor):
             metadata={"total_items": len(sections)},
         )
 
-    def get_quality_score(self, content: List[Dict[str, Any]]) -> float:
+    def get_quality_score(self, content: list[dict[str, Any]]) -> float:
         if not content:
             return 0.0
         has_tables = any(c["type"] == "table" for c in content)

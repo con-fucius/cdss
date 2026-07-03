@@ -1,5 +1,4 @@
-r"""
-Download bge-base-en-v1.5 model files to a local directory (no blob/symlink cache).
+r"""Download bge-base-en-v1.5 model files to a local directory (no blob/symlink cache).
 Bypasses the Windows symlink privilege issue in huggingface_hub's default cache.
 
 Run from D:\Projects\CDSS\HIV-agent:
@@ -7,7 +6,9 @@ Run from D:\Projects\CDSS\HIV-agent:
 
 Outputs to app/data/models/bge-base-en-v1.5-onnx-q/
 """
+
 import os
+
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import sys

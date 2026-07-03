@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Optional
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -31,10 +29,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Enums
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AlertLevel:
     CRITICAL = "CRITICAL"
@@ -43,14 +41,15 @@ class AlertLevel:
     BACKGROUND = "BACKGROUND"
 
 
-VALID_OVERRIDE_REASONS = frozenset([
-    "clinically_irrelevant",
-    "already_actioned",
-    "patient_specific_exception",
-    "incorrect_alert",
-    "duplicate",
-])
-
+VALID_OVERRIDE_REASONS = frozenset(
+    [
+        "clinically_irrelevant",
+        "already_actioned",
+        "patient_specific_exception",
+        "incorrect_alert",
+        "duplicate",
+    ]
+)
 
 
 class Base(DeclarativeBase):
@@ -78,13 +77,9 @@ class AuditLog(Base):
 
 class SessionHistory(Base):
     __tablename__ = "session_history"
-    __table_args__ = (
-        Index("idx_session_history_session_created", "session_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_session_history_session_created", "session_id", "created_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -103,9 +98,7 @@ class EvidenceNode(Base):
         Index("idx_evidence_nodes_ref", "ref_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     node_type: Mapped[str] = mapped_column(String(64), nullable=False)
     ref_id: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     disease: Mapped[str] = mapped_column(String(64), nullable=False, default="")
@@ -116,7 +109,7 @@ class EvidenceNode(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    outgoing_edges: Mapped[list["EvidenceEdge"]] = relationship(
+    outgoing_edges: Mapped[list[EvidenceEdge]] = relationship(
         foreign_keys="EvidenceEdge.source_node_id",
         back_populates="source_node",
     )
@@ -136,9 +129,7 @@ class EvidenceEdge(Base):
         Index("idx_evidence_edges_source_target", "source_node_id", "target_node_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_node_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("evidence_nodes.id"), nullable=False
     )
@@ -157,18 +148,14 @@ class EvidenceEdge(Base):
     source_node: Mapped[EvidenceNode] = relationship(
         foreign_keys=[source_node_id], back_populates="outgoing_edges"
     )
-    target_node: Mapped[EvidenceNode] = relationship(
-        foreign_keys=[target_node_id]
-    )
+    target_node: Mapped[EvidenceNode] = relationship(foreign_keys=[target_node_id])
 
 
 class Feedback(Base):
     __tablename__ = "feedback"
     __table_args__ = (Index("idx_feedback_session_id", "session_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
     message_id: Mapped[str] = mapped_column(String(128), nullable=False)
     feedback_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -183,16 +170,10 @@ class Feedback(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    external_id: Mapped[str] = mapped_column(
-        String(128), unique=True, nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="CLINICIAN")
-    display_name: Mapped[str] = mapped_column(
-        String(256), nullable=False, default=""
-    )
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -202,15 +183,9 @@ class PatientRef(Base):
     __tablename__ = "patient_refs"
     __table_args__ = (Index("idx_patient_refs_patient_hash", "patient_hash"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    patient_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, unique=True
-    )
-    salt_version: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="default"
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patient_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    salt_version: Mapped[str] = mapped_column(String(64), nullable=False, default="default")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -223,16 +198,12 @@ class LongTermMemory(Base):
         Index("idx_long_term_memory_session_id", "session_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_ref_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
     fact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     fact_text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_message_ids: Mapped[list] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    source_message_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     approved_by: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -246,16 +217,12 @@ class PendingMemory(Base):
         Index("idx_pending_memory_patient_ref", "patient_ref_hash"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_ref_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
     fact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     fact_text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_message_ids: Mapped[list] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    source_message_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -281,6 +248,7 @@ class EmbeddingCache(Base):
 # Patient state (Phase A — migration 0007_patient_state)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class PatientEncounter(Base):
     __tablename__ = "patient_encounters"
     __table_args__ = (
@@ -294,27 +262,27 @@ class PatientEncounter(Base):
     )
     patient_ref: Mapped[str] = mapped_column(Text, nullable=False)
     disease_scope: Mapped[str] = mapped_column(Text, nullable=False)
-    encounter_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=func.current_date())
-    encounter_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="initial"
+    encounter_date: Mapped[date] = mapped_column(
+        Date, nullable=False, server_default=func.current_date()
     )
-    clinician_role: Mapped[Optional[str]] = mapped_column(Text)
-    facility_level: Mapped[Optional[str]] = mapped_column(Text)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    encounter_type: Mapped[str] = mapped_column(String(32), nullable=False, default="initial")
+    clinician_role: Mapped[str | None] = mapped_column(Text)
+    facility_level: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    vitals: Mapped[list["PatientVital"]] = relationship(
+    vitals: Mapped[list[PatientVital]] = relationship(
         back_populates="encounter", cascade="all, delete-orphan"
     )
-    labs: Mapped[list["PatientLab"]] = relationship(
+    labs: Mapped[list[PatientLab]] = relationship(
         back_populates="encounter", cascade="all, delete-orphan"
     )
-    medications: Mapped[list["PatientMedication"]] = relationship(
+    medications: Mapped[list[PatientMedication]] = relationship(
         back_populates="encounter", cascade="all, delete-orphan"
     )
-    diagnoses: Mapped[list["PatientDiagnosis"]] = relationship(
+    diagnoses: Mapped[list[PatientDiagnosis]] = relationship(
         back_populates="encounter", cascade="all, delete-orphan"
     )
 
@@ -327,9 +295,7 @@ class PatientVital(Base):
         Index("idx_pv_recorded_at", "recorded_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     encounter_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("patient_encounters.encounter_id", ondelete="CASCADE"),
@@ -339,22 +305,22 @@ class PatientVital(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    bp_systolic: Mapped[Optional[int]] = mapped_column(Integer)
-    bp_diastolic: Mapped[Optional[int]] = mapped_column(Integer)
-    heart_rate: Mapped[Optional[int]] = mapped_column(Integer)
-    respiratory_rate: Mapped[Optional[int]] = mapped_column(Integer)
-    temperature: Mapped[Optional[float]] = mapped_column(Numeric(4, 1))
-    spo2: Mapped[Optional[int]] = mapped_column(Integer)
-    weight_kg: Mapped[Optional[float]] = mapped_column(Numeric(5, 1))
-    height_cm: Mapped[Optional[float]] = mapped_column(Numeric(5, 1))
-    consciousness: Mapped[Optional[str]] = mapped_column(Text)   # A/V/P/U per AVPU
-    supplemental_o2: Mapped[Optional[bool]] = mapped_column(Boolean)
-    spo2_scale: Mapped[Optional[int]] = mapped_column(Integer)   # 1 or 2 per NEWS2
-    news2_score: Mapped[Optional[int]] = mapped_column(Integer)
-    news2_risk: Mapped[Optional[str]] = mapped_column(Text)
-    bmi: Mapped[Optional[float]] = mapped_column(Numeric(4, 1))
+    bp_systolic: Mapped[int | None] = mapped_column(Integer)
+    bp_diastolic: Mapped[int | None] = mapped_column(Integer)
+    heart_rate: Mapped[int | None] = mapped_column(Integer)
+    respiratory_rate: Mapped[int | None] = mapped_column(Integer)
+    temperature: Mapped[float | None] = mapped_column(Numeric(4, 1))
+    spo2: Mapped[int | None] = mapped_column(Integer)
+    weight_kg: Mapped[float | None] = mapped_column(Numeric(5, 1))
+    height_cm: Mapped[float | None] = mapped_column(Numeric(5, 1))
+    consciousness: Mapped[str | None] = mapped_column(Text)  # A/V/P/U per AVPU
+    supplemental_o2: Mapped[bool | None] = mapped_column(Boolean)
+    spo2_scale: Mapped[int | None] = mapped_column(Integer)  # 1 or 2 per NEWS2
+    news2_score: Mapped[int | None] = mapped_column(Integer)
+    news2_risk: Mapped[str | None] = mapped_column(Text)
+    bmi: Mapped[float | None] = mapped_column(Numeric(4, 1))
 
-    encounter: Mapped["PatientEncounter"] = relationship(back_populates="vitals")
+    encounter: Mapped[PatientEncounter] = relationship(back_populates="vitals")
 
 
 class PatientLab(Base):
@@ -367,9 +333,7 @@ class PatientLab(Base):
         UniqueConstraint("encounter_id", "lab_type", name="uq_pl_encounter_lab_type"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     encounter_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("patient_encounters.encounter_id", ondelete="CASCADE"),
@@ -380,14 +344,14 @@ class PatientLab(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     lab_type: Mapped[str] = mapped_column(Text, nullable=False)
-    value: Mapped[Optional[float]] = mapped_column(Numeric)
-    unit: Mapped[Optional[str]] = mapped_column(Text)
-    reference_low: Mapped[Optional[float]] = mapped_column(Numeric)
-    reference_high: Mapped[Optional[float]] = mapped_column(Numeric)
+    value: Mapped[float | None] = mapped_column(Numeric)
+    unit: Mapped[str | None] = mapped_column(Text)
+    reference_low: Mapped[float | None] = mapped_column(Numeric)
+    reference_high: Mapped[float | None] = mapped_column(Numeric)
     flag: Mapped[str] = mapped_column(Text, nullable=False, default="normal")
     source: Mapped[str] = mapped_column(Text, nullable=False, default="entered")
 
-    encounter: Mapped["PatientEncounter"] = relationship(back_populates="labs")
+    encounter: Mapped[PatientEncounter] = relationship(back_populates="labs")
 
 
 class PatientMedication(Base):
@@ -399,9 +363,7 @@ class PatientMedication(Base):
         Index("idx_pm_drug_name", "drug_name"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     encounter_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("patient_encounters.encounter_id", ondelete="CASCADE"),
@@ -409,18 +371,18 @@ class PatientMedication(Base):
     )
     patient_ref: Mapped[str] = mapped_column(Text, nullable=False)
     drug_name: Mapped[str] = mapped_column(Text, nullable=False)
-    generic_name: Mapped[Optional[str]] = mapped_column(Text)
-    rxcui: Mapped[Optional[str]] = mapped_column(Text)
-    dose: Mapped[Optional[str]] = mapped_column(Text)
-    frequency: Mapped[Optional[str]] = mapped_column(Text)
-    route: Mapped[Optional[str]] = mapped_column(Text)
-    started_date: Mapped[Optional[date]] = mapped_column(Date)
-    stopped_date: Mapped[Optional[date]] = mapped_column(Date)
+    generic_name: Mapped[str | None] = mapped_column(Text)
+    rxcui: Mapped[str | None] = mapped_column(Text)
+    dose: Mapped[str | None] = mapped_column(Text)
+    frequency: Mapped[str | None] = mapped_column(Text)
+    route: Mapped[str | None] = mapped_column(Text)
+    started_date: Mapped[date | None] = mapped_column(Date)
+    stopped_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
-    indication: Mapped[Optional[str]] = mapped_column(Text)
-    prescribed_by: Mapped[Optional[str]] = mapped_column(Text)
+    indication: Mapped[str | None] = mapped_column(Text)
+    prescribed_by: Mapped[str | None] = mapped_column(Text)
 
-    encounter: Mapped["PatientEncounter"] = relationship(back_populates="medications")
+    encounter: Mapped[PatientEncounter] = relationship(back_populates="medications")
 
 
 class PatientDiagnosis(Base):
@@ -431,30 +393,29 @@ class PatientDiagnosis(Base):
         Index("idx_pd_status", "status"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     encounter_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("patient_encounters.encounter_id", ondelete="CASCADE"),
         nullable=False,
     )
     patient_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    condition_ref: Mapped[Optional[str]] = mapped_column(Text)   # evidence graph ref_id
+    condition_ref: Mapped[str | None] = mapped_column(Text)  # evidence graph ref_id
     condition_name: Mapped[str] = mapped_column(Text, nullable=False)
-    icd10_code: Mapped[Optional[str]] = mapped_column(Text)
+    icd10_code: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
-    onset_date: Mapped[Optional[date]] = mapped_column(Date)
-    resolved_date: Mapped[Optional[date]] = mapped_column(Date)
-    severity: Mapped[Optional[str]] = mapped_column(Text)
-    confirmed_by: Mapped[Optional[str]] = mapped_column(Text)
+    onset_date: Mapped[date | None] = mapped_column(Date)
+    resolved_date: Mapped[date | None] = mapped_column(Date)
+    severity: Mapped[str | None] = mapped_column(Text)
+    confirmed_by: Mapped[str | None] = mapped_column(Text)
 
-    encounter: Mapped["PatientEncounter"] = relationship(back_populates="diagnoses")
+    encounter: Mapped[PatientEncounter] = relationship(back_populates="diagnoses")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Alert governance (Phase B/G — migration 0008_alert_overrides)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AlertOverride(Base):
     __tablename__ = "alert_overrides"
@@ -464,14 +425,12 @@ class AlertOverride(Base):
         Index("idx_ao_override_timestamp", "override_timestamp"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     alert_type: Mapped[str] = mapped_column(Text, nullable=False)
     alert_level: Mapped[str] = mapped_column(String(32), nullable=False)
     alert_summary: Mapped[str] = mapped_column(String(140), nullable=False)
     session_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    patient_ref: Mapped[Optional[str]] = mapped_column(Text)
+    patient_ref: Mapped[str | None] = mapped_column(Text)
     override_reason: Mapped[str] = mapped_column(Text, nullable=False)
     clinician_role: Mapped[str] = mapped_column(String(64), nullable=False)
     override_timestamp: Mapped[datetime] = mapped_column(
@@ -479,10 +438,10 @@ class AlertOverride(Base):
     )
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Clinical documents (Phase E — migration 0009_clinical_documents)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class ClinicalDocument(Base):
     __tablename__ = "clinical_documents"
@@ -492,21 +451,17 @@ class ClinicalDocument(Base):
         Index("idx_cd_generated_at", "generated_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_type: Mapped[str] = mapped_column(String(32), nullable=False)
     patient_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    encounter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    encounter_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("patient_encounters.encounter_id", ondelete="SET NULL"),
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    requires_clinician_review: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )
-    reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
-    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    requires_clinician_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

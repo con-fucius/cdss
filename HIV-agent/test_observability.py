@@ -1,6 +1,6 @@
+import os
 import unittest
 from unittest.mock import patch
-import os
 
 from fastapi.testclient import TestClient
 

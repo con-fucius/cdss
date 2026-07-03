@@ -1,17 +1,17 @@
-"""
-Base class for PDF extractors.
-"""
+"""Base class for PDF extractors."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
+
 
 @dataclass
 class ExtractedDocument:
-    content: List[Dict[str, Any]]  # List of sections/tables
+    content: list[dict[str, Any]]  # List of sections/tables
     quality_score: float
     extractor_name: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
+
 
 class BaseExtractor(ABC):
     @abstractmethod

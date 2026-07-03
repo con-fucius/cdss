@@ -1,16 +1,16 @@
-"""
-UMLS Clinical Decision Support System - FastAPI Application
-"""
+"""UMLS Clinical Decision Support System - FastAPI Application."""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from api.config import settings
 from api.db import init_db
-from api.routers import healthcheck, terminology, inference_v1, inference_v2, admin
+from api.routers import admin, healthcheck, inference_v1, inference_v2, terminology
 
 app = FastAPI(
     title="UMLS CDSS API",
     description="Clinical Decision Support System powered by UMLS and LLMs",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # CORS middleware
@@ -32,17 +32,17 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connections on startup"""
+    """Initialize database connections on startup."""
     await init_db()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
+    """Cleanup on shutdown."""
     pass
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

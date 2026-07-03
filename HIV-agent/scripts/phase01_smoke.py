@@ -1,5 +1,4 @@
-r"""
-DEPRECATED DIAGNOSTIC: Phase 0.1 Malaria-only indexing smoke.
+r"""DEPRECATED DIAGNOSTIC: Phase 0.1 Malaria-only indexing smoke.
 
 This script is retained as historical evidence of the Malaria indexing pass,
 not as the current foundation workflow. It writes reports under app/data/ and
@@ -20,13 +19,13 @@ Writes a report to app/data/phase01_malaria_report.txt
 from __future__ import annotations
 
 import os
+
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
+import logging
 import sys
 import time
-import json
-import logging
 import traceback
 from pathlib import Path
 
@@ -61,8 +60,9 @@ def main() -> int:
     # 1. Imports
     section("1. Imports")
     try:
-        from app.ingest import IngestionManager, DISEASE_PDF_MAP, list_lancedb_tables
         from app.config import DISEASE_CONFIG
+        from app.ingest import DISEASE_PDF_MAP, IngestionManager, list_lancedb_tables
+
         report_lines.append("[OK] Imports clean\n\n")
     except Exception as e:
         report_lines.append(f"[FAIL] Import error: {e}\n{traceback.format_exc()}\n")
@@ -75,7 +75,11 @@ def main() -> int:
     rel = DISEASE_PDF_MAP["malaria"]
     pdf_path = ROOT / "app" / "docs" / rel
     log.info("PDF: %s", pdf_path)
-    log.info("Exists: %s, Size: %.2f MB", pdf_path.exists(), pdf_path.stat().st_size / 1e6 if pdf_path.exists() else 0)
+    log.info(
+        "Exists: %s, Size: %.2f MB",
+        pdf_path.exists(),
+        pdf_path.stat().st_size / 1e6 if pdf_path.exists() else 0,
+    )
     report_lines.append(f"PDF path: {pdf_path}\nExists: {pdf_path.exists()}\n\n")
     if not pdf_path.exists():
         report_lines.append("[FAIL] PDF missing\n")
@@ -87,8 +91,10 @@ def main() -> int:
     try:
         t0 = time.time()
         mgr = IngestionManager()
-        log.info("Manager created in %.1fs. Tables: %s", time.time() - t0, list_lancedb_tables(mgr.db))
-        report_lines.append(f"IngestionManager init: {time.time()-t0:.1f}s\n")
+        log.info(
+            "Manager created in %.1fs. Tables: %s", time.time() - t0, list_lancedb_tables(mgr.db)
+        )
+        report_lines.append(f"IngestionManager init: {time.time() - t0:.1f}s\n")
         report_lines.append(f"Existing lancedb tables: {list_lancedb_tables(mgr.db)}\n\n")
     except Exception as e:
         report_lines.append(f"[FAIL] IngestionManager init: {e}\n{traceback.format_exc()}\n")
@@ -137,8 +143,13 @@ def main() -> int:
                 content_type = row.get("content_type")
                 page = row.get("page")
                 text_preview = (row.get("text") or "")[:200]
-                log.info("Sample row: disease=%s guideline=%s content_type=%s page=%s",
-                         disease_val, guidline_name_val, content_type, page)
+                log.info(
+                    "Sample row: disease=%s guideline=%s content_type=%s page=%s",
+                    disease_val,
+                    guidline_name_val,
+                    content_type,
+                    page,
+                )
                 report_lines.append(
                     f"Sample row:\n"
                     f"  disease: {disease_val}\n"

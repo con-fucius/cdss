@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/pipeline/__init__.py
+"""triage-ranker/app/pipeline/__init__.py.
 
 Three-stage NLP pipeline for clinical triage enrichment.
 """

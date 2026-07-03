@@ -1,5 +1,4 @@
-"""
-app/models.py
+"""app/models.py.
 
 SQLAlchemy ORM models for the incident data model (Phase 1).
 
@@ -143,13 +142,9 @@ class IncidentDispatchLog(Base):
     """Append-only Mode 1 locked-script transcript. Never updated, never deleted."""
 
     __tablename__ = "incident_dispatch_log"
-    __table_args__ = (
-        Index("idx_dispatch_log_incident", "incident_id"),
-    )
+    __table_args__ = (Index("idx_dispatch_log_incident", "incident_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )
@@ -162,9 +157,7 @@ class IncidentDispatchLog(Base):
     is_backtrack: Mapped[bool] = mapped_column(default=False, nullable=False)
     # Improvement 4.2 — points to the new row that superseded this one
     # during a correction-window edit. Null means this row is current.
-    superseded_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+    superseded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -174,13 +167,9 @@ class IncidentFieldLog(Base):
     """Append-only paramedic-side action log."""
 
     __tablename__ = "incident_field_log"
-    __table_args__ = (
-        Index("idx_field_log_incident", "incident_id"),
-    )
+    __table_args__ = (Index("idx_field_log_incident", "incident_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )
@@ -200,9 +189,7 @@ class IncidentVitals(Base):
         Index("idx_vitals_recorded_at", "recorded_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )
@@ -233,8 +220,7 @@ class IncidentVitals(Base):
 
 
 class IncidentMedicationGiven(Base):
-    """
-    Resolved per Phase 0.5: every relevant drug or item a unit carries,
+    """Resolved per Phase 0.5: every relevant drug or item a unit carries,
     considers, or administers is logged here — logging does not depend
     on the item actually being given. No allowlist/formulary gate is
     applied at the API layer (see app/main.py::add_incident_medication).
@@ -243,13 +229,9 @@ class IncidentMedicationGiven(Base):
     """
 
     __tablename__ = "incident_medications_given"
-    __table_args__ = (
-        Index("idx_meds_given_incident", "incident_id"),
-    )
+    __table_args__ = (Index("idx_meds_given_incident", "incident_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )
@@ -267,20 +249,15 @@ class IncidentMedicationGiven(Base):
 
 
 class GuidanceLookupLog(Base):
-    """
-    Mode 2 usage log. Deliberately separate from IncidentDispatchLog — see
+    """Mode 2 usage log. Deliberately separate from IncidentDispatchLog — see
     docs/GOVERNANCE.md. Every lookup here is informational-only and must
     never have altered the locked-script outcome.
     """
 
     __tablename__ = "guidance_lookup_log"
-    __table_args__ = (
-        Index("idx_guidance_log_incident", "incident_id"),
-    )
+    __table_args__ = (Index("idx_guidance_log_incident", "incident_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )
@@ -294,21 +271,16 @@ class GuidanceLookupLog(Base):
 
 
 class IncidentUnitLocation(Base):
-    """
-    Improvement 4.3 — lightweight location pings from the field unit
+    """Improvement 4.3 — lightweight location pings from the field unit
     during an active incident. Two data columns (lat, lon) per row,
     written once per interval, read once per routing call. No real-time
     streaming, no WebSocket, no geofencing — just raw coordinates.
     """
 
     __tablename__ = "incident_unit_location"
-    __table_args__ = (
-        Index("idx_unit_location_incident", "incident_id"),
-    )
+    __table_args__ = (Index("idx_unit_location_incident", "incident_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("incidents.incident_id"), nullable=False
     )

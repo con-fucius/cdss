@@ -1,5 +1,4 @@
-"""
-Hierarchical indexer: maps extractor output to IndexedChunk hierarchy.
+"""Hierarchical indexer: maps extractor output to IndexedChunk hierarchy.
 
 Phase 0 fixes:
 - Table section_title uses item title (caption or positional), not hardcoded "Table"
@@ -15,23 +14,22 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-from .semantic import SemanticChunker
 from ..schema import IndexedChunk
+from .semantic import SemanticChunker
 
 # Match leading section numbers like "4", "4.2", "4.2.1" at start of title
 _SECTION_NUM_RE = re.compile(r"^(\d+(?:\.\d+)*)\s+")
 
 
-def _extract_section_number(title: str) -> Tuple[str, str]:
-    """
-    Return (section_number, clean_title).
-    e.g. "4.2 Dosing regimens" → ("4.2", "Dosing regimens")
+def _extract_section_number(title: str) -> tuple[str, str]:
+    """Return (section_number, clean_title).
+    e.g. "4.2 Dosing regimens" → ("4.2", "Dosing regimens").
     """
     m = _SECTION_NUM_RE.match(title or "")
     if m:
-        return m.group(1), title[m.end():].strip()
+        return m.group(1), title[m.end() :].strip()
     return "", title
 
 
@@ -41,11 +39,8 @@ class HierarchicalIndexer:
         self.guideline_name = guideline_name
         self.chunker = SemanticChunker()
 
-    def process(
-        self, extracted_content: List[Dict[str, Any]]
-    ) -> List[IndexedChunk]:
-        """
-        Map extractor items to IndexedChunks.
+    def process(self, extracted_content: list[dict[str, Any]]) -> list[IndexedChunk]:
+        """Map extractor items to IndexedChunks.
 
         Level 2 (parent): a section — its parent_text is the *full accumulated
         body* of all items belonging to that section, giving the agent full
@@ -55,14 +50,14 @@ class HierarchicalIndexer:
 
         Tables are self-parented atomic chunks.
         """
-        indexed_chunks: List[IndexedChunk] = []
+        indexed_chunks: list[IndexedChunk] = []
 
         current_section_title = "General"
         current_section_number = ""
         current_section_id = str(uuid.uuid4())
         current_section_page = 0
         # Accumulate ALL text items belonging to the current section
-        current_section_body_parts: List[str] = []
+        current_section_body_parts: list[str] = []
 
         def _flush_section() -> None:
             """Emit chunks for the accumulated section."""
@@ -123,9 +118,7 @@ class HierarchicalIndexer:
                     _flush_section()
                     current_section_body_parts = []
 
-                    current_section_number, clean = _extract_section_number(
-                        item_title
-                    )
+                    current_section_number, clean = _extract_section_number(item_title)
                     current_section_title = clean or item_title
                     current_section_id = str(uuid.uuid4())
                     current_section_page = page

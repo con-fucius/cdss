@@ -1,5 +1,4 @@
-"""
-Database repositories for all persistent storage operations.
+"""Database repositories for all persistent storage operations.
 
 Fixes applied:
 - upsert_evidence_graph: replaced N+1 per-row SELECTs with bulk
@@ -12,20 +11,19 @@ Fixes applied:
 
 from __future__ import annotations
 
-import os
 import re
 import uuid
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import select
 
 from .db import get_session
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit logs
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def write_audit_log_db(
     event_type: str,
@@ -53,14 +51,14 @@ async def write_audit_log_db(
 
 async def read_audit_logs_db(
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    session_id: Optional[str] = None,
-    disease: Optional[str] = None,
-    feedback_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    session_id: str | None = None,
+    disease: str | None = None,
+    feedback_type: str | None = None,
     page: int = 1,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from sqlalchemy import and_, func, select
 
     from .models import AuditLog
@@ -119,14 +117,13 @@ async def count_audit_logs_db() -> int:
     from .models import AuditLog
 
     async with get_session() as session:
-        return int(
-            await session.scalar(select(func.count()).select_from(AuditLog)) or 0
-        )
+        return int(await session.scalar(select(func.count()).select_from(AuditLog)) or 0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Feedback
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def write_feedback_db(
     session_id: str,
@@ -134,7 +131,7 @@ async def write_feedback_db(
     feedback_type: str,
     note: str = "",
     correction: str = "",
-    sources_used: Optional[List[str]] = None,
+    sources_used: list[str] | None = None,
 ) -> None:
     from .models import Feedback
 
@@ -156,11 +153,12 @@ async def write_feedback_db(
 # Session history
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def append_session_message(
     session_id: str,
     role: str,
     content: str,
-    metadata: Optional[dict] = None,
+    metadata: dict | None = None,
 ) -> None:
     from .models import SessionHistory
 
@@ -176,9 +174,7 @@ async def append_session_message(
         await session.commit()
 
 
-async def get_session_messages(
-    session_id: str, limit: int = 20
-) -> List[Dict[str, str]]:
+async def get_session_messages(session_id: str, limit: int = 20) -> list[dict[str, str]]:
     from sqlalchemy import select
 
     from .models import SessionHistory
@@ -202,9 +198,7 @@ async def clear_session_messages(session_id: str) -> None:
     from .models import SessionHistory
 
     async with get_session() as session:
-        await session.execute(
-            delete(SessionHistory).where(SessionHistory.session_id == session_id)
-        )
+        await session.execute(delete(SessionHistory).where(SessionHistory.session_id == session_id))
         await session.commit()
 
 
@@ -215,14 +209,11 @@ async def count_active_sessions() -> int:
 
     async with get_session() as session:
         return int(
-            await session.scalar(
-                select(func.count(distinct(SessionHistory.session_id)))
-            )
-            or 0
+            await session.scalar(select(func.count(distinct(SessionHistory.session_id)))) or 0
         )
 
 
-async def list_sessions(limit: int = 100) -> List[Dict[str, Any]]:
+async def list_sessions(limit: int = 100) -> list[dict[str, Any]]:
     from sqlalchemy import desc, func, select
 
     from .models import SessionHistory
@@ -255,7 +246,8 @@ async def list_sessions(limit: int = 100) -> List[Dict[str, Any]]:
 # Users
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def list_users() -> List[Dict[str, Any]]:
+
+async def list_users() -> list[dict[str, Any]]:
     from sqlalchemy import select
 
     from .models import User
@@ -278,9 +270,7 @@ async def count_users() -> int:
         return int(await session.scalar(select(func.count()).select_from(User)) or 0)
 
 
-async def create_user(
-    external_id: str, role: str, display_name: str = ""
-) -> Dict[str, Any]:
+async def create_user(external_id: str, role: str, display_name: str = "") -> dict[str, Any]:
     from .models import User
 
     async with get_session() as session:
@@ -298,17 +288,15 @@ async def create_user(
 async def update_user(
     user_id: str,
     *,
-    role: Optional[str] = None,
-    display_name: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    role: str | None = None,
+    display_name: str | None = None,
+) -> dict[str, Any] | None:
     from sqlalchemy import select
 
     from .models import User
 
     async with get_session() as session:
-        user = await session.scalar(
-            select(User).where(User.id == uuid.UUID(user_id))
-        )
+        user = await session.scalar(select(User).where(User.id == uuid.UUID(user_id)))
         if user is None:
             return None
         if role is not None:
@@ -326,14 +314,12 @@ async def delete_user(user_id: str) -> bool:
     from .models import User
 
     async with get_session() as session:
-        result = await session.execute(
-            delete(User).where(User.id == uuid.UUID(user_id))
-        )
+        result = await session.execute(delete(User).where(User.id == uuid.UUID(user_id)))
         await session.commit()
     return bool(result.rowcount)
 
 
-def _user_to_dict(user: Any) -> Dict[str, Any]:
+def _user_to_dict(user: Any) -> dict[str, Any]:
     return {
         "id": str(user.id),
         "external_id": user.external_id,
@@ -358,14 +344,14 @@ def _coerce_uuid(value: Any) -> uuid.UUID:
     return uuid.UUID(str(value))
 
 
-def _clean_text(value: Any) -> Optional[str]:
+def _clean_text(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
 
 
-def _clean_float(value: Any) -> Optional[float]:
+def _clean_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
@@ -374,7 +360,7 @@ def _clean_float(value: Any) -> Optional[float]:
         return None
 
 
-def _clean_int(value: Any) -> Optional[int]:
+def _clean_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
     try:
@@ -383,7 +369,7 @@ def _clean_int(value: Any) -> Optional[int]:
         return None
 
 
-def _clean_bool(value: Any) -> Optional[bool]:
+def _clean_bool(value: Any) -> bool | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
@@ -397,7 +383,7 @@ def _clean_bool(value: Any) -> Optional[bool]:
     return None
 
 
-def _date_value(value: Any) -> Optional[date]:
+def _date_value(value: Any) -> date | None:
     if value is None or value == "":
         return None
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -412,7 +398,7 @@ def _normalise_disease_id(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
 
 
-def _patient_encounter_to_dict(row: Any) -> Dict[str, Any]:
+def _patient_encounter_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": str(row.encounter_id),
         "encounter_id": str(row.encounter_id),
@@ -427,7 +413,7 @@ def _patient_encounter_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
-def _patient_vital_to_dict(row: Any) -> Dict[str, Any]:
+def _patient_vital_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "encounter_id": str(row.encounter_id),
@@ -450,7 +436,7 @@ def _patient_vital_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
-def _patient_lab_to_dict(row: Any) -> Dict[str, Any]:
+def _patient_lab_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "encounter_id": str(row.encounter_id),
@@ -466,7 +452,7 @@ def _patient_lab_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
-def _patient_medication_to_dict(row: Any) -> Dict[str, Any]:
+def _patient_medication_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "encounter_id": str(row.encounter_id),
@@ -485,7 +471,7 @@ def _patient_medication_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
-def _patient_diagnosis_to_dict(row: Any) -> Dict[str, Any]:
+def _patient_diagnosis_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "encounter_id": str(row.encounter_id),
@@ -505,10 +491,10 @@ async def create_encounter(
     patient_ref: str,
     disease_scope: str,
     encounter_type: str = "initial",
-    clinician_role: Optional[str] = None,
-    facility_level: Optional[str] = None,
-    notes: Optional[str] = None,
-) -> Dict[str, Any]:
+    clinician_role: str | None = None,
+    facility_level: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
     from .models import PatientEncounter
 
     encounter_type = _normalise_disease_id(encounter_type)
@@ -534,8 +520,8 @@ async def create_encounter(
 async def upsert_vitals(
     patient_ref: str,
     encounter_id: str,
-    vitals_dict: Dict[str, Any],
-) -> Dict[str, Any]:
+    vitals_dict: dict[str, Any],
+) -> dict[str, Any]:
     from sqlalchemy import delete
 
     from .models import PatientVital
@@ -545,9 +531,13 @@ async def upsert_vitals(
         "encounter_id": encounter_uuid,
         "patient_ref": patient_ref,
         "bp_systolic": _clean_int(vitals_dict.get("bp_systolic") or vitals_dict.get("systolic_bp")),
-        "bp_diastolic": _clean_int(vitals_dict.get("bp_diastolic") or vitals_dict.get("diastolic_bp")),
+        "bp_diastolic": _clean_int(
+            vitals_dict.get("bp_diastolic") or vitals_dict.get("diastolic_bp")
+        ),
         "heart_rate": _clean_int(vitals_dict.get("heart_rate") or vitals_dict.get("pulse")),
-        "respiratory_rate": _clean_int(vitals_dict.get("respiratory_rate") or vitals_dict.get("rr")),
+        "respiratory_rate": _clean_int(
+            vitals_dict.get("respiratory_rate") or vitals_dict.get("rr")
+        ),
         "temperature": _clean_float(vitals_dict.get("temperature")),
         "spo2": _clean_int(vitals_dict.get("spo2") or vitals_dict.get("o2_saturation")),
         "weight_kg": _clean_float(vitals_dict.get("weight_kg") or vitals_dict.get("weight")),
@@ -564,7 +554,9 @@ async def upsert_vitals(
     payload = {key: value for key, value in payload.items() if value is not None}
 
     async with get_session() as session:
-        await session.execute(delete(PatientVital).where(PatientVital.encounter_id == encounter_uuid))
+        await session.execute(
+            delete(PatientVital).where(PatientVital.encounter_id == encounter_uuid)
+        )
         row = PatientVital(**payload)
         session.add(row)
         await session.commit()
@@ -575,8 +567,8 @@ async def upsert_vitals(
 async def upsert_labs(
     patient_ref: str,
     encounter_id: str,
-    lab_entries: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    lab_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from .models import PatientLab
@@ -633,8 +625,8 @@ async def upsert_labs(
 async def upsert_medications(
     patient_ref: str,
     encounter_id: str,
-    medications: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    medications: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     from sqlalchemy import delete
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -668,7 +660,9 @@ async def upsert_medications(
         )
 
     async with get_session() as session:
-        await session.execute(delete(PatientMedication).where(PatientMedication.encounter_id == encounter_uuid))
+        await session.execute(
+            delete(PatientMedication).where(PatientMedication.encounter_id == encounter_uuid)
+        )
         if rows_payload:
             await session.execute(pg_insert(PatientMedication).values(rows_payload))
         await session.commit()
@@ -685,8 +679,8 @@ async def upsert_medications(
 async def upsert_diagnoses(
     patient_ref: str,
     encounter_id: str,
-    diagnoses: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    diagnoses: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     from sqlalchemy import delete
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -717,7 +711,9 @@ async def upsert_diagnoses(
         )
 
     async with get_session() as session:
-        await session.execute(delete(PatientDiagnosis).where(PatientDiagnosis.encounter_id == encounter_uuid))
+        await session.execute(
+            delete(PatientDiagnosis).where(PatientDiagnosis.encounter_id == encounter_uuid)
+        )
         if rows_payload:
             await session.execute(pg_insert(PatientDiagnosis).values(rows_payload))
         await session.commit()
@@ -731,10 +727,16 @@ async def upsert_diagnoses(
     return [_patient_diagnosis_to_dict(row) for row in rows]
 
 
-async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
+async def get_patient_state(patient_ref: str) -> dict[str, Any]:
     from sqlalchemy import select
 
-    from .models import PatientDiagnosis, PatientEncounter, PatientLab, PatientMedication, PatientVital
+    from .models import (
+        PatientDiagnosis,
+        PatientEncounter,
+        PatientLab,
+        PatientMedication,
+        PatientVital,
+    )
 
     async with get_session() as session:
         encounter = await session.scalar(
@@ -746,7 +748,6 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
         if encounter is None:
             return {}
 
-        encounter_id = encounter.encounter_id
         vitals_rows = (
             await session.scalars(
                 select(PatientVital)
@@ -765,14 +766,18 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
             await session.scalars(
                 select(PatientMedication)
                 .where(PatientMedication.patient_ref == patient_ref)
-                .order_by(PatientMedication.started_date.desc().nullslast(), PatientMedication.drug_name)
+                .order_by(
+                    PatientMedication.started_date.desc().nullslast(), PatientMedication.drug_name
+                )
             )
         ).all()
         diagnosis_rows = (
             await session.scalars(
                 select(PatientDiagnosis)
                 .where(PatientDiagnosis.patient_ref == patient_ref)
-                .order_by(PatientDiagnosis.onset_date.desc().nullslast(), PatientDiagnosis.condition_name)
+                .order_by(
+                    PatientDiagnosis.onset_date.desc().nullslast(), PatientDiagnosis.condition_name
+                )
             )
         ).all()
 
@@ -781,16 +786,14 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
     medications = [_patient_medication_to_dict(row) for row in medication_rows]
     diagnoses = [_patient_diagnosis_to_dict(row) for row in diagnosis_rows]
 
-    latest_labs_by_type: Dict[str, Dict[str, Any]] = {}
+    latest_labs_by_type: dict[str, dict[str, Any]] = {}
     for lab in labs:
         latest_labs_by_type.setdefault(lab["lab_type"], lab)
 
     active_medications = [
         medication for medication in medications if medication.get("status") == "active"
     ]
-    active_diagnoses = [
-        diagnosis for diagnosis in diagnoses if diagnosis.get("status") == "active"
-    ]
+    active_diagnoses = [diagnosis for diagnosis in diagnoses if diagnosis.get("status") == "active"]
     active_conditions = [
         _normalise_disease_id(diagnosis.get("condition_name") or "")
         for diagnosis in active_diagnoses
@@ -798,12 +801,14 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
     active_conditions = [condition for condition in active_conditions if condition]
 
     # Temporal events: key clinical dates for monitoring and pathway tracking
-    temporal_events: Dict[str, Any] = {}
+    temporal_events: dict[str, Any] = {}
     for medication in active_medications:
         if medication.get("started_date"):
             drug = medication.get("drug_name", "")
             if drug:
-                temporal_events.setdefault("treatment_start_dates", {})[drug] = medication["started_date"]
+                temporal_events.setdefault("treatment_start_dates", {})[drug] = medication[
+                    "started_date"
+                ]
     for lab_type_key in ("cd4", "cd4_count", "viral_load", "vl"):
         lab = latest_labs_by_type.get(lab_type_key)
         if lab and lab.get("recorded_at"):
@@ -847,13 +852,14 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
 # Clinical memory
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def create_pending_memory(
     patient_ref_hash: str,
     session_id: str,
     fact_type: str,
     fact_text: str,
-    source_message_ids: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    source_message_ids: list[str] | None = None,
+) -> dict[str, Any]:
     from .models import PendingMemory
 
     async with get_session() as session:
@@ -871,9 +877,9 @@ async def create_pending_memory(
 
 
 async def list_pending_memory(
-    patient_ref_hash: Optional[str] = None,
-    session_id: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    patient_ref_hash: str | None = None,
+    session_id: str | None = None,
+) -> list[dict[str, Any]]:
     from sqlalchemy import select
 
     from .models import PendingMemory
@@ -894,14 +900,10 @@ async def count_pending_memory() -> int:
     from .models import PendingMemory
 
     async with get_session() as session:
-        return int(
-            await session.scalar(select(func.count()).select_from(PendingMemory)) or 0
-        )
+        return int(await session.scalar(select(func.count()).select_from(PendingMemory)) or 0)
 
 
-async def approve_pending_memory(
-    memory_id: str, approved_by: str
-) -> Optional[Dict[str, Any]]:
+async def approve_pending_memory(memory_id: str, approved_by: str) -> dict[str, Any] | None:
     from sqlalchemy import select
 
     from .models import LongTermMemory, PendingMemory
@@ -929,7 +931,7 @@ async def approve_pending_memory(
 
 async def list_long_term_memory(
     patient_ref_hash: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     from sqlalchemy import select
 
     from .models import LongTermMemory
@@ -945,7 +947,7 @@ async def list_long_term_memory(
     return [_memory_to_dict(row, include_approved=True) for row in rows]
 
 
-async def list_all_long_term_memory(limit: int = 100) -> List[Dict[str, Any]]:
+async def list_all_long_term_memory(limit: int = 100) -> list[dict[str, Any]]:
     from sqlalchemy import select
 
     from .models import LongTermMemory
@@ -953,9 +955,7 @@ async def list_all_long_term_memory(limit: int = 100) -> List[Dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
-                select(LongTermMemory)
-                .order_by(LongTermMemory.created_at.desc())
-                .limit(limit)
+                select(LongTermMemory).order_by(LongTermMemory.created_at.desc()).limit(limit)
             )
         ).all()
     return [_memory_to_dict(row, include_approved=True) for row in rows]
@@ -967,12 +967,10 @@ async def count_long_term_memory() -> int:
     from .models import LongTermMemory
 
     async with get_session() as session:
-        return int(
-            await session.scalar(select(func.count()).select_from(LongTermMemory)) or 0
-        )
+        return int(await session.scalar(select(func.count()).select_from(LongTermMemory)) or 0)
 
 
-def _memory_to_dict(row: Any, include_approved: bool = False) -> Dict[str, Any]:
+def _memory_to_dict(row: Any, include_approved: bool = False) -> dict[str, Any]:
     data = {
         "id": str(row.id),
         "patient_ref_hash": row.patient_ref_hash,
@@ -991,7 +989,8 @@ def _memory_to_dict(row: Any, include_approved: bool = False) -> Dict[str, Any]:
 # Embedding cache  (with TTL eviction)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def get_embedding_cache(query_hash: str) -> Optional[List[float]]:
+
+async def get_embedding_cache(query_hash: str) -> list[float] | None:
     from sqlalchemy import select
 
     from .models import EmbeddingCache
@@ -1006,10 +1005,9 @@ async def get_embedding_cache(query_hash: str) -> Optional[List[float]]:
 async def put_embedding_cache(
     query_hash: str,
     model_name: str,
-    embedding: List[float],
+    embedding: list[float],
 ) -> None:
-    """
-    Upsert an embedding and evict rows older than CDSS_EMBEDDING_CACHE_TTL_DAYS.
+    """Upsert an embedding and evict rows older than CDSS_EMBEDDING_CACHE_TTL_DAYS.
     Default TTL is 30 days.  Set to 0 to disable eviction.
     """
     from sqlalchemy.dialects.postgresql import insert
@@ -1029,11 +1027,11 @@ async def put_embedding_cache(
         await session.execute(stmt)
         if _EMBEDDING_CACHE_TTL_DAYS > 0:
             from datetime import datetime, timedelta
+
             from sqlalchemy import delete
+
             cutoff = datetime.utcnow() - timedelta(days=_EMBEDDING_CACHE_TTL_DAYS)
-            await session.execute(
-                delete(EmbeddingCache).where(EmbeddingCache.created_at < cutoff)
-            )
+            await session.execute(delete(EmbeddingCache).where(EmbeddingCache.created_at < cutoff))
         await session.commit()
 
 
@@ -1041,14 +1039,14 @@ async def put_embedding_cache(
 # Evidence graph  (bulk upsert — no N+1 selects)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def upsert_evidence_graph(
     disease: str,
-    nodes: List[Dict[str, Any]],
-    edges: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
     clinician_id: str,
-) -> Dict[str, int]:
-    """
-    Bulk-upsert nodes then edges for one disease.
+) -> dict[str, int]:
+    """Bulk-upsert nodes then edges for one disease.
 
     Nodes are matched by (disease, ref_id); edges by
     (source_node_id, target_node_id, relation_type).
@@ -1099,7 +1097,7 @@ async def upsert_evidence_graph(
                 )
             )
         ).all()
-        node_id_by_ref: Dict[str, Any] = {n.ref_id: n.id for n in db_nodes}
+        node_id_by_ref: dict[str, Any] = {n.ref_id: n.id for n in db_nodes}
 
         # ── 3. Bulk upsert edges ────────────────────────────────────────
         edge_rows = []
@@ -1142,7 +1140,7 @@ async def query_evidence_graph_db(
     disease: str,
     query: str,
     top_k: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     from sqlalchemy import or_, select
     from sqlalchemy.orm import aliased
 
@@ -1200,18 +1198,14 @@ async def query_evidence_graph_db(
     return [dict(item[1], score=item[0]) for item in scored[:top_k]]
 
 
-async def evidence_graph_stats() -> Dict[str, Any]:
+async def evidence_graph_stats() -> dict[str, Any]:
     from sqlalchemy import func, select
 
     from .models import EvidenceEdge, EvidenceNode
 
     async with get_session() as session:
-        node_count = await session.scalar(
-            select(func.count()).select_from(EvidenceNode)
-        )
-        edge_count = await session.scalar(
-            select(func.count()).select_from(EvidenceEdge)
-        )
+        node_count = await session.scalar(select(func.count()).select_from(EvidenceNode))
+        edge_count = await session.scalar(select(func.count()).select_from(EvidenceEdge))
         by_disease = (
             await session.execute(
                 select(EvidenceNode.disease, func.count(EvidenceNode.id))
@@ -1247,10 +1241,10 @@ async def evidence_graph_stats() -> Dict[str, Any]:
 
 
 async def list_evidence_nodes(
-    disease: Optional[str] = None,
-    node_type: Optional[str] = None,
+    disease: str | None = None,
+    node_type: str | None = None,
     limit: int = 100,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     from sqlalchemy import select
 
     from .models import EvidenceNode
@@ -1269,7 +1263,7 @@ async def list_evidence_nodes(
     return [_evidence_node_to_dict(row) for row in rows]
 
 
-def _evidence_node_to_dict(node: Any) -> Dict[str, Any]:
+def _evidence_node_to_dict(node: Any) -> dict[str, Any]:
     return {
         "id": str(node.id),
         "ref_id": node.ref_id,
@@ -1281,7 +1275,7 @@ def _evidence_node_to_dict(node: Any) -> Dict[str, Any]:
     }
 
 
-def _evidence_edge_to_dict(edge: Any) -> Dict[str, Any]:
+def _evidence_edge_to_dict(edge: Any) -> dict[str, Any]:
     return {
         "id": str(edge.id),
         "relation_type": edge.relation_type,
@@ -1296,6 +1290,7 @@ def _evidence_edge_to_dict(edge: Any) -> Dict[str, Any]:
 # Alert Overrides (Phase B)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def create_alert_override(
     session_id: str,
     alert_type: str,
@@ -1303,8 +1298,8 @@ async def create_alert_override(
     alert_summary: str,
     override_reason: str,
     clinician_role: str,
-    patient_ref: Optional[str] = None,
-) -> Dict[str, Any]:
+    patient_ref: str | None = None,
+) -> dict[str, Any]:
     from .models import AlertOverride
 
     async with get_session() as session:
@@ -1330,22 +1325,24 @@ async def create_alert_override(
         "patient_ref": row.patient_ref,
         "override_reason": row.override_reason,
         "clinician_role": row.clinician_role,
-        "override_timestamp": row.override_timestamp.isoformat() if row.override_timestamp else None,
+        "override_timestamp": row.override_timestamp.isoformat()
+        if row.override_timestamp
+        else None,
     }
 
 
-async def get_alert_override_report() -> Dict[str, Any]:
+async def get_alert_override_report() -> dict[str, Any]:
+    from sqlalchemy import func, select
+
     from .models import AlertOverride, AuditLog
-    from sqlalchemy import select, func
-    
+
     async with get_session() as session:
-        override_stmt = (
-            select(AlertOverride.alert_type, func.count(AlertOverride.id).label("override_count"))
-            .group_by(AlertOverride.alert_type)
-        )
+        override_stmt = select(
+            AlertOverride.alert_type, func.count(AlertOverride.id).label("override_count")
+        ).group_by(AlertOverride.alert_type)
         override_res = await session.execute(override_stmt)
         overrides = {row.alert_type: row.override_count for row in override_res}
-        
+
         fired_stmt = (
             select(AuditLog.disease, func.count(AuditLog.id).label("fired_count"))
             .where(AuditLog.event_type == "CLINICAL_SCORE")
@@ -1353,38 +1350,45 @@ async def get_alert_override_report() -> Dict[str, Any]:
         )
         fired_res = await session.execute(fired_stmt)
         fired = {row.disease: row.fired_count for row in fired_res}
-        
-        reason_stmt = (
-            select(AlertOverride.alert_type, AlertOverride.override_reason, func.count(AlertOverride.id).label("reason_count"))
-            .group_by(AlertOverride.alert_type, AlertOverride.override_reason)
-        )
+
+        reason_stmt = select(
+            AlertOverride.alert_type,
+            AlertOverride.override_reason,
+            func.count(AlertOverride.id).label("reason_count"),
+        ).group_by(AlertOverride.alert_type, AlertOverride.override_reason)
         reason_res = await session.execute(reason_stmt)
-        
+
         reasons_by_type = {}
         for row in reason_res:
             atype = row.alert_type
             if atype not in reasons_by_type:
                 reasons_by_type[atype] = []
-            reasons_by_type[atype].append({"reason": row.override_reason, "count": row.reason_count})
-            
+            reasons_by_type[atype].append(
+                {"reason": row.override_reason, "count": row.reason_count}
+            )
+
         summary = []
         all_types = set(list(overrides.keys()) + list(fired.keys()))
         for alert_type in all_types:
             f_count = fired.get(alert_type, 0)
             o_count = overrides.get(alert_type, 0)
             rate = round((o_count / f_count * 100), 1) if f_count > 0 else 0.0
-            
-            top_reasons = sorted(reasons_by_type.get(alert_type, []), key=lambda x: x["count"], reverse=True)
-            
-            summary.append({
-                "alert_type": alert_type,
-                "total_fired": f_count,
-                "total_overridden": o_count,
-                "override_rate_pct": rate,
-                "top_override_reasons": top_reasons[:5],
-                "downgrade_candidate": rate > 80.0
-            })
-            
+
+            top_reasons = sorted(
+                reasons_by_type.get(alert_type, []), key=lambda x: x["count"], reverse=True
+            )
+
+            summary.append(
+                {
+                    "alert_type": alert_type,
+                    "total_fired": f_count,
+                    "total_overridden": o_count,
+                    "override_rate_pct": rate,
+                    "top_override_reasons": top_reasons[:5],
+                    "downgrade_candidate": rate > 80.0,
+                }
+            )
+
     return {"override_summary": summary}
 
 
@@ -1392,16 +1396,19 @@ async def get_alert_override_report() -> Dict[str, Any]:
 # Clinical Documents (Phase E)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def create_clinical_document(
     document_type: str,
     patient_ref: str,
     content: str,
-    encounter_id: Optional[str] = None,
+    encounter_id: str | None = None,
     requires_clinician_review: bool = True,
-    guideline_citations: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, Any]:
-    from .models import ClinicalDocument
+    guideline_citations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     import uuid
+
+    from .models import ClinicalDocument
+
     async with get_session() as session:
         doc = ClinicalDocument(
             document_type=document_type,
@@ -1409,7 +1416,7 @@ async def create_clinical_document(
             encounter_id=uuid.UUID(encounter_id) if encounter_id else None,
             content=content,
             requires_clinician_review=requires_clinician_review,
-            guideline_citations=guideline_citations or []
+            guideline_citations=guideline_citations or [],
         )
         session.add(doc)
         await session.commit()
@@ -1424,12 +1431,15 @@ async def create_clinical_document(
             "reviewed_by": doc.reviewed_by,
             "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
             "generated_at": doc.generated_at.isoformat(),
-            "guideline_citations": doc.guideline_citations
+            "guideline_citations": doc.guideline_citations,
         }
 
-async def get_clinical_document(document_id: str) -> Optional[Dict[str, Any]]:
-    from .models import ClinicalDocument
+
+async def get_clinical_document(document_id: str) -> dict[str, Any] | None:
     import uuid
+
+    from .models import ClinicalDocument
+
     async with get_session() as session:
         doc = await session.get(ClinicalDocument, uuid.UUID(document_id))
         if not doc:
@@ -1444,16 +1454,21 @@ async def get_clinical_document(document_id: str) -> Optional[Dict[str, Any]]:
             "reviewed_by": doc.reviewed_by,
             "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
             "generated_at": doc.generated_at.isoformat(),
-            "guideline_citations": doc.guideline_citations
+            "guideline_citations": doc.guideline_citations,
         }
 
-async def list_patient_documents(patient_ref: str) -> List[Dict[str, Any]]:
+
+async def list_patient_documents(patient_ref: str) -> list[dict[str, Any]]:
     from sqlalchemy import select
+
     from .models import ClinicalDocument
+
     async with get_session() as session:
-        query = select(ClinicalDocument).where(
-            ClinicalDocument.patient_ref == patient_ref
-        ).order_by(ClinicalDocument.generated_at.desc())
+        query = (
+            select(ClinicalDocument)
+            .where(ClinicalDocument.patient_ref == patient_ref)
+            .order_by(ClinicalDocument.generated_at.desc())
+        )
         result = await session.execute(query)
         docs = result.scalars().all()
         return [
@@ -1464,15 +1479,18 @@ async def list_patient_documents(patient_ref: str) -> List[Dict[str, Any]]:
                 "requires_clinician_review": doc.requires_clinician_review,
                 "reviewed_by": doc.reviewed_by,
                 "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
-                "generated_at": doc.generated_at.isoformat()
+                "generated_at": doc.generated_at.isoformat(),
             }
             for doc in docs
         ]
 
+
 async def review_clinical_document(document_id: str, reviewed_by: str) -> bool:
-    from datetime import datetime
-    from .models import ClinicalDocument
     import uuid
+    from datetime import datetime
+
+    from .models import ClinicalDocument
+
     async with get_session() as session:
         doc = await session.get(ClinicalDocument, uuid.UUID(document_id))
         if not doc:

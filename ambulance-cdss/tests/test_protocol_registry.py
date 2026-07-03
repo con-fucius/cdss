@@ -1,5 +1,4 @@
-"""
-tests/test_protocol_registry.py
+"""tests/test_protocol_registry.py.
 
 Exercises the governance enforcement in app/protocols/registry.py.
 """
@@ -10,9 +9,7 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.protocols.registry import ProtocolRegistry, ProtocolRejectedError, _parse_protocol
-
 
 GOVERNANCE_COMPLETE = {
     "protocol_id": "test_protocol",
@@ -76,8 +73,7 @@ def test_dangling_branch_target_rejected(tmp_path: Path):
 
 
 def test_placeholder_approved_by_rejected(tmp_path: Path):
-    """
-    A non-empty but literally placeholder approved_by must be rejected,
+    """A non-empty but literally placeholder approved_by must be rejected,
     not treated as governance-complete — see
     DispatchProtocol.is_governance_complete docstring. Plain truthiness
     alone is not a sufficient check; "PLACEHOLDER ..." is non-empty.
@@ -91,7 +87,9 @@ def test_placeholder_approved_by_rejected(tmp_path: Path):
 
 def test_placeholder_approved_date_rejected(tmp_path: Path):
     raw = dict(GOVERNANCE_COMPLETE)
-    raw["approved_date"] = "PLACEHOLDER — pending real sign-off, do not treat as production-approved"
+    raw["approved_date"] = (
+        "PLACEHOLDER — pending real sign-off, do not treat as production-approved"
+    )
     path = tmp_path / "placeholder_date.json"
     with pytest.raises(ProtocolRejectedError, match="governance fields incomplete"):
         _parse_protocol(raw, path)
@@ -106,8 +104,7 @@ def test_placeholder_check_is_case_insensitive(tmp_path: Path):
 
 
 def test_registry_loads_real_dispatch_directory():
-    """
-    The three shipped dispatch protocol JSON files
+    """The three shipped dispatch protocol JSON files
     (cardiac_arrest_unresponsive_v1, choking_airway_obstruction_v1,
     major_trauma_mva_v1) all currently carry literal PLACEHOLDER text in
     approved_by/approved_date pending the real named doctor + medical
@@ -134,10 +131,13 @@ def test_registry_loads_real_dispatch_directory():
 
 # ── find_by_chief_complaint ───────────────────────────────────────────────────
 
+
 def _make_registry_with_protocols(protocols: list, tmp_path: Path) -> ProtocolRegistry:
     """Utility: write protocol files to a temp dir and load them."""
     import json
+
     from app.protocols.registry import ProtocolRegistry
+
     for proto in protocols:
         path = tmp_path / f"{proto['protocol_id']}.json"
         path.write_text(json.dumps(proto))
@@ -171,13 +171,13 @@ def test_find_by_chief_complaint_no_match(tmp_path: Path):
 
 
 def test_find_by_chief_complaint_word_boundary_prevents_substring_false_positive(tmp_path: Path):
-    """
-    'choking' must not match 'not choking, just coughing'... actually it
+    r"""'choking' must not match 'not choking, just coughing'... actually it
     should — 'choking' appears as a whole word. But 'chok' must not match
     'choking'. This confirms the \\b boundary works on both sides.
     """
     reg = _make_registry_with_protocols(
-        [_protocol_fixture("choke", ["chok"])], tmp_path  # 'chok' is not a word
+        [_protocol_fixture("choke", ["chok"])],
+        tmp_path,  # 'chok' is not a word
     )
     result = reg.find_by_chief_complaint("patient choking on food")
     # 'chok' does not appear as a whole word (\b boundary prevents substring match)
@@ -185,8 +185,7 @@ def test_find_by_chief_complaint_word_boundary_prevents_substring_false_positive
 
 
 def test_find_by_chief_complaint_longest_trigger_wins(tmp_path: Path):
-    """
-    'not breathing' (12 chars) should beat 'breathing' (9 chars)
+    """'not breathing' (12 chars) should beat 'breathing' (9 chars)
     when both match the same complaint.
     """
     reg = _make_registry_with_protocols(
@@ -203,9 +202,9 @@ def test_find_by_chief_complaint_longest_trigger_wins(tmp_path: Path):
 
 # ── Protocol reachability validation ──────────────────────────────────────
 
+
 def test_unreachable_question_rejected(tmp_path: Path):
-    """
-    A question that no branch_map points to (and is not the entry question)
+    """A question that no branch_map points to (and is not the entry question)
     is dead code — the author wrote guidance nobody will ever see.
     """
     raw = dict(GOVERNANCE_COMPLETE)
@@ -228,8 +227,7 @@ def test_unreachable_question_rejected(tmp_path: Path):
 
 
 def test_unreachable_outcome_rejected(tmp_path: Path):
-    """
-    A terminal outcome that no branch_map points to is dead code — a
+    """A terminal outcome that no branch_map points to is dead code — a
     priority code that can never fire.
     """
     raw = dict(GOVERNANCE_COMPLETE)
@@ -259,8 +257,7 @@ def test_unreachable_outcome_rejected(tmp_path: Path):
 
 
 def test_valid_fixture_passes_reachability(tmp_path: Path):
-    """
-    The GOVERNANCE_COMPLETE fixture: entry q1 -> outcome_a. Both are
+    """The GOVERNANCE_COMPLETE fixture: entry q1 -> outcome_a. Both are
     reachable. Reachability check must pass.
     """
     path = tmp_path / "ok.json"
@@ -271,8 +268,7 @@ def test_valid_fixture_passes_reachability(tmp_path: Path):
 
 
 def test_reachable_chain_of_questions(tmp_path: Path):
-    """
-    q1 -> q2 -> outcome_a. All questions are reachable via the chain.
+    """q1 -> q2 -> outcome_a. All questions are reachable via the chain.
     Reachability check must pass.
     """
     raw = dict(GOVERNANCE_COMPLETE)
@@ -296,13 +292,13 @@ def test_reachable_chain_of_questions(tmp_path: Path):
 
 
 def test_reachability_governance_rejects_before_reachability_checked(tmp_path: Path):
-    """
-    The three shipped dispatch protocol files all have PLACEHOLDER
+    """The three shipped dispatch protocol files all have PLACEHOLDER
     governance text, so they are rejected at the governance check before
     reachability is ever evaluated. This confirms the check order is
     correct: governance first, then reachability.
     """
     from app.protocols.registry import ProtocolRegistry
+
     registry = ProtocolRegistry()
     registry.load_all()
     for rejection in registry.list_rejected():
@@ -310,8 +306,7 @@ def test_reachability_governance_rejects_before_reachability_checked(tmp_path: P
 
 
 def test_reachability_multiple_outcomes_one_unreachable(tmp_path: Path):
-    """
-    q1 -> outcome_a. outcome_b exists but is unreachable.
+    """q1 -> outcome_a. outcome_b exists but is unreachable.
     Only outcome_b should be listed as unreachable.
     """
     raw = dict(GOVERNANCE_COMPLETE)
@@ -341,9 +336,7 @@ def test_reachability_multiple_outcomes_one_unreachable(tmp_path: Path):
 
 
 def test_reachability_error_lists_all_unreachable(tmp_path: Path):
-    """
-    Multiple unreachable items are all listed in the rejection error.
-    """
+    """Multiple unreachable items are all listed in the rejection error."""
     raw = dict(GOVERNANCE_COMPLETE)
     raw["questions"] = {
         "q1": {

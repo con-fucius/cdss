@@ -1,5 +1,4 @@
-"""
-app/handoff_link.py
+"""app/handoff_link.py.
 
 Time-limited, HMAC-signed handoff URLs.
 
@@ -25,7 +24,6 @@ import hashlib
 import hmac
 import os
 import time
-from urllib.parse import urlencode
 
 _HANDOFF_SIGNING_KEY = os.getenv(
     "HANDOFF_SIGNING_KEY",
@@ -38,8 +36,7 @@ def generate_handoff_token(
     incident_id: str,
     expires_in_hours: int = _DEFAULT_EXPIRY_HOURS,
 ) -> str:
-    """
-    Generate an HMAC-SHA256 signed token embedding the incident_id and
+    """Generate an HMAC-SHA256 signed token embedding the incident_id and
     an expiry timestamp. The token is URL-safe and suitable for use as
     a query parameter.
 
@@ -56,8 +53,7 @@ def generate_handoff_token(
 
 
 def verify_handoff_token(incident_id: str, token: str) -> bool:
-    """
-    Verify that a handoff token is valid for the given incident_id.
+    """Verify that a handoff token is valid for the given incident_id.
     Returns True if the token is valid and not expired.
     """
     try:

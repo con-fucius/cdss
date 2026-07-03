@@ -1,5 +1,4 @@
-"""
-Ingestion pipeline for CDSS.
+"""Ingestion pipeline for CDSS.
 
 Phase 0 fixes:
 - create_index called with explicit vector_column_name="vector" (LanceDB 0.17+)
@@ -12,22 +11,20 @@ Phase 0 fixes:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
-import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import lancedb
-import pandas as pd
 from fastembed import TextEmbedding
 
+from .chunkers.hierarchical import HierarchicalIndexer
 from .config import DISEASE_CONFIG
 from .extractors.pipeline import ExtractionPipeline
-from .chunkers.hierarchical import HierarchicalIndexer
-from .schema import IndexedChunk
-from .logs import log_init
 from .indexers.pageindex import PageIndexBuilder
+from .logs import log_init
+from .schema import IndexedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +33,7 @@ DB_PATH = os.environ.get("LANCEDB_PATH", str(APP_DIR / "lancedb"))
 DOCS_DIR = APP_DIR / "docs"
 
 # Confirmed PDF paths relative to DOCS_DIR — verified against actual directory listing
-DISEASE_PDF_MAP: Dict[str, str] = {
+DISEASE_PDF_MAP: dict[str, str] = {
     "hiv": "HIV-AIDS/Kenya HIV Prevention and Treatment Guidelines 2022.pdf",
     "diabetes": "Diabetes Mellitus/National Clinical Guidelines on Management of Diabetes Mellitus  V15 2024.pdf",
     "cvd": "Cardiovascular Disease/Kenya National Guidelines for The Management of Cardiovascular Diseases.pdf",
@@ -46,7 +43,7 @@ DISEASE_PDF_MAP: Dict[str, str] = {
 }
 
 
-def list_lancedb_tables(db) -> List[str]:
+def list_lancedb_tables(db) -> list[str]:
     """Return LanceDB table names using the non-deprecated API."""
     tables = db.list_tables()
     if hasattr(tables, "tables"):
@@ -55,7 +52,7 @@ def list_lancedb_tables(db) -> List[str]:
 
 
 class IngestionManager:
-    def __init__(self, db_path: str = DB_PATH, embedding_cache_dir: Optional[str] = None):
+    def __init__(self, db_path: str = DB_PATH, embedding_cache_dir: str | None = None):
         self.db_path = db_path
         self.db = lancedb.connect(db_path)
         self.extraction_pipeline = ExtractionPipeline()
@@ -87,11 +84,10 @@ class IngestionManager:
     def index_disease(
         self,
         disease: str,
-        pdf_path: Optional[str] = None,
-        guideline_name: Optional[str] = None,
-    ) -> Tuple[str, int]:
-        """
-        Index one disease guideline into LanceDB.
+        pdf_path: str | None = None,
+        guideline_name: str | None = None,
+    ) -> tuple[str, int]:
+        """Index one disease guideline into LanceDB.
 
         Returns (table_name, chunk_count).
         Raises RuntimeError if chunk count is zero — do not proceed silently.
@@ -100,9 +96,9 @@ class IngestionManager:
         table_name = f"{disease.lower()}_guidelines"
 
         resolved_pdf = pdf_path or str(self.get_pdf_path(disease))
-        resolved_name = guideline_name or DISEASE_CONFIG.get(
-            disease.lower(), {}
-        ).get("guideline_name", f"{disease.upper()} Guidelines")
+        resolved_name = guideline_name or DISEASE_CONFIG.get(disease.lower(), {}).get(
+            "guideline_name", f"{disease.upper()} Guidelines"
+        )
 
         logger.info("Ingesting %s from %s", disease, resolved_pdf)
 
@@ -117,7 +113,7 @@ class IngestionManager:
 
         # 2. Hierarchical chunking
         indexer = HierarchicalIndexer(disease, resolved_name)
-        indexed_chunks: List[IndexedChunk] = indexer.process(extraction_result.content)
+        indexed_chunks: list[IndexedChunk] = indexer.process(extraction_result.content)
 
         if not indexed_chunks:
             raise RuntimeError(
@@ -133,8 +129,7 @@ class IngestionManager:
 
         # 4. Build LanceDB rows
         data = [
-            chunk.to_dict(vector=embeddings[i].tolist())
-            for i, chunk in enumerate(indexed_chunks)
+            chunk.to_dict(vector=embeddings[i].tolist()) for i, chunk in enumerate(indexed_chunks)
         ]
 
         # 5. Write table (drop existing so schema is always clean)
@@ -229,13 +224,12 @@ class IngestionManager:
             "active event loop so PageIndex can complete before returning."
         )
 
-    def index_all(self, diseases: Optional[List[str]] = None) -> Dict[str, int]:
-        """
-        Index all configured diseases (or a subset).
+    def index_all(self, diseases: list[str] | None = None) -> dict[str, int]:
+        """Index all configured diseases (or a subset).
         Returns {disease: chunk_count}. Logs but does not raise on per-disease failure.
         """
         targets = diseases or list(DISEASE_PDF_MAP.keys())
-        results: Dict[str, int] = {}
+        results: dict[str, int] = {}
         for disease in targets:
             try:
                 _, count = self.index_disease(disease)
@@ -249,6 +243,7 @@ class IngestionManager:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     import argparse

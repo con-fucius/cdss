@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
+async def get_patient_state(patient_ref: str) -> dict[str, Any]:
     """Return aggregated patient state for a hashed patient reference.
 
     The repository layer owns the Postgres access pattern. This wrapper exists so
@@ -26,7 +26,7 @@ async def get_patient_state(patient_ref: str) -> Dict[str, Any]:
         return {}
 
 
-def detect_temporal_flags(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def detect_temporal_flags(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Scan assembled patient state for overdue monitoring and temporal flags.
 
     Returns a list of clinical flags, each with severity, message, and
@@ -35,11 +35,11 @@ def detect_temporal_flags(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not state:
         return []
 
-    flags: List[Dict[str, Any]] = []
+    flags: list[dict[str, Any]] = []
     now = datetime.utcnow()
     temporal = state.get("temporal_events") or {}
     latest_labs = state.get("latest_labs_by_type") or {}
-    active_meds = state.get("active_medications") or []
+    state.get("active_medications") or []
     active_conditions = [c.lower() for c in (state.get("active_conditions") or [])]
 
     def _parse_date(date_str: str) -> datetime | None:
@@ -55,18 +55,22 @@ def detect_temporal_flags(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         vl_date_str = temporal.get("last_viral_load_date")
         vl_date = _parse_date(vl_date_str)
         if vl_date is None:
-            flags.append({
-                "severity": "warning",
-                "message": "No viral load recorded — baseline VL required for HIV patients",
-                "guideline_ref": "Kenya ARV Guidelines 2022: baseline VL at ART initiation",
-            })
+            flags.append(
+                {
+                    "severity": "warning",
+                    "message": "No viral load recorded — baseline VL required for HIV patients",
+                    "guideline_ref": "Kenya ARV Guidelines 2022: baseline VL at ART initiation",
+                }
+            )
         elif (now - vl_date).days > 182:
             months = (now - vl_date).days // 30
-            flags.append({
-                "severity": "warning",
-                "message": f"Viral load overdue — last {months} months ago ({vl_date_str})",
-                "guideline_ref": "Kenya ARV Guidelines 2022: VL at 6 months, then annually",
-            })
+            flags.append(
+                {
+                    "severity": "warning",
+                    "message": f"Viral load overdue — last {months} months ago ({vl_date_str})",
+                    "guideline_ref": "Kenya ARV Guidelines 2022: VL at 6 months, then annually",
+                }
+            )
 
     # CD4 overdue: > 6 months in first year of ART
     if "hiv" in active_conditions:
@@ -80,17 +84,21 @@ def detect_temporal_flags(state: Dict[str, Any]) -> List[Dict[str, Any]]:
                 break
         if art_start and (now - art_start).days < 365:
             if cd4_date is None:
-                flags.append({
-                    "severity": "info",
-                    "message": "CD4 count recommended within first year of ART",
-                    "guideline_ref": "Kenya ARV Guidelines 2022: CD4 at baseline and 6 months",
-                })
+                flags.append(
+                    {
+                        "severity": "info",
+                        "message": "CD4 count recommended within first year of ART",
+                        "guideline_ref": "Kenya ARV Guidelines 2022: CD4 at baseline and 6 months",
+                    }
+                )
             elif (now - cd4_date).days > 182:
-                flags.append({
-                    "severity": "info",
-                    "message": f"CD4 count due — last {((now - cd4_date).days // 30)} months ago",
-                    "guideline_ref": "Kenya ARV Guidelines 2022: repeat CD4 at 6 months",
-                })
+                flags.append(
+                    {
+                        "severity": "info",
+                        "message": f"CD4 count due — last {((now - cd4_date).days // 30)} months ago",
+                        "guideline_ref": "Kenya ARV Guidelines 2022: repeat CD4 at 6 months",
+                    }
+                )
 
     # HbA1c overdue: > 3 months if target not met
     if "diabetes" in active_conditions:
@@ -101,16 +109,20 @@ def detect_temporal_flags(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             hba1c_date = _parse_date(hba1c_date_str)
             if hba1c_val is not None and float(hba1c_val) >= 7.0 and hba1c_date:
                 if (now - hba1c_date).days > 90:
-                    flags.append({
-                        "severity": "warning",
-                        "message": f"HbA1c {hba1c_val}% above target — recheck due (last {((now - hba1c_date).days // 30)} months ago)",
-                        "guideline_ref": "Kenya DM Guidelines V15 2024: HbA1c every 3 months if above target",
-                    })
+                    flags.append(
+                        {
+                            "severity": "warning",
+                            "message": f"HbA1c {hba1c_val}% above target — recheck due (last {((now - hba1c_date).days // 30)} months ago)",
+                            "guideline_ref": "Kenya DM Guidelines V15 2024: HbA1c every 3 months if above target",
+                        }
+                    )
         else:
-            flags.append({
-                "severity": "info",
-                "message": "No HbA1c recorded — baseline required for diabetic patients",
-                "guideline_ref": "Kenya DM Guidelines V15 2024: HbA1c at diagnosis",
-            })
+            flags.append(
+                {
+                    "severity": "info",
+                    "message": "No HbA1c recorded — baseline required for diabetic patients",
+                    "guideline_ref": "Kenya DM Guidelines V15 2024: HbA1c at diagnosis",
+                }
+            )
 
     return flags

@@ -1,125 +1,132 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ambulance Handoff Summary</title>
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-<div id="loading-screen" class="loading-screen">
-  <div class="loading-spinner"></div>
-  <p>Loading handoff summary...</p>
-</div>
-
-<div id="error-screen" class="hidden">
-  <div class="error-container">
-    <h1>Unable to Load Handoff</h1>
-    <p id="error-message"></p>
-    <p class="error-hint">Contact the dispatch center if this persists.</p>
-  </div>
-</div>
-
-<div id="handoff-page" class="handoff-page hidden">
-
-  <header class="handoff-header">
-    <div class="handoff-header__left">
-      <h1 class="handoff-header__title">AMBULANCE HANDOFF SUMMARY</h1>
-      <p class="handoff-header__subtitle">Clinical handoff from pre-hospital care team</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ambulance Handoff Summary</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="loading-screen" class="loading-screen">
+      <div class="loading-spinner"></div>
+      <p>Loading handoff summary...</p>
     </div>
-    <div class="handoff-header__right">
-      <button id="print-btn" class="btn-print" onclick="window.print()">Print</button>
-    </div>
-  </header>
 
-  <div class="handoff-content">
-
-    <!-- Priority and Status Banner -->
-    <div id="priority-banner" class="priority-banner">
-      <div class="priority-banner__code" id="priority-code"></div>
-      <div class="priority-banner__meta">
-        <span id="incident-id" class="meta-value"></span>
-        <span class="meta-separator">|</span>
-        <span id="status-value" class="meta-value"></span>
-        <span class="meta-separator">|</span>
-        <span id="unit-value" class="meta-value"></span>
+    <div id="error-screen" class="hidden">
+      <div class="error-container">
+        <h1>Unable to Load Handoff</h1>
+        <p id="error-message"></p>
+        <p class="error-hint">Contact the dispatch center if this persists.</p>
       </div>
     </div>
 
-    <!-- Chief Complaint -->
-    <section class="handoff-section">
-      <h2 class="section-title">Chief Complaint</h2>
-      <p id="chief-complaint" class="chief-complaint"></p>
-    </section>
+    <div id="handoff-page" class="handoff-page hidden">
+      <header class="handoff-header">
+        <div class="handoff-header__left">
+          <h1 class="handoff-header__title">AMBULANCE HANDOFF SUMMARY</h1>
+          <p class="handoff-header__subtitle">
+            Clinical handoff from pre-hospital care team
+          </p>
+        </div>
+        <div class="handoff-header__right">
+          <button id="print-btn" class="btn-print" onclick="window.print()">
+            Print
+          </button>
+        </div>
+      </header>
 
-    <!-- Facility and ETA -->
-    <section class="handoff-section">
-      <h2 class="section-title">Receiving Facility</h2>
-      <p id="facility-name" class="facility-name"></p>
-      <p id="facility-detail" class="facility-detail"></p>
-    </section>
+      <div class="handoff-content">
+        <!-- Priority and Status Banner -->
+        <div id="priority-banner" class="priority-banner">
+          <div class="priority-banner__code" id="priority-code"></div>
+          <div class="priority-banner__meta">
+            <span id="incident-id" class="meta-value"></span>
+            <span class="meta-separator">|</span>
+            <span id="status-value" class="meta-value"></span>
+            <span class="meta-separator">|</span>
+            <span id="unit-value" class="meta-value"></span>
+          </div>
+        </div>
 
-    <!-- Dispatch Protocol -->
-    <section class="handoff-section">
-      <h2 class="section-title">Dispatch Protocol</h2>
-      <p id="protocol-info" class="protocol-info"></p>
-    </section>
+        <!-- Chief Complaint -->
+        <section class="handoff-section">
+          <h2 class="section-title">Chief Complaint</h2>
+          <p id="chief-complaint" class="chief-complaint"></p>
+        </section>
 
-    <!-- Dispatch Q&A -->
-    <section class="handoff-section">
-      <h2 class="section-title">Dispatch Interview</h2>
-      <div id="dispatch-qa" class="dispatch-qa"></div>
-    </section>
+        <!-- Facility and ETA -->
+        <section class="handoff-section">
+          <h2 class="section-title">Receiving Facility</h2>
+          <p id="facility-name" class="facility-name"></p>
+          <p id="facility-detail" class="facility-detail"></p>
+        </section>
 
-    <!-- Triage Enrichment -->
-    <section id="triage-section" class="handoff-section hidden">
-      <h2 class="section-title">Triage Assessment</h2>
-      <div id="triage-data" class="triage-data"></div>
-    </section>
+        <!-- Dispatch Protocol -->
+        <section class="handoff-section">
+          <h2 class="section-title">Dispatch Protocol</h2>
+          <p id="protocol-info" class="protocol-info"></p>
+        </section>
 
-    <!-- Clinical Alerts -->
-    <div id="clinical-alerts" class="clinical-alerts hidden">
-      <div id="news2-alert" class="alert-card hidden">
-        <span class="alert-label">Highest NEWS2</span>
-        <span id="news2-value" class="alert-value"></span>
-        <span id="news2-detail" class="alert-detail"></span>
-      </div>
-      <div id="gcs-alert" class="alert-card hidden">
-        <span class="alert-label">Lowest GCS</span>
-        <span id="gcs-value" class="alert-value"></span>
-        <span id="gcs-detail" class="alert-detail"></span>
+        <!-- Dispatch Q&A -->
+        <section class="handoff-section">
+          <h2 class="section-title">Dispatch Interview</h2>
+          <div id="dispatch-qa" class="dispatch-qa"></div>
+        </section>
+
+        <!-- Triage Enrichment -->
+        <section id="triage-section" class="handoff-section hidden">
+          <h2 class="section-title">Triage Assessment</h2>
+          <div id="triage-data" class="triage-data"></div>
+        </section>
+
+        <!-- Clinical Alerts -->
+        <div id="clinical-alerts" class="clinical-alerts hidden">
+          <div id="news2-alert" class="alert-card hidden">
+            <span class="alert-label">Highest NEWS2</span>
+            <span id="news2-value" class="alert-value"></span>
+            <span id="news2-detail" class="alert-detail"></span>
+          </div>
+          <div id="gcs-alert" class="alert-card hidden">
+            <span class="alert-label">Lowest GCS</span>
+            <span id="gcs-value" class="alert-value"></span>
+            <span id="gcs-detail" class="alert-detail"></span>
+          </div>
+        </div>
+
+        <!-- Vitals Timeline -->
+        <section class="handoff-section">
+          <h2 class="section-title">Vitals Timeline</h2>
+          <div id="vitals-timeline" class="vitals-timeline"></div>
+        </section>
+
+        <!-- Medications -->
+        <section class="handoff-section">
+          <h2 class="section-title">Medications / Items</h2>
+          <div id="medications" class="medications"></div>
+        </section>
+
+        <!-- Field Actions -->
+        <section class="handoff-section">
+          <h2 class="section-title">Field Actions / Notes</h2>
+          <div id="field-actions" class="field-actions"></div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="handoff-footer">
+          <p>
+            This document was generated deterministically from the ambulance
+            CDSS incident record.
+          </p>
+          <p id="generated-at" class="generated-at"></p>
+          <p class="footer-note">
+            No clinical judgments, diagnoses, or treatment recommendations are
+            included. This document restates what was asked, answered, measured,
+            and given.
+          </p>
+        </footer>
       </div>
     </div>
 
-    <!-- Vitals Timeline -->
-    <section class="handoff-section">
-      <h2 class="section-title">Vitals Timeline</h2>
-      <div id="vitals-timeline" class="vitals-timeline"></div>
-    </section>
-
-    <!-- Medications -->
-    <section class="handoff-section">
-      <h2 class="section-title">Medications / Items</h2>
-      <div id="medications" class="medications"></div>
-    </section>
-
-    <!-- Field Actions -->
-    <section class="handoff-section">
-      <h2 class="section-title">Field Actions / Notes</h2>
-      <div id="field-actions" class="field-actions"></div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="handoff-footer">
-      <p>This document was generated deterministically from the ambulance CDSS incident record.</p>
-      <p id="generated-at" class="generated-at"></p>
-      <p class="footer-note">No clinical judgments, diagnoses, or treatment recommendations are included. This document restates what was asked, answered, measured, and given.</p>
-    </footer>
-
-  </div>
-</div>
-
-<script src="app.js"></script>
-</body>
+    <script src="app.js"></script>
+  </body>
 </html>

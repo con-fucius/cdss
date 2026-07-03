@@ -1,5 +1,4 @@
-"""
-app/external/emergency_dispatch.py
+"""app/external/emergency_dispatch.py.
 
 Live client for the emergency dispatch / unit-assignment service.
 
@@ -23,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 
@@ -37,7 +35,7 @@ logger = logging.getLogger(__name__)
 class DispatchResult:
     dispatch_id: str
     assigned_unit_id: str
-    eta_minutes: Optional[float]
+    eta_minutes: float | None
     status: str
 
 
@@ -45,7 +43,7 @@ class DispatchResult:
 class AckResult:
     admission_id: str
     acknowledged: bool
-    facility_confirmation_id: Optional[str] = None
+    facility_confirmation_id: str | None = None
 
 
 class EmergencyDispatchClient:
@@ -60,11 +58,10 @@ class EmergencyDispatchClient:
         incident_id: str,
         priority_code: str,
         recommended_unit_type: str,
-        lat: Optional[float],
-        lon: Optional[float],
-    ) -> Optional[DispatchResult]:
-        """
-        Returns None (never raises) if the service is unreachable or
+        lat: float | None,
+        lon: float | None,
+    ) -> DispatchResult | None:
+        """Returns None (never raises) if the service is unreachable or
         unconfigured. Callers must treat None as "manual dispatch
         required — radio/notify by other means", not as a non-event.
         This is the same fail-loud-not-silent posture as the rest of
@@ -117,7 +114,7 @@ class EmergencyDispatchClient:
         facility_id: str,
         priority_code: str,
         summary: str,
-    ) -> Optional[AckResult]:
+    ) -> AckResult | None:
         if not self._configured():
             logger.warning("EmergencyDispatchClient not configured.")
             return None

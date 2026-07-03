@@ -1,5 +1,4 @@
-"""
-tests/test_protocol_matching.py
+"""tests/test_protocol_matching.py.
 
 Exercises the weighted chief-complaint protocol selection with confidence
 scoring in app/protocols/registry.py (ProtocolMatchResult,
@@ -12,9 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.protocols.registry import ProtocolRegistry
-
 
 GOVERNANCE_COMPLETE = {
     "protocol_id": "test_protocol",
@@ -59,6 +56,7 @@ def _make_registry_with_protocols(protocols: list, tmp_path: Path) -> ProtocolRe
 
 # ── Confidence scoring ────────────────────────────────────────────────────
 
+
 def test_all_triggers_match_confidence_1(tmp_path: Path):
     """All triggers of a single-protocol registry match → confidence 1.0."""
     reg = _make_registry_with_protocols(
@@ -101,9 +99,9 @@ def test_two_of_three_triggers_match_confidence_two_thirds(tmp_path: Path):
 
 # ── Two protocols both match ──────────────────────────────────────────────
 
+
 def test_two_protocols_match_loser_in_alternatives(tmp_path: Path):
-    """
-    Two protocols match the same complaint. The one with the longer
+    """Two protocols match the same complaint. The one with the longer
     matching trigger wins; the other appears in alternatives.
     """
     reg = _make_registry_with_protocols(
@@ -122,8 +120,7 @@ def test_two_protocols_match_loser_in_alternatives(tmp_path: Path):
 
 
 def test_two_protocols_same_longest_trigger_alphabetical_winner(tmp_path: Path):
-    """
-    Two protocols with identical longest trigger length: the one that
+    """Two protocols with identical longest trigger length: the one that
     sorts alphabetically first wins.
     """
     reg = _make_registry_with_protocols(
@@ -142,6 +139,7 @@ def test_two_protocols_same_longest_trigger_alphabetical_winner(tmp_path: Path):
 
 # ── No match ──────────────────────────────────────────────────────────────
 
+
 def test_no_match_returns_none(tmp_path: Path):
     """No protocol has any trigger matching the complaint → None."""
     reg = _make_registry_with_protocols(
@@ -153,9 +151,9 @@ def test_no_match_returns_none(tmp_path: Path):
 
 # ── requires_manual_verification ──────────────────────────────────────────
 
+
 def test_requires_manual_verification_true_when_confidence_below_1(tmp_path: Path):
-    """
-    Confidence < 1.0 means not all triggers fired → ambiguous enough
+    """Confidence < 1.0 means not all triggers fired → ambiguous enough
     to require manual verification.
     """
     reg = _make_registry_with_protocols(
@@ -172,8 +170,7 @@ def test_requires_manual_verification_true_when_confidence_below_1(tmp_path: Pat
 
 
 def test_requires_manual_verification_true_when_alternatives_nonempty(tmp_path: Path):
-    """
-    Even if confidence is 1.0, having alternatives means the match was
+    """Even if confidence is 1.0, having alternatives means the match was
     ambiguous between two protocols → requires manual verification.
     """
     # Both protocols have a single trigger that matches
@@ -193,8 +190,7 @@ def test_requires_manual_verification_true_when_alternatives_nonempty(tmp_path: 
 
 
 def test_no_alternatives_confidence_1_no_manual_verification(tmp_path: Path):
-    """
-    Single protocol, all triggers match, no alternatives →
+    """Single protocol, all triggers match, no alternatives →
     requires_manual_verification should be False.
     """
     reg = _make_registry_with_protocols(
@@ -210,9 +206,9 @@ def test_no_alternatives_confidence_1_no_manual_verification(tmp_path: Path):
 
 # ── Alternative sorting ───────────────────────────────────────────────────
 
+
 def test_alternatives_sorted_by_confidence_desc(tmp_path: Path):
-    """
-    When multiple alternatives exist, they are sorted by confidence
+    """When multiple alternatives exist, they are sorted by confidence
     descending (most confident alternative first).
     """
     reg = _make_registry_with_protocols(
@@ -241,6 +237,7 @@ def test_alternatives_sorted_by_confidence_desc(tmp_path: Path):
 
 # ── Confidence bounds ─────────────────────────────────────────────────────
 
+
 def test_confidence_always_between_0_and_1(tmp_path: Path):
     """Confidence must always be in [0.0, 1.0]."""
     reg = _make_registry_with_protocols(
@@ -254,9 +251,9 @@ def test_confidence_always_between_0_and_1(tmp_path: Path):
 
 # ── find_by_chief_complaint still works ───────────────────────────────────
 
+
 def test_find_by_chief_complaint_still_works(tmp_path: Path):
-    """
-    The original find_by_chief_complaint method must still return
+    """The original find_by_chief_complaint method must still return
     the same DispatchProtocol object as before.
     """
     reg = _make_registry_with_protocols(

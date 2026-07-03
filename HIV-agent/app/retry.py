@@ -30,7 +30,7 @@ async def async_retry(
             last_error = exc
             if attempt == max_attempts - 1:
                 break
-            await asyncio.sleep(min(max_delay, initial_delay * (2 ** attempt)))
+            await asyncio.sleep(min(max_delay, initial_delay * (2**attempt)))
     raise RetryExhaustedError(str(last_error)) from last_error
 
 

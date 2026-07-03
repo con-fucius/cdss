@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from app.indexers.pageindex import _extractive_summary, PageIndexBuilder, _SUMMARISE_MODELS
+from app.indexers.pageindex import _SUMMARISE_MODELS, PageIndexBuilder, _extractive_summary
 
 
 class PageIndexTests(unittest.TestCase):

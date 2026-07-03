@@ -1,10 +1,10 @@
-import { defineConfig, loadEnv } from 'vite'
-import react from '@vitejs/plugin-react'
-import process from 'node:process'
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react";
+import process from "node:process";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
-  const backendTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const env = loadEnv(mode, process.cwd(), "");
+  const backendTarget = env.VITE_DEV_PROXY_TARGET || "http://127.0.0.1:8000";
 
   return {
     plugins: [react()],
@@ -12,15 +12,22 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (!id.includes('node_modules')) return undefined
-            const normalized = id.replaceAll('\\', '/')
-            if (normalized.includes('react-syntax-highlighter') || normalized.includes('refractor')) {
-              return 'syntax'
+            if (!id.includes("node_modules")) return undefined;
+            const normalized = id.replaceAll("\\", "/");
+            if (
+              normalized.includes("react-syntax-highlighter") ||
+              normalized.includes("refractor")
+            ) {
+              return "syntax";
             }
-            if (normalized.includes('framer-motion') || normalized.includes('motion-dom') || normalized.includes('lucide-react')) {
-              return 'ui'
+            if (
+              normalized.includes("framer-motion") ||
+              normalized.includes("motion-dom") ||
+              normalized.includes("lucide-react")
+            ) {
+              return "ui";
             }
-            return 'vendor'
+            return "vendor";
           },
         },
       },
@@ -28,72 +35,72 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/health': {
+        "/health": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/metrics': {
+        "/metrics": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/phase7': {
+        "/phase7": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/diseases': {
+        "/diseases": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/guidelines': {
+        "/guidelines": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/feedback': {
+        "/feedback": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/sessions': {
+        "/sessions": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/admin': {
+        "/admin": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/memory': {
+        "/memory": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/evidence': {
+        "/evidence": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/terminology': {
+        "/terminology": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/chat': {
+        "/chat": {
           target: backendTarget,
           changeOrigin: true,
           ws: true,
         },
-        '/query-build': {
+        "/query-build": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/context-options': {
+        "/context-options": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/pageindex': {
+        "/pageindex": {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/init-status': {
+        "/init-status": {
           target: backendTarget,
           changeOrigin: true,
         },
       },
     },
-  }
-})
+  };
+});

@@ -1,5 +1,4 @@
-"""
-tests/test_protocol_trauma.py
+"""tests/test_protocol_trauma.py.
 
 Phase 2.7 branch coverage for major_trauma_mva_v1, the third of the three
 Phase 2.5 proving protocols. Same discipline as the other protocol test
@@ -17,7 +16,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from app.protocols.registry import DISPATCH_PROTOCOLS_DIR
 from app.protocols.runner import OutOfScriptAnswerError, get_entry_question, submit_answer
 from app.protocols.schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
@@ -79,50 +77,37 @@ class TestTraumaProtocolBranchCoverage:
     def test_unconscious_not_breathing_routes_to_cardiac_arrest(self, trauma_protocol):
         """Phase 3: unconscious trauma patients with absent/abnormal breathing
         now route to a specific P1_CARDIAC_ARREST outcome with CPR instructions
-        (no dangling redirect)."""
-        result = _walk(
-            trauma_protocol, ["no", "not_breathing_or_abnormal", "acknowledged"]
-        )
+        (no dangling redirect).
+        """
+        result = _walk(trauma_protocol, ["no", "not_breathing_or_abnormal", "acknowledged"])
         assert result.terminal_outcome.priority_code == "P1_CARDIAC_ARREST"
         assert result.terminal_outcome.recommended_unit_type == "ALS_AMBULANCE"
 
-    def test_unconscious_breathing_normally_proceeds_to_bleeding_check(
-        self, trauma_protocol
-    ):
-        result = _walk(
-            trauma_protocol, ["no", "breathing_normally", "no", "no"]
-        )
+    def test_unconscious_breathing_normally_proceeds_to_bleeding_check(self, trauma_protocol):
+        result = _walk(trauma_protocol, ["no", "breathing_normally", "no", "no"])
         assert result.terminal_outcome.priority_code == "P3_TRAUMA_MINOR"
 
     def test_conscious_breathing_difficulty(self, trauma_protocol):
         result = _walk(trauma_protocol, ["yes", "no"])
-        assert (
-            result.terminal_outcome.priority_code
-            == "P1_TRAUMA_AIRWAY_COMPROMISE"
-        )
+        assert result.terminal_outcome.priority_code == "P1_TRAUMA_AIRWAY_COMPROMISE"
         assert result.terminal_outcome.recommended_unit_type == "ALS_AMBULANCE"
 
     def test_severe_bleeding_with_bystander_pressure(self, trauma_protocol):
         result = _walk(trauma_protocol, ["yes", "yes", "yes", "yes"])
-        assert (
-            result.terminal_outcome.priority_code == "P1_TRAUMA_SEVERE_BLEEDING"
-        )
-        assert "pressure" in " ".join(
-            result.terminal_outcome.pre_arrival_instructions
-        ).lower()
+        assert result.terminal_outcome.priority_code == "P1_TRAUMA_SEVERE_BLEEDING"
+        assert "pressure" in " ".join(result.terminal_outcome.pre_arrival_instructions).lower()
 
     def test_severe_bleeding_no_bystander(self, trauma_protocol):
         result = _walk(trauma_protocol, ["yes", "yes", "yes", "no"])
         assert result.terminal_outcome.priority_code == "P1_TRAUMA_SEVERE_BLEEDING"
-        assert "cannot safely reach" in " ".join(
-            result.terminal_outcome.pre_arrival_instructions
-        ).lower()
+        assert (
+            "cannot safely reach"
+            in " ".join(result.terminal_outcome.pre_arrival_instructions).lower()
+        )
 
     def test_no_bleeding_high_mechanism(self, trauma_protocol):
         result = _walk(trauma_protocol, ["yes", "yes", "no", "yes"])
-        assert (
-            result.terminal_outcome.priority_code == "P2_TRAUMA_HIGH_MECHANISM"
-        )
+        assert result.terminal_outcome.priority_code == "P2_TRAUMA_HIGH_MECHANISM"
         assert result.terminal_outcome.recommended_unit_type == "ALS_AMBULANCE"
 
     def test_no_bleeding_low_mechanism_minor(self, trauma_protocol):
@@ -142,6 +127,4 @@ class TestTraumaOutOfScriptAnswerHardFail:
         entry = get_entry_question(trauma_protocol)
         step1 = submit_answer(trauma_protocol, entry.question_id, "no")
         with pytest.raises(OutOfScriptAnswerError):
-            submit_answer(
-                trauma_protocol, step1.next_question.question_id, "maybe_breathing"
-            )
+            submit_answer(trauma_protocol, step1.next_question.question_id, "maybe_breathing")

@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/matcher.py
+"""facility-mapper/app/matcher.py.
 
 High-level facility matching that combines BallTree search with
 geocoding for text-location callers.
@@ -14,7 +13,6 @@ Both return FacilitySearchResponse from shared contracts.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
 
 from ambulance_cdss_contracts.facility import FacilityResult, FacilitySearchResponse
 
@@ -26,8 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_eta_minutes(distance_km: float) -> float:
-    """
-    ETA in minutes at the configured ambulance speed.
+    """ETA in minutes at the configured ambulance speed.
 
     Formula: (distance_km / AMBULANCE_SPEED_KMH) * 60
     Default speed 60 km/h is a realistic urban/rural Kenya average.
@@ -43,12 +40,11 @@ async def find_nearest_by_coords(
     lat: float,
     lon: float,
     level_min: int = 1,
-    required_services: Optional[List[str]] = None,
+    required_services: list[str] | None = None,
     radius_km: float = 50.0,
     max_results: int = 3,
 ) -> FacilitySearchResponse:
-    """
-    Find nearest facilities by coordinates.
+    """Find nearest facilities by coordinates.
 
     Returns FacilitySearchResponse from shared contracts.
     Never raises — returns empty list on any error.
@@ -94,12 +90,11 @@ async def find_nearest_by_coords(
 async def find_nearest_by_location(
     location_text: str,
     level_min: int = 1,
-    required_services: Optional[List[str]] = None,
+    required_services: list[str] | None = None,
     radius_km: float = 50.0,
     max_results: int = 3,
-) -> Optional[FacilitySearchResponse]:
-    """
-    Find nearest facilities by text location (geocode then search).
+) -> FacilitySearchResponse | None:
+    """Find nearest facilities by text location (geocode then search).
 
     Returns None if geocoding fails — caller treats as "service unavailable".
     Never raises.

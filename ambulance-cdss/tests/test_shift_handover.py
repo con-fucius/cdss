@@ -1,5 +1,4 @@
-"""
-tests/test_shift_handover.py
+"""tests/test_shift_handover.py.
 
 Improvement 4.1 — tests for the shift handover report.
 
@@ -22,9 +21,11 @@ class TestShiftHandoverEndpoint:
     def test_endpoint_exists(self):
         """GET /dashboard/shift-handover is registered."""
         from app.main import app
+
         routes = [(r.path, list(r.methods)) for r in app.routes]
         get_routes = [
-            path for path, methods in routes
+            path
+            for path, methods in routes
             if path == "/dashboard/shift-handover" and "GET" in methods
         ]
         assert len(get_routes) == 1
@@ -53,6 +54,7 @@ class TestShiftHandoverEndpoint:
 class TestShiftHandoverRepository:
     def test_function_is_async(self):
         import asyncio
+
         assert asyncio.iscoroutinefunction(get_shift_handover)
 
     def test_function_signature(self):

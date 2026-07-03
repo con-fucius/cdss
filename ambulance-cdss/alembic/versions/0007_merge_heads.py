@@ -9,8 +9,6 @@ The duplicate branch (0003_med_admin_flag) was removed since it duplicated
 single head.
 """
 
-from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers
 revision = "0007_merge_heads"

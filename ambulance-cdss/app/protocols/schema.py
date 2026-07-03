@@ -1,5 +1,4 @@
-"""
-app/protocols/schema.py
+"""app/protocols/schema.py.
 
 Dataclasses for both protocol modes.
 
@@ -21,14 +20,13 @@ app/protocols/field_registry.py (loader) and app/protocols/field_runner.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 
 @dataclass
 class TerminalOutcome:
     priority_code: str
     recommended_unit_type: str
-    pre_arrival_instructions: List[str] = field(default_factory=list)
+    pre_arrival_instructions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -36,10 +34,10 @@ class ProtocolQuestion:
     question_id: str
     text: str
     answer_type: str  # "yes_no" | "select" | "numeric"
-    options: List[str] = field(default_factory=list)
+    options: list[str] = field(default_factory=list)
     # answer value -> next question_id, OR a terminal outcome key
     # resolved by the registry/runner against `terminal_outcomes`.
-    branch_map: Dict[str, str] = field(default_factory=dict)
+    branch_map: dict[str, str] = field(default_factory=dict)
     is_terminal: bool = False
     # Mode 2 gate — see docs/GOVERNANCE.md. False (locked, no guidance) by
     # default; must be explicitly set true by the protocol author for any
@@ -56,7 +54,7 @@ class ProtocolQuestion:
     # may gate the question for future use before writing the note), but
     # the runner/endpoint returns a clear "no guidance authored" result
     # rather than null when absent.
-    guidance_note: Optional[str] = None
+    guidance_note: str | None = None
 
 
 @dataclass
@@ -65,9 +63,9 @@ class DispatchProtocol:
 
     protocol_id: str
     version: str
-    chief_complaint_trigger: List[str]
-    questions: Dict[str, ProtocolQuestion]
-    terminal_outcomes: Dict[str, TerminalOutcome]
+    chief_complaint_trigger: list[str]
+    questions: dict[str, ProtocolQuestion]
+    terminal_outcomes: dict[str, TerminalOutcome]
     entry_question_id: str
 
     # Governance fields — see docs/GOVERNANCE.md. All four are required
@@ -79,8 +77,7 @@ class DispatchProtocol:
     approved_date: str  # ISO date string
 
     def is_governance_complete(self) -> bool:
-        """
-        True only if locked, approved_by, approved_date, and version are
+        """True only if locked, approved_by, approved_date, and version are
         all non-empty AND approved_by/approved_date do not contain the
         literal word "PLACEHOLDER" (case-insensitive).
 
@@ -107,15 +104,12 @@ class DispatchProtocol:
             return False
         if "placeholder" in self.approved_by.lower():
             return False
-        if "placeholder" in self.approved_date.lower():
-            return False
-        return True
+        return "placeholder" not in self.approved_date.lower()
 
 
 @dataclass
 class FieldProtocolStep:
-    """
-    One ordered checklist item in a FieldProtocol (Phase 4, implemented —
+    """One ordered checklist item in a FieldProtocol (Phase 4, implemented —
     see app/protocols/field_registry.py and app/protocols/field_runner.py).
     """
 
@@ -123,7 +117,7 @@ class FieldProtocolStep:
     title: str
     action_type: str  # "assessment" | "intervention" | "vitals" | "disposition"
     description: str = ""
-    guideline_ref: Optional[str] = None
+    guideline_ref: str | None = None
 
 
 @dataclass
@@ -131,4 +125,4 @@ class FieldProtocol:
     protocol_id: str
     version: str
     disease_or_presentation: str
-    steps: List[FieldProtocolStep] = field(default_factory=list)
+    steps: list[FieldProtocolStep] = field(default_factory=list)

@@ -124,7 +124,9 @@ async function apiCall(path, options = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const error = new Error(data.detail?.message || data.detail || `Request failed (${res.status})`);
+    const error = new Error(
+      data.detail?.message || data.detail || `Request failed (${res.status})`,
+    );
     error.status = res.status;
     error.body = data;
     throw error;
@@ -203,7 +205,9 @@ function renderTriageEnrichment(enrichment) {
   levelBadge.textContent = enrichment.triage_level || "Unknown";
   levelBadge.className = "triage-level-badge";
   if (enrichment.triage_level) {
-    levelBadge.classList.add(`triage-level-${enrichment.triage_level.toLowerCase()}`);
+    levelBadge.classList.add(
+      `triage-level-${enrichment.triage_level.toLowerCase()}`,
+    );
   }
 
   // Set top diagnosis
@@ -212,7 +216,9 @@ function renderTriageEnrichment(enrichment) {
 
   // Set ESI level
   const esiEl = el("triage-esi-level");
-  esiEl.textContent = enrichment.esi_level ? `${enrichment.esi_level} of 5` : "Not calculated";
+  esiEl.textContent = enrichment.esi_level
+    ? `${enrichment.esi_level} of 5`
+    : "Not calculated";
 
   // Set shock index if available
   const shockRow = el("triage-shock-index-row");
@@ -226,7 +232,9 @@ function renderTriageEnrichment(enrichment) {
 
   // Set source
   const sourceEl = el("triage-source");
-  sourceEl.textContent = enrichment.degraded_mode ? "Degraded (rules only)" : "Full NLP pipeline";
+  sourceEl.textContent = enrichment.degraded_mode
+    ? "Degraded (rules only)"
+    : "Full NLP pipeline";
 }
 
 // Toggle triage enrichment panel
@@ -254,15 +262,20 @@ el("intake-form").addEventListener("submit", async (e) => {
 
   // Phase 5.1: Don't allow new incidents when offline
   if (state.isOffline) {
-    el("intake-error").textContent = "Cannot create incidents while offline. Please wait for connection to be restored.";
+    el("intake-error").textContent =
+      "Cannot create incidents while offline. Please wait for connection to be restored.";
     show(el("intake-error"));
     return;
   }
 
   const chiefComplaint = el("chief-complaint").value.trim();
   const dispatcherId = el("dispatcher-id").value.trim();
-  const lat = el("caller-lat").value ? parseFloat(el("caller-lat").value) : null;
-  const lon = el("caller-lon").value ? parseFloat(el("caller-lon").value) : null;
+  const lat = el("caller-lat").value
+    ? parseFloat(el("caller-lat").value)
+    : null;
+  const lon = el("caller-lon").value
+    ? parseFloat(el("caller-lon").value)
+    : null;
   const locText = el("caller-location-text").value.trim() || null;
 
   const submitBtn = e.target.querySelector("button[type=submit]");
@@ -334,7 +347,8 @@ el("apply-manual-protocol-btn").addEventListener("click", async () => {
   try {
     // For now, we'll re-create the incident with the manual protocol hint
     // In a full implementation, this would call a specific endpoint
-    resultEl.textContent = "Protocol selected. Please continue with the dispatch script.";
+    resultEl.textContent =
+      "Protocol selected. Please continue with the dispatch script.";
     resultEl.className = "action-result success";
 
     // Hide the manual selector and show that we're ready
@@ -382,7 +396,9 @@ function renderQuestion(question) {
     const btn = document.createElement("button");
     btn.className = "answer-btn";
     btn.textContent = formatAnswerLabel(answer, question);
-    btn.addEventListener("click", () => submitAnswer(question.question_id, answer));
+    btn.addEventListener("click", () =>
+      submitAnswer(question.question_id, answer),
+    );
     // Phase 5.6: Ensure keyboard accessibility
     btn.setAttribute("tabindex", "0");
     optionsEl.appendChild(btn);
@@ -459,8 +475,7 @@ async function submitAnswer(questionId, answer) {
     // surfaced verbatim — never retried automatically, never hidden.
     const banner = el("out-of-script-error");
     if (err.status === 422 && err.body?.detail?.valid_answers) {
-      banner.textContent =
-        `${err.body.detail.message} Valid answers: ${err.body.detail.valid_answers.join(", ")}`;
+      banner.textContent = `${err.body.detail.message} Valid answers: ${err.body.detail.valid_answers.join(", ")}`;
     } else {
       banner.textContent = err.message;
     }
@@ -496,13 +511,16 @@ async function fetchGuidance(questionId) {
   show(panel);
 
   try {
-    const data = await apiCall(`/incidents/${state.incidentId}/guidance-lookup`, {
-      method: "POST",
-      body: JSON.stringify({
-        question_id: questionId,
-        dispatcher_id: state.dispatcherId,
-      }),
-    });
+    const data = await apiCall(
+      `/incidents/${state.incidentId}/guidance-lookup`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          question_id: questionId,
+          dispatcher_id: state.dispatcherId,
+        }),
+      },
+    );
     textEl.textContent = data.guidance_note;
   } catch (err) {
     textEl.textContent = `Guidance unavailable: ${err.message}`;
@@ -561,11 +579,14 @@ function renderTerminalOutcome(outcome) {
   state.preArrivalConfirmed = false;
 
   card.classList.remove("priority-low", "priority-medium");
-  if (outcome.priority_code.startsWith("P3")) card.classList.add("priority-low");
-  if (outcome.priority_code.startsWith("P2")) card.classList.add("priority-medium");
+  if (outcome.priority_code.startsWith("P3"))
+    card.classList.add("priority-low");
+  if (outcome.priority_code.startsWith("P2"))
+    card.classList.add("priority-medium");
 
   el("terminal-priority").textContent = outcome.priority_code;
-  el("terminal-unit-type").textContent = `Recommended unit: ${outcome.recommended_unit_type}`;
+  el("terminal-unit-type").textContent =
+    `Recommended unit: ${outcome.recommended_unit_type}`;
 
   const list = el("terminal-instructions");
   list.innerHTML = "";
@@ -653,16 +674,20 @@ el("route-facility-btn").addEventListener("click", async () => {
   const lat = parseFloat(el("caller-lat").value);
   const lon = parseFloat(el("caller-lon").value);
   if (Number.isNaN(lat) || Number.isNaN(lon)) {
-    resultEl.textContent = "Caller lat/lon required for facility routing — not provided at intake.";
+    resultEl.textContent =
+      "Caller lat/lon required for facility routing — not provided at intake.";
     return;
   }
 
   resultEl.textContent = "Searching…";
   try {
-    const data = await apiCall(`/incidents/${state.incidentId}/route-facility`, {
-      method: "POST",
-      body: JSON.stringify({ lat, lon }),
-    });
+    const data = await apiCall(
+      `/incidents/${state.incidentId}/route-facility`,
+      {
+        method: "POST",
+        body: JSON.stringify({ lat, lon }),
+      },
+    );
     if (data.facilities.length === 0) {
       resultEl.textContent = data.message;
     } else {
@@ -705,7 +730,7 @@ el("new-call-btn").addEventListener("click", () => {
 
 // Show handoff delivery card when terminal outcome is reached
 const _origRenderTerminalOutcome = renderTerminalOutcome;
-renderTerminalOutcome = function(outcome) {
+renderTerminalOutcome = function (outcome) {
   _origRenderTerminalOutcome(outcome);
   show(el("handoff-delivery-card"));
 };
@@ -734,28 +759,42 @@ el("send-to-er-btn").addEventListener("click", async () => {
 el("copy-handoff-link-btn").addEventListener("click", () => {
   const input = el("handoff-link-url");
   input.select();
-  navigator.clipboard.writeText(input.value).then(() => {
-    el("copy-handoff-link-btn").textContent = "Copied";
-    setTimeout(() => { el("copy-handoff-link-btn").textContent = "Copy"; }, 2000);
-  }).catch(() => {
-    // Fallback for older browsers
-    document.execCommand("copy");
-    el("copy-handoff-link-btn").textContent = "Copied";
-    setTimeout(() => { el("copy-handoff-link-btn").textContent = "Copy"; }, 2000);
-  });
+  navigator.clipboard
+    .writeText(input.value)
+    .then(() => {
+      el("copy-handoff-link-btn").textContent = "Copied";
+      setTimeout(() => {
+        el("copy-handoff-link-btn").textContent = "Copy";
+      }, 2000);
+    })
+    .catch(() => {
+      // Fallback for older browsers
+      document.execCommand("copy");
+      el("copy-handoff-link-btn").textContent = "Copied";
+      setTimeout(() => {
+        el("copy-handoff-link-btn").textContent = "Copy";
+      }, 2000);
+    });
 });
 
 el("copy-field-link-btn").addEventListener("click", () => {
   const input = el("field-link-url");
   input.select();
-  navigator.clipboard.writeText(input.value).then(() => {
-    el("copy-field-link-btn").textContent = "Copied";
-    setTimeout(() => { el("copy-field-link-btn").textContent = "Copy"; }, 2000);
-  }).catch(() => {
-    document.execCommand("copy");
-    el("copy-field-link-btn").textContent = "Copied";
-    setTimeout(() => { el("copy-field-link-btn").textContent = "Copy"; }, 2000);
-  });
+  navigator.clipboard
+    .writeText(input.value)
+    .then(() => {
+      el("copy-field-link-btn").textContent = "Copied";
+      setTimeout(() => {
+        el("copy-field-link-btn").textContent = "Copy";
+      }, 2000);
+    })
+    .catch(() => {
+      document.execCommand("copy");
+      el("copy-field-link-btn").textContent = "Copied";
+      setTimeout(() => {
+        el("copy-field-link-btn").textContent = "Copy";
+      }, 2000);
+    });
 });
 
 // ── Transcript ─────────────────────────────────────────────────────────────
@@ -764,7 +803,8 @@ function renderTranscript() {
   const container = el("transcript");
   container.innerHTML = "";
   if (state.transcript.length === 0) {
-    container.innerHTML = '<div class="transcript-entry__q">No answers recorded yet.</div>';
+    container.innerHTML =
+      '<div class="transcript-entry__q">No answers recorded yet.</div>';
     return;
   }
   state.transcript.forEach((entry) => {
@@ -781,8 +821,12 @@ function renderTranscript() {
 
 // ── Utilities ────────────────────────────────────────────────────────────
 
-function show(node) { node.classList.remove("hidden"); }
-function hide(node) { node.classList.add("hidden"); }
+function show(node) {
+  node.classList.remove("hidden");
+}
+function hide(node) {
+  node.classList.add("hidden");
+}
 function escapeHtml(str) {
   const d = document.createElement("div");
   d.textContent = str;

@@ -1,5 +1,4 @@
-"""
-tests/test_answer_correction.py
+"""tests/test_answer_correction.py.
 
 Improvement 4.2 — tests for protocol answer correction window.
 
@@ -28,6 +27,7 @@ class TestCorrectionWindowConfig:
     def test_default_is_60(self):
         """Default window is 60 seconds."""
         import os
+
         # Clear env var to test default
         old = os.environ.pop("ANSWER_CORRECTION_WINDOW_SECONDS", None)
         try:
@@ -39,6 +39,7 @@ class TestCorrectionWindowConfig:
     def test_config_reads_env_var(self):
         """Can be overridden via environment variable."""
         import os
+
         old = os.environ.get("ANSWER_CORRECTION_WINDOW_SECONDS")
         try:
             os.environ["ANSWER_CORRECTION_WINDOW_SECONDS"] = "120"
@@ -64,6 +65,7 @@ class TestSupersededByColumn:
     def test_superseded_by_in_dict(self):
         """_dispatch_log_to_dict must include superseded_by."""
         from app.repositories import _dispatch_log_to_dict
+
         source = inspect.getsource(_dispatch_log_to_dict)
         assert "superseded_by" in source
 
@@ -72,10 +74,10 @@ class TestAnswerCorrectionEndpoint:
     def test_endpoint_exists(self):
         """PATCH /incidents/{id}/answer/{log_id} is registered."""
         from app.main import app
+
         routes = [(r.path, list(r.methods)) for r in app.routes]
         patch_routes = [
-            path for path, methods in routes
-            if "/answer/" in path and "PATCH" in methods
+            path for path, methods in routes if "/answer/" in path and "PATCH" in methods
         ]
         assert len(patch_routes) >= 1
 
@@ -124,10 +126,12 @@ class TestAnswerCorrectionEndpoint:
 class TestAnswerCorrectionRepository:
     def test_get_dispatch_log_entry_is_async(self):
         import asyncio
+
         assert asyncio.iscoroutinefunction(get_dispatch_log_entry)
 
     def test_correct_dispatch_answer_is_async(self):
         import asyncio
+
         assert asyncio.iscoroutinefunction(correct_dispatch_answer)
 
     def test_get_dispatch_log_entry_signature(self):
@@ -145,10 +149,12 @@ class TestAnswerCorrectionRepository:
 class TestCorrectAnswerRequestModel:
     def test_model_exists(self):
         from app.main import CorrectAnswerRequest
+
         assert hasattr(CorrectAnswerRequest, "model_fields")
 
     def test_has_required_fields(self):
         from app.main import CorrectAnswerRequest
+
         field_names = set(CorrectAnswerRequest.model_fields.keys())
         assert "corrected_answer" in field_names
         assert "dispatcher_id" in field_names

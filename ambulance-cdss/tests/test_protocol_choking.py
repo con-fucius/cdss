@@ -1,5 +1,4 @@
-"""
-tests/test_protocol_choking.py
+"""tests/test_protocol_choking.py.
 
 Phase 2.7 branch coverage for choking_airway_obstruction_v1, the second
 of the three Phase 2.5 proving protocols. Same discipline as
@@ -17,7 +16,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from app.protocols.registry import DISPATCH_PROTOCOLS_DIR
 from app.protocols.runner import OutOfScriptAnswerError, get_entry_question, submit_answer
 from app.protocols.schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
@@ -79,7 +77,8 @@ class TestChokingProtocolBranchCoverage:
     def test_unconscious_redirects_to_airway_compromise(self, choking_protocol):
         """Phase 3: outcome_route_to_other_protocol retired. Unconscious
         choking patients now route directly to P1_AIRWAY_COMPROMISE with
-        specific resuscitation instructions (no dangling redirect)."""
+        specific resuscitation instructions (no dangling redirect).
+        """
         result = _walk(choking_protocol, ["no", "acknowledged"])
         assert result.terminal_outcome.priority_code == "P1_AIRWAY_COMPROMISE"
         assert result.terminal_outcome.recommended_unit_type == "ALS_AMBULANCE"
@@ -101,13 +100,12 @@ class TestChokingProtocolBranchCoverage:
         assert "infant" in " ".join(result.terminal_outcome.pre_arrival_instructions).lower()
 
     def test_no_sound_bystander_capable_child_or_adult(self, choking_protocol):
-        result = _walk(
-            choking_protocol, ["yes", "no_sound_at_all", "yes", "child_or_adult"]
-        )
+        result = _walk(choking_protocol, ["yes", "no_sound_at_all", "yes", "child_or_adult"])
         assert result.terminal_outcome.priority_code == "P1_AIRWAY_COMPLETE"
-        assert "abdominal thrusts" in " ".join(
-            result.terminal_outcome.pre_arrival_instructions
-        ).lower()
+        assert (
+            "abdominal thrusts"
+            in " ".join(result.terminal_outcome.pre_arrival_instructions).lower()
+        )
 
 
 class TestChokingOutOfScriptAnswerHardFail:
@@ -121,6 +119,4 @@ class TestChokingOutOfScriptAnswerHardFail:
         entry = get_entry_question(choking_protocol)
         step1 = submit_answer(choking_protocol, entry.question_id, "yes")
         with pytest.raises(OutOfScriptAnswerError):
-            submit_answer(
-                choking_protocol, step1.next_question.question_id, "sort_of_coughing"
-            )
+            submit_answer(choking_protocol, step1.next_question.question_id, "sort_of_coughing")

@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict, deque
-from typing import Any, Dict
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-_metrics: Dict[str, Any] = {
+_metrics: dict[str, Any] = {
     "cdss_requests_total": 0,
     "cdss_request_duration_seconds_sum": 0.0,
     "cdss_rate_limit_hits_total": 0,
@@ -71,8 +71,7 @@ def metrics_text() -> Response:
     total = int(_metrics["cdss_requests_total"])
     lines.append(f"cdss_requests_total {total}")
     lines.append(
-        "cdss_request_duration_seconds_sum "
-        f"{_metrics['cdss_request_duration_seconds_sum']:.6f}"
+        f"cdss_request_duration_seconds_sum {_metrics['cdss_request_duration_seconds_sum']:.6f}"
     )
     hits = int(_metrics["cdss_rate_limit_hits_total"])
     lines.append(f"cdss_rate_limit_hits_total {hits}")
@@ -93,9 +92,7 @@ def configure_tracing() -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        provider = TracerProvider(
-            resource=Resource.create({"service.name": "cdss-api"})
-        )
+        provider = TracerProvider(resource=Resource.create({"service.name": "cdss-api"}))
         provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
         trace.set_tracer_provider(provider)
     except Exception:

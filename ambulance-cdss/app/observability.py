@@ -1,5 +1,4 @@
-"""
-app/observability.py
+"""app/observability.py.
 
 Metrics counters and in-process rate limiting.
 Adapted from the chronic-disease CDSS observability.py, trimmed: no
@@ -15,7 +14,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from typing import Callable, Dict
+from collections.abc import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -23,15 +22,15 @@ from starlette.responses import JSONResponse, Response
 
 _LATENCY_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]
 
-_request_counts: Dict[str, int] = defaultdict(int)
-_latency_bucket_counts: Dict[str, Dict[float, int]] = defaultdict(
+_request_counts: dict[str, int] = defaultdict(int)
+_latency_bucket_counts: dict[str, dict[float, int]] = defaultdict(
     lambda: {b: 0 for b in _LATENCY_BUCKETS}
 )
-_latency_sum: Dict[str, float] = defaultdict(float)
-_rate_limit_hits: Dict[str, int] = defaultdict(int)
+_latency_sum: dict[str, float] = defaultdict(float)
+_rate_limit_hits: dict[str, int] = defaultdict(int)
 
 # endpoint_path -> {client_key -> [timestamps]}
-_rate_window: Dict[str, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
+_rate_window: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
 
 
 def _record_latency(endpoint: str, seconds: float) -> None:
@@ -53,13 +52,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """
-    Per-client-key sliding window rate limit, applied selectively.
+    """Per-client-key sliding window rate limit, applied selectively.
     Client key is the X-Client-Id header if present (dispatcher/field unit
     identity), else the request's client host as a fallback.
     """
 
-    def __init__(self, app, limited_paths: Dict[str, int]):
+    def __init__(self, app, limited_paths: dict[str, int]):
         super().__init__(app)
         # limited_paths: {path_prefix: max_requests_per_minute}
         self._limited_paths = limited_paths
@@ -95,9 +93,7 @@ def metrics_text() -> str:
     lines = []
     for endpoint, count in _request_counts.items():
         safe = endpoint.replace('"', "")
-        lines.append(
-            f'ambulance_cdss_requests_total{{endpoint="{safe}"}} {count}'
-        )
+        lines.append(f'ambulance_cdss_requests_total{{endpoint="{safe}"}} {count}')
         lines.append(
             f'ambulance_cdss_request_duration_seconds_sum{{endpoint="{safe}"}} '
             f"{_latency_sum[endpoint]:.6f}"
@@ -109,7 +105,5 @@ def metrics_text() -> str:
             )
     for path, count in _rate_limit_hits.items():
         safe = path.replace('"', "")
-        lines.append(
-            f'ambulance_cdss_rate_limit_hits_total{{path="{safe}"}} {count}'
-        )
+        lines.append(f'ambulance_cdss_rate_limit_hits_total{{path="{safe}"}} {count}')
     return "\n".join(lines) + "\n"

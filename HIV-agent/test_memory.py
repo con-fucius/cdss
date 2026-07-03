@@ -2,11 +2,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app.memory import (
-    distill_session_candidates,
+    _DISTILL_MODELS,
     deterministic_session_facts,
+    distill_session_candidates,
     embedding_cache_key,
     patient_ref_from_context,
-    _DISTILL_MODELS,
 )
 
 
@@ -40,12 +40,17 @@ class MemoryTests(unittest.TestCase):
         facts = deterministic_session_facts(messages)
 
         self.assertTrue(facts)
-        self.assertTrue({fact["fact_type"] for fact in facts} & {"lab_result", "decision", "drug_change"})
+        self.assertTrue(
+            {fact["fact_type"] for fact in facts} & {"lab_result", "decision", "drug_change"}
+        )
         self.assertTrue(all("approved_by" not in fact for fact in facts))
 
     def test_deterministic_session_facts_ignore_guideline_source_passages(self):
         messages = [
-            {"role": "user", "content": "Patient has viral load 1000 and we plan adherence review."},
+            {
+                "role": "user",
+                "content": "Patient has viral load 1000 and we plan adherence review.",
+            },
             {
                 "role": "assistant",
                 "content": (

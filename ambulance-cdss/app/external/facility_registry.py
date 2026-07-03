@@ -1,5 +1,4 @@
-"""
-app/external/facility_registry.py
+"""app/external/facility_registry.py.
 
 Live client for the facility registry service.
 
@@ -29,7 +28,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
 
 import httpx
 
@@ -46,15 +44,15 @@ class FacilityResult:
     lat: float
     lon: float
     distance_km: float
-    services: List[str]
-    capacity_status: Optional[str] = None
+    services: list[str]
+    capacity_status: str | None = None
 
 
 @dataclass
 class FacilityCapacity:
     facility_id: str
     capacity_status: str
-    available_beds: Optional[int] = None
+    available_beds: int | None = None
 
 
 class FacilityRegistryClient:
@@ -68,11 +66,10 @@ class FacilityRegistryClient:
         self,
         lat: float,
         lon: float,
-        required_services: Optional[List[str]] = None,
+        required_services: list[str] | None = None,
         radius_km: float = 50.0,
-    ) -> List[FacilityResult]:
-        """
-        Returns nearest facilities matching required_services, sorted by
+    ) -> list[FacilityResult]:
+        """Returns nearest facilities matching required_services, sorted by
         distance. Returns an empty list (never raises) if the service is
         unreachable or unconfigured — callers must treat an empty list as
         "fall back to local known-facility cache", not as confirmation
@@ -127,7 +124,7 @@ class FacilityRegistryClient:
             for f in data.get("facilities", [])
         ]
 
-    async def get_capacity(self, facility_id: str) -> Optional[FacilityCapacity]:
+    async def get_capacity(self, facility_id: str) -> FacilityCapacity | None:
         if not self._configured():
             logger.warning("FacilityRegistryClient not configured.")
             return None

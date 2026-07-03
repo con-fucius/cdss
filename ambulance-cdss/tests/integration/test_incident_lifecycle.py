@@ -1,5 +1,4 @@
-"""
-tests/integration/test_incident_lifecycle.py
+"""tests/integration/test_incident_lifecycle.py.
 
 Integration tests for the three most critical paths:
 1. Create incident -> submit answers -> reach terminal outcome
@@ -24,7 +23,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -40,8 +39,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest_asyncio.fixture(scope="module")
 async def client():
-    """
-    Async httpx client pointed at the FastAPI app via ASGI transport.
+    """Async httpx client pointed at the FastAPI app via ASGI transport.
     Initialises the DB engine once for the module and tears down after.
     """
     from app.db import close_engine, init_engine
@@ -53,9 +51,7 @@ async def client():
     registry.load_all()
     field_registry.load_all()
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     await close_engine()
@@ -64,6 +60,7 @@ async def client():
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _create_incident(client: AsyncClient, complaint: str = "test incident") -> str:
     resp = await client.post("/incidents", json={"chief_complaint": complaint})
@@ -75,13 +72,16 @@ async def _create_incident(client: AsyncClient, complaint: str = "test incident"
 # Path 1 — Create incident → submit answers → terminal outcome
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestIncidentLifecycle:
 
+class TestIncidentLifecycle:
     async def test_create_incident_no_protocol_match(self, client: AsyncClient):
         """Unmatched chief complaint still creates the incident successfully."""
-        resp = await client.post("/incidents", json={
-            "chief_complaint": "test_integration_complaint_no_match_xyz",
-        })
+        resp = await client.post(
+            "/incidents",
+            json={
+                "chief_complaint": "test_integration_complaint_no_match_xyz",
+            },
+        )
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert "incident" in data
@@ -132,9 +132,7 @@ class TestIncidentLifecycle:
         incident_id = await _create_incident(client, "test closed terminal")
         await client.post(f"/incidents/{incident_id}/status", json={"status": "closed"})
 
-        r = await client.post(
-            f"/incidents/{incident_id}/status", json={"status": "dispatched"}
-        )
+        r = await client.post(f"/incidents/{incident_id}/status", json={"status": "dispatched"})
         assert r.status_code == 422
         assert r.json()["detail"]["error"] == "invalid_status_transition"
         assert r.json()["detail"]["allowed"] == []
@@ -190,11 +188,11 @@ class TestIncidentLifecycle:
         assert incident_id in ids
 
     async def test_protocol_driven_answer_walk(self, client: AsyncClient):
-        """
-        If an approved active protocol exists, walk it to terminal outcome.
+        """If an approved active protocol exists, walk it to terminal outcome.
         Skipped when all protocols are still PLACEHOLDER-approved.
         """
         from app.protocols.registry import registry
+
         active = registry.list_active()
         if not active:
             pytest.skip("No approved active protocols — skipping answer walk.")
@@ -258,11 +256,11 @@ class TestIncidentLifecycle:
         assert "INCIDENT AUDIT EXPORT" in export_resp.text
 
     async def test_out_of_script_answer_returns_422(self, client: AsyncClient):
-        """
-        Submitting an unrecognised answer to a question returns 422 with
+        """Submitting an unrecognised answer to a question returns 422 with
         valid_answers in the response body.
         """
         from app.protocols.registry import registry
+
         active = registry.list_active()
         if not active:
             pytest.skip("No approved active protocols — skipping out-of-script test.")
@@ -293,8 +291,8 @@ class TestIncidentLifecycle:
 # Path 2 — Add vitals → trend alert returned
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestVitalsTrendAlert:
 
+class TestVitalsTrendAlert:
     # Full valid vitals that produce a complete NEWS2 score
     _NORMAL_VITALS = {
         "recorded_by": "test-paramedic",
@@ -310,21 +308,19 @@ class TestVitalsTrendAlert:
 
     _DETERIORATED_VITALS = {
         "recorded_by": "test-paramedic",
-        "respiratory_rate": 28,    # score 3
-        "spo2": 91,                # score 2
+        "respiratory_rate": 28,  # score 3
+        "spo2": 91,  # score 2
         "spo2_scale": 1,
-        "supplemental_o2": True,   # score 2
-        "bp_systolic": 90,         # score 2
-        "heart_rate": 115,         # score 2
-        "consciousness": "V",      # score 3
-        "temperature": 38.5,       # score 1
+        "supplemental_o2": True,  # score 2
+        "bp_systolic": 90,  # score 2
+        "heart_rate": 115,  # score 2
+        "consciousness": "V",  # score 3
+        "temperature": 38.5,  # score 1
     }
 
     async def test_first_vitals_has_no_prior_data_trend(self, client: AsyncClient):
         incident_id = await _create_incident(client, "test vitals first")
-        r = await client.post(
-            f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS
-        )
+        r = await client.post(f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS)
         assert r.status_code == 200, r.text
         data = r.json()
 
@@ -344,15 +340,11 @@ class TestVitalsTrendAlert:
     async def test_second_vitals_shows_deterioration(self, client: AsyncClient):
         incident_id = await _create_incident(client, "test vitals deterioration")
 
-        r1 = await client.post(
-            f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS
-        )
+        r1 = await client.post(f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS)
         prior_news2 = r1.json()["news2_score"]
         assert prior_news2 is not None
 
-        r2 = await client.post(
-            f"/incidents/{incident_id}/vitals", json=self._DETERIORATED_VITALS
-        )
+        r2 = await client.post(f"/incidents/{incident_id}/vitals", json=self._DETERIORATED_VITALS)
         assert r2.status_code == 200
         data = r2.json()
 
@@ -369,9 +361,7 @@ class TestVitalsTrendAlert:
         await client.post(f"/incidents/{incident_id}/vitals", json=self._DETERIORATED_VITALS)
 
         # Then good vitals
-        r = await client.post(
-            f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS
-        )
+        r = await client.post(f"/incidents/{incident_id}/vitals", json=self._NORMAL_VITALS)
         assert r.status_code == 200
         trend = r.json()["trend_alert"]
         assert trend["trend"] == "improving"
@@ -429,14 +419,14 @@ class TestVitalsTrendAlert:
 # Path 3 — Purge expired incidents
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestPurgeExpiredIncidents:
 
+class TestPurgeExpiredIncidents:
     async def _force_closed_at(self, incident_id: str, days_ago: int) -> None:
         """Directly stamp closed_at to N days ago in the DB."""
         from app.db import get_session
         from app.models import Incident
 
-        stale = datetime.now(timezone.utc) - timedelta(days=days_ago)
+        stale = datetime.now(UTC) - timedelta(days=days_ago)
         async with get_session() as session:
             await session.execute(
                 update(Incident)
@@ -445,9 +435,7 @@ class TestPurgeExpiredIncidents:
             )
             await session.commit()
 
-    async def test_purge_nullifies_pii_on_expired_incident(
-        self, client: AsyncClient
-    ):
+    async def test_purge_nullifies_pii_on_expired_incident(self, client: AsyncClient):
         incident_id = await _create_incident(client, "test purge expired")
 
         # Stamp closed_at 31 days ago (past the 30-day retention window)
@@ -467,12 +455,8 @@ class TestPurgeExpiredIncidents:
         assert data["caller_location_text"] is None
         assert data["pii_purged_at"] is not None
 
-    async def test_purge_leaves_recent_incident_intact(
-        self, client: AsyncClient
-    ):
-        incident_id = await _create_incident(
-            client, "test purge recent incident"
-        )
+    async def test_purge_leaves_recent_incident_intact(self, client: AsyncClient):
+        incident_id = await _create_incident(client, "test purge recent incident")
         # Stamp closed_at to just 5 days ago (within retention window)
         await self._force_closed_at(incident_id, days_ago=5)
 
@@ -488,7 +472,7 @@ class TestPurgeExpiredIncidents:
 
         r1 = await client.post("/admin/purge-expired-incidents")
         assert r1.status_code == 200
-        count1 = r1.json()["purged"]
+        r1.json()["purged"]
 
         r2 = await client.post("/admin/purge-expired-incidents")
         assert r2.status_code == 200
@@ -497,11 +481,8 @@ class TestPurgeExpiredIncidents:
         # was already handled). It must not error.
         assert r2.json()["purged"] == 0
 
-    async def test_admin_key_required_when_configured(
-        self, client: AsyncClient
-    ):
-        """
-        When ADMIN_API_KEY is set in the environment, the purge endpoint
+    async def test_admin_key_required_when_configured(self, client: AsyncClient):
+        """When ADMIN_API_KEY is set in the environment, the purge endpoint
         must reject requests without the header. If ADMIN_API_KEY is not
         set (development default), this test is skipped.
         """

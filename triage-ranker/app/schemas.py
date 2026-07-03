@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/schemas.py
+"""triage-ranker/app/schemas.py.
 
 Re-exports shared contracts from the ambulance-cdss-contracts package.
 The triage ranker uses these schemas for request validation and response

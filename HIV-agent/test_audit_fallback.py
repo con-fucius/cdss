@@ -34,28 +34,25 @@ class AuditFallbackTests(unittest.TestCase):
     def test_postgres_read_success_reports_backend(self):
         from app.logs import read_audit_logs_async
 
-        with patch("app.logs.get_audit_storage_backend", return_value="postgres"):
-            with patch(
-                "app.repositories.read_audit_logs_db",
-                new=AsyncMock(return_value={"logs": [], "total": 0, "page": 1, "limit": 50}),
-            ):
-                result = asyncio.run(read_audit_logs_async())
+        with patch("app.logs.get_audit_storage_backend", return_value="postgres"), patch(
+            "app.repositories.read_audit_logs_db",
+            new=AsyncMock(return_value={"logs": [], "total": 0, "page": 1, "limit": 50}),
+        ):
+            result = asyncio.run(read_audit_logs_async())
 
         self.assertEqual(result["storage_backend"], "postgres")
 
     def test_postgres_read_failure_reports_sqlite_fallback(self):
         from app.logs import read_audit_logs_async
 
-        with patch("app.logs.get_audit_storage_backend", return_value="postgres"):
-            with patch(
-                "app.repositories.read_audit_logs_db",
-                new=AsyncMock(side_effect=RuntimeError("db unavailable")),
-            ):
-                with patch(
-                    "app.logs._read_audit_logs_sqlite",
-                    return_value={"logs": [], "total": 0, "page": 1, "limit": 50},
-                ):
-                    result = asyncio.run(read_audit_logs_async())
+        with patch("app.logs.get_audit_storage_backend", return_value="postgres"), patch(
+            "app.repositories.read_audit_logs_db",
+            new=AsyncMock(side_effect=RuntimeError("db unavailable")),
+        ), patch(
+            "app.logs._read_audit_logs_sqlite",
+            return_value={"logs": [], "total": 0, "page": 1, "limit": 50},
+        ):
+            result = asyncio.run(read_audit_logs_async())
 
         self.assertEqual(result["storage_backend"], "sqlite_fallback")
         self.assertIn("db unavailable", result["backend_error"])

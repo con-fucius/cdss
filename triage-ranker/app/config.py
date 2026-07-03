@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/config.py
+"""triage-ranker/app/config.py.
 
 Environment configuration for the Triage Ranker service.
 Follows ambulance-cdss conventions — small, explicit, no magic defaults.
@@ -40,8 +39,7 @@ def get_allowed_origins() -> list[str]:
 
 
 def get_spacy_model_path() -> str:
-    """
-    Path to the spaCy en_core_web_md model.
+    """Path to the spaCy en_core_web_md model.
     Must be pre-installed (baked into Docker image).
     Never downloaded at runtime — Kenya's network cannot be assumed.
     """
@@ -49,8 +47,7 @@ def get_spacy_model_path() -> str:
 
 
 def get_umls_api_key() -> str:
-    """
-    UMLS API key for L3 resolution. Empty string = not configured.
+    """UMLS API key for L3 resolution. Empty string = not configured.
     When not configured, only L4 fallback rules are used (degraded mode).
     """
     return os.getenv("UMLS_API_KEY", "").strip()
@@ -80,9 +77,7 @@ def validate_startup_config() -> None:
     """Hard assertions for production startup."""
     if is_production():
         if not get_admin_api_key():
-            raise RuntimeError(
-                "ADMIN_API_KEY must be set before running in production."
-            )
+            raise RuntimeError("ADMIN_API_KEY must be set before running in production.")
         if get_allowed_origins() == ["*"]:
             raise RuntimeError(
                 "ALLOWED_ORIGINS must be set to specific origins (not '*') "

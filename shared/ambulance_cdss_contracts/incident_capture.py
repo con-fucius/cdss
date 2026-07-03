@@ -1,5 +1,4 @@
-"""
-shared/contracts/incident_capture.py
+"""shared/contracts/incident_capture.py.
 
 Pydantic v2 schemas for the structured incident capture payload.
 
@@ -10,7 +9,7 @@ layer with ambulance-cdss's authoritative incident record.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +23,7 @@ class PatientInfo(BaseModel):
     formal vitals are recorded.
     """
 
-    ageGroup: Optional[str] = Field(
+    ageGroup: str | None = Field(
         default=None,
         description=(
             "Age group: 'neonate' (< 28 days), 'infant' (28 days–1yr), "
@@ -33,28 +32,28 @@ class PatientInfo(BaseModel):
             "protocol selection and age-appropriate reference ranges."
         ),
     )
-    approxAge: Optional[str] = Field(
+    approxAge: str | None = Field(
         default=None,
         description=(
             "Approximate age as reported by caller. E.g. '34', 'about 70'. "
             "String because callers often give approximate ages."
         ),
     )
-    sex: Optional[str] = Field(
+    sex: str | None = Field(
         default=None,
         description=(
             "Patient sex: 'male', 'female', 'unknown'. "
             "Relevant for obstetric emergencies and drug dosing."
         ),
     )
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description=(
             "Patient name as reported by caller. May be empty if unknown. "
             "This is PII — must not appear in any log output."
         ),
     )
-    consciousness: Optional[str] = Field(
+    consciousness: str | None = Field(
         default=None,
         description=(
             "Consciousness level as reported by caller or dispatcher: "
@@ -66,7 +65,7 @@ class PatientInfo(BaseModel):
             "assessment."
         ),
     )
-    breathing: Optional[str] = Field(
+    breathing: str | None = Field(
         default=None,
         description=(
             "Breathing status: 'normal', 'abnormal', 'not breathing'. "
@@ -82,7 +81,7 @@ class PatientInfo(BaseModel):
             "required services."
         ),
     )
-    medicalHistory: Optional[str] = Field(
+    medicalHistory: str | None = Field(
         default=None,
         description=(
             "Relevant medical history as reported by caller. "
@@ -100,7 +99,7 @@ class IncidentInfo(BaseModel):
     which serves as the initial search origin for facility routing.
     """
 
-    type: Optional[str] = Field(
+    type: str | None = Field(
         default=None,
         description=(
             "Incident type category: 'Medical Emergency', 'Trauma', "
@@ -116,14 +115,14 @@ class IncidentInfo(BaseModel):
             "May be in English or Swahili."
         ),
     )
-    location: Optional[Dict[str, str]] = Field(
+    location: dict[str, str] | None = Field(
         default=None,
         description=(
             "Structured location: {'address': 'Kiambu', 'landmark': 'near the market'}. "
             "The address is geocoded by the facility mapper for nearest-facility search."
         ),
     )
-    priority: Optional[str] = Field(
+    priority: str | None = Field(
         default=None,
         description=(
             "Dispatcher-assessed priority before protocol matching: "
@@ -151,14 +150,14 @@ class CaptureMetadata(BaseModel):
             "dispatcher UI), 'manual' (manual entry)."
         ),
     )
-    capture_version: Optional[str] = Field(
+    capture_version: str | None = Field(
         default=None,
         description=(
             "Version of the capture payload schema. Used for forward "
             "compatibility when the payload shape evolves."
         ),
     )
-    raw_form: Optional[Dict[str, Any]] = Field(
+    raw_form: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Raw form field values from the web listener, if available. "
@@ -194,9 +193,7 @@ class CapturePayload(BaseModel):
     patientInfo: PatientInfo = Field(
         description="Structured patient demographic and presentation information."
     )
-    incidentInfo: IncidentInfo = Field(
-        description="Incident context, location, and description."
-    )
+    incidentInfo: IncidentInfo = Field(description="Incident context, location, and description.")
     metadata: CaptureMetadata = Field(
         default_factory=CaptureMetadata,
         description="Capture event metadata for correlation and audit.",

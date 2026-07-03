@@ -1,21 +1,27 @@
-import React, { useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, AlertCircle, X, Info, AlertTriangle } from 'lucide-react';
-import { ToastContext } from './ToastContext';
+import React, { useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CheckCircle2,
+  AlertCircle,
+  X,
+  Info,
+  AlertTriangle,
+} from "lucide-react";
+import { ToastContext } from "./ToastContext";
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback((message, type = 'info', duration = 3000) => {
+  const addToast = useCallback((message, type = "info", duration = 3000) => {
     const id = crypto.randomUUID();
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, duration);
   }, []);
 
   const removeToast = useCallback((id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   return (
@@ -29,17 +35,21 @@ export function ToastProvider({ children }) {
 function ToastContainer({ toasts, onRemove }) {
   const getIcon = (type) => {
     switch (type) {
-      case 'success': return <CheckCircle2 size={16} />;
-      case 'error': return <AlertCircle size={16} />;
-      case 'warning': return <AlertTriangle size={16} />;
-      default: return <Info size={16} />;
+      case "success":
+        return <CheckCircle2 size={16} />;
+      case "error":
+        return <AlertCircle size={16} />;
+      case "warning":
+        return <AlertTriangle size={16} />;
+      default:
+        return <Info size={16} />;
     }
   };
 
   return (
     <div className="toast-area">
       <AnimatePresence>
-        {toasts.map(toast => (
+        {toasts.map((toast) => (
           <motion.div
             key={toast.id}
             initial={{ opacity: 0, x: 50, scale: 0.9 }}
@@ -52,7 +62,10 @@ function ToastContainer({ toasts, onRemove }) {
             <div className="toast-content">
               <span className="toast-message">{toast.message}</span>
             </div>
-            <button className="toast-dismiss" onClick={() => onRemove(toast.id)}>
+            <button
+              className="toast-dismiss"
+              onClick={() => onRemove(toast.id)}
+            >
               <X size={14} />
             </button>
           </motion.div>

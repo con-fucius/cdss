@@ -1,4 +1,4 @@
-"""Build the minimal HIV structured KB table used by live dosing lookup.
+r"""Build the minimal HIV structured KB table used by live dosing lookup.
 
 This script intentionally reuses the existing extractor layer instead of adding a
 new PDF parsing path. It extracts ARV regimen dosing rows from the configured HIV
@@ -15,13 +15,12 @@ import argparse
 import json
 import logging
 import re
-import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from app.config import DISEASE_CONFIG  # noqa: E402
-from app.extractors.pipeline import ExtractionPipeline  # noqa: E402
 from app.extractors.pdfplumber_ext import PDFPlumberExtractor  # noqa: E402
+from app.extractors.pipeline import ExtractionPipeline  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -39,7 +38,7 @@ def _normalise_cell(value: Any) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def _rows_to_text(rows: List[List[Any]]) -> str:
+def _rows_to_text(rows: list[list[Any]]) -> str:
     lines = []
     for row in rows:
         cells = [_normalise_cell(cell) for cell in row]
@@ -52,7 +51,9 @@ def _parse_weight_band(text: str) -> str:
     lowered = text.lower()
     if re.search(r"<\s*30\s*kg|less than 30 kg|under 30 kg", lowered):
         return "< 30 kg"
-    if re.search(r">=\s*30\s*kg|≥\s*30\s*kg|30 kg or more|30 kg and above|over 30 kg|above 30 kg", lowered):
+    if re.search(
+        r">=\s*30\s*kg|≥\s*30\s*kg|30 kg or more|30 kg and above|over 30 kg|above 30 kg", lowered
+    ):
         return ">= 30 kg"
     match = re.search(r"(?:weight\s*)?(\d+(?:\.\d+)?)\s*kg", lowered)
     if match:
@@ -68,12 +69,12 @@ def _parse_regimen(text: str) -> str:
     return re.sub(r"\s+", " ", match.group(1).strip())
 
 
-def _extract_drugs(regimen: str) -> List[str]:
+def _extract_drugs(regimen: str) -> list[str]:
     return sorted(set(re.findall(r"\b[A-Z]{2,3}(?:/r)?\b", regimen)))
 
 
-def _candidate_rows(extracted_content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def _candidate_rows(extracted_content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     seen = set()
 
     for item in extracted_content:
@@ -99,11 +100,13 @@ def _candidate_rows(extracted_content: List[Dict[str, Any]]) -> List[Dict[str, A
             seen.add(key)
 
             drugs = _extract_drugs(regimen)
-            row_data: Dict[str, Any] = {
+            row_data: dict[str, Any] = {
                 "disease": "hiv",
                 "table_type": TABLE_TYPE,
                 "weight_band": weight_band,
-                "population": "children and adolescents" if weight_band == "< 30 kg" else "adults and adolescents",
+                "population": "children and adolescents"
+                if weight_band == "< 30 kg"
+                else "adults and adolescents",
                 "line": "first-line",
                 "regimen": regimen,
                 "drugs": drugs,
@@ -125,7 +128,7 @@ def _candidate_rows(extracted_content: List[Dict[str, Any]]) -> List[Dict[str, A
     return rows
 
 
-def _build_rows(pdf_path: Path) -> List[Dict[str, Any]]:
+def _build_rows(pdf_path: Path) -> list[dict[str, Any]]:
     import pdfplumber
 
     pipeline = ExtractionPipeline()
@@ -158,7 +161,7 @@ def _build_rows(pdf_path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def _write_table(db_path: Path, rows: List[Dict[str, Any]]) -> None:
+def _write_table(db_path: Path, rows: list[dict[str, Any]]) -> None:
     import lancedb
 
     db = lancedb.connect(str(db_path))
@@ -178,7 +181,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build minimal HIV structured KB table")
     parser.add_argument("--db-path", default=str(DEFAULT_DB_PATH), help="LanceDB directory")
     parser.add_argument("--pdf-path", default=str(DEFAULT_PDF_PATH), help="HIV ARV guideline PDF")
-    parser.add_argument("--dry-run", action="store_true", help="Extract rows without writing LanceDB")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Extract rows without writing LanceDB"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(

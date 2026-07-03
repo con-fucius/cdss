@@ -9,8 +9,8 @@ results from the Triage Ranker service. Written asynchronously when
 the background task completes (fire-and-forget create_task).
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers

@@ -1,5 +1,4 @@
-"""
-DEPRECATED DIAGNOSTIC: synthetic LanceDB write probe.
+r"""DEPRECATED DIAGNOSTIC: synthetic LanceDB write probe.
 
 This script can leave Windows-locked Lance temp files when the local LanceDB
 writer fails with Access is denied. Use it only as a manual host-side
@@ -12,13 +11,15 @@ without needing a PDF. Uses fake chunks, real embedding, real lancedb.
 Run from D:\\Projects\\CDSS\\HIV-agent:
     .\\.venv\\Scripts\\python.exe -m scripts.synthetic_index_test
 """
+
 import os
+
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
+import logging
 import sys
 import time
-import logging
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +41,7 @@ log.info("STEP 2: Imports + manager init")
 log.info("=" * 60)
 t = time.time()
 from app.ingest import IngestionManager, list_lancedb_tables
+
 log.info("Imports OK in %.1fs", time.time() - t)
 
 t = time.time()
@@ -52,20 +54,21 @@ log.info("=" * 60)
 log.info("STEP 3: Build 60 synthetic chunks")
 log.info("=" * 60)
 from app.schema import IndexedChunk
+
 N = 60
 chunks = []
 for i in range(N):
     chunks.append(
         IndexedChunk(
             text=f"Synthetic malaria chunk {i}: ACT treatment guidelines for uncomplicated malaria in adults. "
-                 f"Artemether-lumefantrine (AL) is the first-line therapy. Dose by weight band. "
-                 f"Section {i//10 + 1}.{i%10 + 1}, page {i+1}.",
-            parent_text=f"Parent section {i//10 + 1} covers dosing and administration.",
+            f"Artemether-lumefantrine (AL) is the first-line therapy. Dose by weight band. "
+            f"Section {i // 10 + 1}.{i % 10 + 1}, page {i + 1}.",
+            parent_text=f"Parent section {i // 10 + 1} covers dosing and administration.",
             disease="malaria",
             guideline_name="National Guidelines for the Diagnosis, Treatment and Prevention of Malaria (3rd Edition, 2010)",
-            section_title=f"Section {i//10 + 1}.{i%10 + 1}",
+            section_title=f"Section {i // 10 + 1}.{i % 10 + 1}",
             page=i + 1,
-            section_number=f"{i//10 + 1}.{i%10 + 1}",
+            section_number=f"{i // 10 + 1}.{i % 10 + 1}",
             content_type="narrative",
         )
     )
@@ -78,7 +81,9 @@ log.info("=" * 60)
 t = time.time()
 texts = [c.text for c in chunks]
 embeddings = list(mgr.embedding_model.embed(texts))
-log.info("Embedded %d chunks in %.1fs, dim=%d", len(embeddings), time.time() - t, len(embeddings[0]))
+log.info(
+    "Embedded %d chunks in %.1fs, dim=%d", len(embeddings), time.time() - t, len(embeddings[0])
+)
 
 # Step 5: write lancedb
 log.info("=" * 60)
@@ -88,10 +93,7 @@ table_name = "malaria_guidelines_synthetic"
 t = time.time()
 if table_name in list_lancedb_tables(mgr.db):
     mgr.db.drop_table(table_name)
-data = [
-    chunk.to_dict(vector=embeddings[i].tolist())
-    for i, chunk in enumerate(chunks)
-]
+data = [chunk.to_dict(vector=embeddings[i].tolist()) for i, chunk in enumerate(chunks)]
 table = mgr.db.create_table(table_name, data=data)
 log.info("Created table %s in %.1fs", table_name, time.time() - t)
 
@@ -138,14 +140,18 @@ log.info("=" * 60)
 log.info("STEP 9: Vector search round-trip")
 log.info("=" * 60)
 t = time.time()
-q_emb = list(mgr.embedding_model.embed(["What is the first-line treatment for malaria?"]))[0].tolist()
+q_emb = list(mgr.embedding_model.embed(["What is the first-line treatment for malaria?"]))[
+    0
+].tolist()
 results = table.search(q_emb).metric("cosine").limit(3).to_list()
 log.info("Search took %.1fs, returned %d results", time.time() - t, len(results))
 for r in results:
-    log.info("  score=%.3f page=%s text=%r",
-             1 - r.get("_distance", 0) / 2,
-             r.get("page"),
-             (r.get("text") or "")[:80])
+    log.info(
+        "  score=%.3f page=%s text=%r",
+        1 - r.get("_distance", 0) / 2,
+        r.get("page"),
+        (r.get("text") or "")[:80],
+    )
 
 log.info("=" * 60)
 log.info("PASS: synthetic table has %d rows, search works", n)

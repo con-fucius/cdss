@@ -1,19 +1,20 @@
-"""
-Structured logging infrastructure for CDSS.
+"""Structured logging infrastructure for CDSS.
 Implements Phase 0.2 requirements using structlog.
 """
 
-import structlog
 import atexit
-import logging
+import contextlib
 import hashlib
 import hmac
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any
+
+import structlog
 
 try:
     from .config import get_audit_storage_backend, get_patient_salt
@@ -25,7 +26,7 @@ APP_DIR = Path(__file__).resolve().parent
 # Setup SQLite DB for Audit logs
 AUDIT_DB_PATH = Path(os.getenv("CDSS_AUDIT_DB_PATH", APP_DIR / "data" / "audit.db"))
 _AUDIT_DB_RAW = os.getenv("CDSS_AUDIT_DB_PATH", str(APP_DIR / "data" / "audit.db"))
-_MEMORY_AUDIT_CONN: Optional[sqlite3.Connection] = None
+_MEMORY_AUDIT_CONN: sqlite3.Connection | None = None
 
 if _AUDIT_DB_RAW != ":memory:":
     AUDIT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -47,10 +48,11 @@ def _connect_audit_db() -> sqlite3.Connection:
         return _MEMORY_AUDIT_CONN
     return sqlite3.connect(AUDIT_DB_PATH)
 
+
 def init_audit_db():
     conn = _connect_audit_db()
     c = conn.cursor()
-    c.execute('''
+    c.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -61,26 +63,30 @@ def init_audit_db():
             feedback_type TEXT,
             log_data TEXT
         )
-    ''')
-    c.execute(
-        "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp "
-        "ON audit_logs(timestamp DESC)"
-    )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC)")
     conn.commit()
     if _AUDIT_DB_RAW != ":memory:":
         conn.close()
 
+
 init_audit_db()
 
-def _write_audit_log(event_type: str, session_id: str, query_id: str, disease: str, feedback_type: str, data: dict):
+
+def _write_audit_log(
+    event_type: str, session_id: str, query_id: str, disease: str, feedback_type: str, data: dict
+):
     """DEPRECATED: SQLite compatibility path; use write_audit_log instead."""
     try:
         conn = _connect_audit_db()
         c = conn.cursor()
-        c.execute('''
+        c.execute(
+            """
             INSERT INTO audit_logs (event_type, session_id, query_id, disease, feedback_type, log_data)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (event_type, session_id, query_id, disease, feedback_type, json.dumps(data)))
+        """,
+            (event_type, session_id, query_id, disease, feedback_type, json.dumps(data)),
+        )
         conn.commit()
         if _AUDIT_DB_RAW != ":memory:":
             conn.close()
@@ -155,19 +161,18 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
-def _normalise_patient_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+
+def _normalise_patient_context(context: dict[str, Any] | None) -> dict[str, Any]:
     if not context:
         return {}
     # Filter out defaults and empty values before hashing.
     filtered = {
-        k: v
-        for k, v in context.items()
-        if v not in ("Select...", "None", "", None, [], {})
+        k: v for k, v in context.items() if v not in ("Select...", "None", "", None, [], {})
     }
     return filtered
 
 
-def _hash_patient_ref(context: Optional[Dict[str, Any]]) -> str:
+def _hash_patient_ref(context: dict[str, Any] | None) -> str:
     """HMAC-SHA-256 patient reference hash for audit-safe context logging."""
     filtered = _normalise_patient_context(context)
     if not filtered:
@@ -181,21 +186,21 @@ def _hash_patient_ref(context: Optional[Dict[str, Any]]) -> str:
     ).hexdigest()
 
 
-def _hash_context(context: Optional[Dict[str, Any]]) -> str:
+def _hash_context(context: dict[str, Any] | None) -> str:
     """DEPRECATED: use _hash_patient_ref."""
     return _hash_patient_ref(context)
 
 
 def _read_audit_logs_sqlite(
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    session_id: Optional[str] = None,
-    disease: Optional[str] = None,
-    feedback_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    session_id: str | None = None,
+    disease: str | None = None,
+    feedback_type: str | None = None,
     page: int = 1,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Read audit logs through one shared path used by admin endpoints."""
     if _AUDIT_DB_RAW != ":memory:" and not AUDIT_DB_PATH.exists():
         return {"logs": [], "total": 0, "page": page, "limit": limit}
@@ -222,9 +227,7 @@ def _read_audit_logs_sqlite(
         q += " AND feedback_type = ?"
         params.append(feedback_type)
 
-    total = conn.execute(
-        q.replace("SELECT *", "SELECT COUNT(*)"), params
-    ).fetchone()[0]
+    total = conn.execute(q.replace("SELECT *", "SELECT COUNT(*)"), params).fetchone()[0]
 
     q += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
     params.extend([limit, (page - 1) * limit])
@@ -236,10 +239,8 @@ def _read_audit_logs_sqlite(
     for row in rows:
         item = dict(row)
         if item.get("log_data"):
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 item["log_data"] = json.loads(item["log_data"])
-            except json.JSONDecodeError:
-                pass
         logs.append(item)
 
     return {"logs": logs, "total": total, "page": page, "limit": limit}
@@ -247,14 +248,14 @@ def _read_audit_logs_sqlite(
 
 def read_audit_logs(
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    session_id: Optional[str] = None,
-    disease: Optional[str] = None,
-    feedback_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    session_id: str | None = None,
+    disease: str | None = None,
+    feedback_type: str | None = None,
     page: int = 1,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """DEPRECATED: sync SQLite reader; use read_audit_logs_async."""
     return _read_audit_logs_sqlite(
         start_date=start_date,
@@ -269,14 +270,14 @@ def read_audit_logs(
 
 async def read_audit_logs_async(
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    session_id: Optional[str] = None,
-    disease: Optional[str] = None,
-    feedback_type: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    session_id: str | None = None,
+    disease: str | None = None,
+    feedback_type: str | None = None,
     page: int = 1,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Read audit logs from the configured backend."""
     if get_audit_storage_backend() == "postgres":
         from .repositories import read_audit_logs_db
@@ -322,42 +323,47 @@ async def read_audit_logs_async(
     result["storage_backend"] = "sqlite"
     return result
 
+
 async def log_query(
-    session_id: str, 
-    query_text: str, 
-    disease_targets: List[str], 
-    patient_context: Optional[Dict[str, Any]] = None
+    session_id: str,
+    query_text: str,
+    disease_targets: list[str],
+    patient_context: dict[str, Any] | None = None,
 ):
     """Log initial user query with anonymized patient context."""
     context_hash = _hash_patient_ref(patient_context)
     context_fields = list(patient_context.keys()) if patient_context else []
-    
+
     await logger.ainfo(
         "QUERY_LOG",
         session_id=session_id,
         query_text=query_text,
         disease_targets=disease_targets,
         patient_context_hash=context_hash,
-        context_fields_used=context_fields
+        context_fields_used=context_fields,
     )
     await write_audit_log(
-        "QUERY_LOG", session_id, "", ",".join(disease_targets), "", 
-        {"query_text": query_text, "context_hash": context_hash, "context_fields": context_fields}
+        "QUERY_LOG",
+        session_id,
+        "",
+        ",".join(disease_targets),
+        "",
+        {"query_text": query_text, "context_hash": context_hash, "context_fields": context_fields},
     )
 
 
 async def log_retrieval(
-    session_id: str, 
-    query_id: str, 
-    tool_name: str, 
-    search_query: str, 
-    chunks_returned: int, 
-    top_score: float, 
+    session_id: str,
+    query_id: str,
+    tool_name: str,
+    search_query: str,
+    chunks_returned: int,
+    top_score: float,
     latency_ms: float,
-    embed_ms: Optional[float] = None,
-    vector_search_ms: Optional[float] = None,
-    rerank_ms: Optional[float] = None,
-    expanded_query: Optional[str] = None,
+    embed_ms: float | None = None,
+    vector_search_ms: float | None = None,
+    rerank_ms: float | None = None,
+    expanded_query: str | None = None,
 ):
     """Log retrieval performance and results."""
     await logger.ainfo(
@@ -372,16 +378,17 @@ async def log_retrieval(
         embed_ms=embed_ms,
         vector_search_ms=vector_search_ms,
         rerank_ms=rerank_ms,
-        expanded_query=expanded_query
+        expanded_query=expanded_query,
     )
 
+
 async def log_tool(
-    session_id: str, 
-    query_id: str, 
-    tool_call_index: int, 
-    tool_name: str, 
-    params: Dict[str, Any], 
-    result_length: int
+    session_id: str,
+    query_id: str,
+    tool_call_index: int,
+    tool_name: str,
+    params: dict[str, Any],
+    result_length: int,
 ):
     """Log tool invocation details."""
     await logger.ainfo(
@@ -391,15 +398,16 @@ async def log_tool(
         tool_call_index=tool_call_index,
         tool_name=tool_name,
         params=params,
-        result_length=result_length
+        result_length=result_length,
     )
 
+
 async def log_response(
-    session_id: str, 
-    query_id: str, 
-    response_length: int, 
-    sources_cited: List[Dict[str, Any]], 
-    total_latency_ms: float
+    session_id: str,
+    query_id: str,
+    response_length: int,
+    sources_cited: list[dict[str, Any]],
+    total_latency_ms: float,
 ):
     """Log response delivery and quality metrics."""
     await logger.ainfo(
@@ -408,20 +416,23 @@ async def log_response(
         query_id=query_id,
         response_length=response_length,
         sources_cited=sources_cited,
-        total_latency_ms=total_latency_ms
+        total_latency_ms=total_latency_ms,
     )
     await write_audit_log(
-        "RESPONSE_LOG", session_id, query_id, "", "",
-        {"response_length": response_length, "sources_cited": sources_cited, "latency_ms": total_latency_ms}
+        "RESPONSE_LOG",
+        session_id,
+        query_id,
+        "",
+        "",
+        {
+            "response_length": response_length,
+            "sources_cited": sources_cited,
+            "latency_ms": total_latency_ms,
+        },
     )
 
 
-async def log_feedback(
-    session_id: str, 
-    message_id: str, 
-    feedback_type: str, 
-    note: str = ""
-):
+async def log_feedback(session_id: str, message_id: str, feedback_type: str, note: str = ""):
     """Log explicit user feedback."""
     await logger.ainfo(
         "FEEDBACK_LOG",
@@ -429,12 +440,9 @@ async def log_feedback(
         message_id=message_id,
         feedback_type=feedback_type,
         note=note,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.utcnow().isoformat(),
     )
-    await write_audit_log(
-        "FEEDBACK_LOG", session_id, message_id, "", feedback_type,
-        {"note": note}
-    )
+    await write_audit_log("FEEDBACK_LOG", session_id, message_id, "", feedback_type, {"note": note})
 
 
 async def log_correction(
@@ -442,7 +450,7 @@ async def log_correction(
     message_id: str,
     feedback_type: str,
     correction: str,
-    sources_used: List[str],
+    sources_used: list[str],
 ) -> None:
     """Log feedback corrections through the configured audit backend."""
     await write_audit_log(
@@ -457,12 +465,12 @@ async def log_correction(
 
 async def log_init(
     event: str,
-    disease: str, 
-    doc_name: str, 
-    chunk_count: int, 
-    latency_ms: float, 
-    extractor_used: str, 
-    quality_score: float
+    disease: str,
+    doc_name: str,
+    chunk_count: int,
+    latency_ms: float,
+    extractor_used: str,
+    quality_score: float,
 ):
     """Log system initialization and ingestion results."""
     await logger.ainfo(
@@ -473,15 +481,12 @@ async def log_init(
         chunk_count=chunk_count,
         latency_ms=latency_ms,
         extractor_used=extractor_used,
-        quality_score=quality_score
+        quality_score=quality_score,
     )
 
+
 async def log_error(
-    session_id: str, 
-    query_id: str, 
-    error_type: str, 
-    traceback: str, 
-    recovery_action: str = ""
+    session_id: str, query_id: str, error_type: str, traceback: str, recovery_action: str = ""
 ):
     """Log errors with context for debugging."""
     await logger.aerror(
@@ -490,18 +495,20 @@ async def log_error(
         query_id=query_id,
         error_type=error_type,
         traceback=traceback,
-        recovery_action=recovery_action
+        recovery_action=recovery_action,
     )
+
 
 # --- Deprecated Interface (for compatibility during transition) ---
 
+
 def log_interaction_to_file(agent, messages):
-    """
-    DEPRECATED: Use structured log_* helpers instead.
+    """DEPRECATED: Use structured log_* helpers instead.
     Kept for backward compatibility with PoC code.
     """
     # Sync wrapper to avoid breaking older synchronous code
     logger.info("DEPRECATED_LOG_CALL", reason="log_interaction_to_file called")
+
 
 def print_recent_logs(n: int = 5):
     """DEPRECATED: print recent audit rows for the legacy CLI."""

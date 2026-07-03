@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/data.py
+"""facility-mapper/app/data.py.
 
 Facility data loading, validation, and BallTree construction.
 
@@ -18,12 +17,11 @@ request. In-process cache is invalidated by TTL or explicit
 from __future__ import annotations
 
 import logging
-import math
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from .db import get_session
 from .models import Facility
@@ -43,8 +41,7 @@ def validate_coordinates(lat: float, lon: float) -> bool:
 
 
 class BallTreeIndex:
-    """
-    BallTree KNN spatial index for facility lookup.
+    """BallTree KNN spatial index for facility lookup.
 
     Uses Haversine metric (inputs in radians). Built from active
     facilities at startup and rebuilt on explicit reload.
@@ -58,10 +55,10 @@ class BallTreeIndex:
 
     def __init__(self) -> None:
         self._tree = None
-        self._facilities: List[Dict[str, Any]] = []
+        self._facilities: list[dict[str, Any]] = []
         self._lats: np.ndarray = np.array([])
         self._lons: np.ndarray = np.array([])
-        self._built_at: Optional[datetime] = None
+        self._built_at: datetime | None = None
 
     def is_ready(self) -> bool:
         """True when the BallTree has been built and has at least one facility."""
@@ -73,18 +70,17 @@ class BallTreeIndex:
         return len(self._facilities)
 
     @property
-    def built_at(self) -> Optional[datetime]:
+    def built_at(self) -> datetime | None:
         """Timestamp of the last successful BallTree build."""
         return self._built_at
 
     async def build(self) -> int:
-        """
-        Load all active facilities from DB and build the BallTree.
+        """Load all active facilities from DB and build the BallTree.
         Returns the number of facilities loaded.
         """
         from sklearn.neighbors import BallTree
 
-        facilities: List[Dict[str, Any]] = []
+        facilities: list[dict[str, Any]] = []
 
         async with get_session() as session:
             result = await session.execute(
@@ -120,7 +116,7 @@ class BallTreeIndex:
         self._facilities = facilities
         self._lats = lats
         self._lons = lons
-        self._built_at = datetime.now(timezone.utc)
+        self._built_at = datetime.now(UTC)
 
         logger.info("BallTree built with %d facilities.", len(facilities))
         return len(facilities)
@@ -130,12 +126,11 @@ class BallTreeIndex:
         lat: float,
         lon: float,
         level_min: int = 1,
-        required_services: Optional[List[str]] = None,
+        required_services: list[str] | None = None,
         radius_km: float = 50.0,
         max_results: int = 3,
-    ) -> List[Dict[str, Any]]:
-        """
-        Find nearest facilities matching criteria.
+    ) -> list[dict[str, Any]]:
+        """Find nearest facilities matching criteria.
 
         Uses BallTree KNN with Haversine metric.
         Level filter applied post-KNN (filter, then re-sort by distance).
@@ -161,8 +156,8 @@ class BallTreeIndex:
             distances = distances[0]
             indices = indices[0]
 
-            results: List[Dict[str, Any]] = []
-            for dist_rad, idx in zip(distances, indices):
+            results: list[dict[str, Any]] = []
+            for dist_rad, idx in zip(distances, indices, strict=False):
                 if dist_rad > radius_rad:
                     break  # Beyond search radius
 

@@ -1,5 +1,4 @@
-"""
-app/terminology/embed.py
+"""app/terminology/embed.py.
 
 Generate and upload UMLS concept embeddings to Qdrant.
 
@@ -31,8 +30,9 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -58,9 +58,9 @@ def _collection_name() -> str:
     return os.getenv("CDSS_QDRANT_COLLECTION", _DEFAULT_COLLECTION)
 
 
-def _iter_embeddable(path: Path, limit: Optional[int]) -> Iterator[Dict[str, Any]]:
+def _iter_embeddable(path: Path, limit: int | None) -> Iterator[dict[str, Any]]:
     count = 0
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -88,7 +88,7 @@ def _ensure_collection(client: Any, collection: str, vector_size: int) -> None:
         logger.info("Qdrant collection '%s' already exists", collection)
 
 
-async def _update_qdrant_ids(cui_id_pairs: List[Tuple[str, int]]) -> None:
+async def _update_qdrant_ids(cui_id_pairs: list[tuple[str, int]]) -> None:
     """Write CUI → Qdrant integer ID back to terminology_concepts.qdrant_id."""
     from sqlalchemy import update
 
@@ -107,13 +107,12 @@ async def _update_qdrant_ids(cui_id_pairs: List[Tuple[str, int]]) -> None:
 
 async def embed_and_upload(
     input_path: Path,
-    collection: Optional[str] = None,
-    qdrant_url: Optional[str] = None,
+    collection: str | None = None,
+    qdrant_url: str | None = None,
     batch_size: int = _DEFAULT_BATCH,
-    limit: Optional[int] = None,
-) -> Dict[str, int]:
-    """
-    Embed concepts and upload to Qdrant.
+    limit: int | None = None,
+) -> dict[str, int]:
+    """Embed concepts and upload to Qdrant.
 
     Returns {processed, uploaded, skipped, errors}.
     """
@@ -121,17 +120,12 @@ async def embed_and_upload(
         from qdrant_client import QdrantClient
         from qdrant_client.models import PointStruct
     except ImportError as exc:
-        raise ImportError(
-            "qdrant-client is not installed. "
-            "Run: uv add qdrant-client"
-        ) from exc
+        raise ImportError("qdrant-client is not installed. Run: uv add qdrant-client") from exc
 
     try:
         from fastembed import TextEmbedding
     except ImportError as exc:
-        raise ImportError(
-            "fastembed is not installed. Run: uv add fastembed"
-        ) from exc
+        raise ImportError("fastembed is not installed. Run: uv add fastembed") from exc
 
     col = collection or _collection_name()
     url = qdrant_url or _qdrant_url()
@@ -144,6 +138,7 @@ async def embed_and_upload(
 
     # Determine vector dimension from model
     from ..config import get_embedding_model_name
+
     model_name = get_embedding_model_name()
     model = TextEmbedding(model_name=model_name)
     probe = list(model.embed(["probe"]))[0]
@@ -158,7 +153,7 @@ async def embed_and_upload(
     logger.info("Resuming from Qdrant point id %d", next_id)
 
     # Load existing CUI→ID mapping to enable upsert
-    cui_to_id: Dict[str, int] = {}
+    cui_to_id: dict[str, int] = {}
     if next_id > 0:
         logger.info("Loading existing CUI→ID mappings from Qdrant ...")
         offset = None
@@ -179,18 +174,18 @@ async def embed_and_upload(
         logger.info("  Loaded %d existing mappings", len(cui_to_id))
 
     processed = skipped = errors = 0
-    upload_buffer: List[Any] = []  # PointStruct
-    pg_update_buffer: List[Tuple[str, int]] = []
+    upload_buffer: list[Any] = []  # PointStruct
+    pg_update_buffer: list[tuple[str, int]] = []
 
-    text_batch: List[str] = []
-    data_batch: List[Dict[str, Any]] = []
+    text_batch: list[str] = []
+    data_batch: list[dict[str, Any]] = []
 
     def _flush_embed_batch() -> None:
         nonlocal processed
         if not text_batch:
             return
         vecs = list(model.embed(text_batch))
-        for (rec, vec) in zip(data_batch, vecs):
+        for rec, vec in zip(data_batch, vecs, strict=False):
             cui = rec["cui"]
             if cui not in cui_to_id:
                 cui_to_id[cui] = _next_id_ref[0]
@@ -279,9 +274,7 @@ async def embed_and_upload(
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Embed UMLS concepts and upload to Qdrant"
-    )
+    parser = argparse.ArgumentParser(description="Embed UMLS concepts and upload to Qdrant")
     parser.add_argument(
         "--input",
         required=True,
@@ -298,9 +291,7 @@ def main() -> None:
         help="Qdrant URL (default: CDSS_QDRANT_URL env or http://localhost:6333)",
     )
     parser.add_argument("--batch-size", type=int, default=_DEFAULT_BATCH)
-    parser.add_argument(
-        "--limit", type=int, default=None, help="Stop after N concepts"
-    )
+    parser.add_argument("--limit", type=int, default=None, help="Stop after N concepts")
     args = parser.parse_args()
 
     result = asyncio.run(

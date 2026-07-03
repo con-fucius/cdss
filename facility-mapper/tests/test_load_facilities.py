@@ -1,5 +1,4 @@
-"""
-Unit tests for facility-mapper/scripts/load_facilities.py
+"""Unit tests for facility-mapper/scripts/load_facilities.py.
 
 Tests the parser and validator functions without a database:
 - _validate_coordinates for Kenya/Uganda/DRC bounds
@@ -11,10 +10,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
-import tempfile
-
-import pytest
 
 from scripts.load_facilities import (
     _load_csv,
@@ -22,7 +17,6 @@ from scripts.load_facilities import (
     _parse_facility_row,
     _validate_coordinates,
 )
-
 
 # ── Coordinate validation ─────────────────────────────────────────────────
 
@@ -389,8 +383,20 @@ class TestLoadCSV:
 
     def test_load_valid_csv(self, tmp_path):
         rows = [
-            {"facility_id": "F001", "name": "Hospital A", "lat": "-1.29", "lon": "36.82", "level": "4"},
-            {"facility_id": "F002", "name": "Hospital B", "lat": "-1.30", "lon": "36.83", "level": "3"},
+            {
+                "facility_id": "F001",
+                "name": "Hospital A",
+                "lat": "-1.29",
+                "lon": "36.82",
+                "level": "4",
+            },
+            {
+                "facility_id": "F002",
+                "name": "Hospital B",
+                "lat": "-1.30",
+                "lon": "36.83",
+                "level": "3",
+            },
         ]
         path = self._write_csv(tmp_path, rows)
         facilities = _load_csv(path)
@@ -425,8 +431,13 @@ class TestLoadCSV:
 
     def test_csv_services_comma_separated(self, tmp_path):
         rows = [
-            {"facility_id": "F001", "name": "H", "lat": "-1.29", "lon": "36.82",
-             "services": "surgery,icu"},
+            {
+                "facility_id": "F001",
+                "name": "H",
+                "lat": "-1.29",
+                "lon": "36.82",
+                "services": "surgery,icu",
+            },
         ]
         path = self._write_csv(tmp_path, rows)
         facilities = _load_csv(path)
@@ -455,17 +466,21 @@ class TestLoadJSON:
         assert len(facilities) == 2
 
     def test_load_nested_facilities_key(self, tmp_path):
-        data = {"facilities": [
-            {"facility_id": "F001", "name": "Hospital A", "lat": -1.29, "lon": 36.82},
-        ]}
+        data = {
+            "facilities": [
+                {"facility_id": "F001", "name": "Hospital A", "lat": -1.29, "lon": 36.82},
+            ]
+        }
         path = self._write_json(tmp_path, data)
         facilities = _load_json(path)
         assert len(facilities) == 1
 
     def test_load_nested_results_key(self, tmp_path):
-        data = {"results": [
-            {"facility_id": "F001", "name": "Hospital A", "lat": -1.29, "lon": 36.82},
-        ]}
+        data = {
+            "results": [
+                {"facility_id": "F001", "name": "Hospital A", "lat": -1.29, "lon": 36.82},
+            ]
+        }
         path = self._write_json(tmp_path, data)
         facilities = _load_json(path)
         assert len(facilities) == 1
@@ -486,8 +501,15 @@ class TestLoadJSON:
         assert facilities == []
 
     def test_json_services_as_list(self, tmp_path):
-        data = [{"facility_id": "F001", "name": "H", "lat": -1.29, "lon": 36.82,
-                 "services": ["surgery", "icu"]}]
+        data = [
+            {
+                "facility_id": "F001",
+                "name": "H",
+                "lat": -1.29,
+                "lon": 36.82,
+                "services": ["surgery", "icu"],
+            }
+        ]
         path = self._write_json(tmp_path, data)
         facilities = _load_json(path)
         assert facilities[0]["services"] == ["surgery", "icu"]

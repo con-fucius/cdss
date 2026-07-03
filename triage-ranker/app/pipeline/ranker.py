@@ -1,5 +1,4 @@
-"""
-triage-ranker/app/pipeline/ranker.py
+"""triage-ranker/app/pipeline/ranker.py.
 
 Stage 3 — Composite severity scoring and triage level assignment.
 
@@ -24,12 +23,11 @@ Design constraints:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ambulance_cdss_contracts.triage import (
     ClinicalCategory,
     DiagnosisRankItem,
-    ExtractedKeyword,
     SeverityLevel,
     TriageLevel,
 )
@@ -37,16 +35,15 @@ from ambulance_cdss_contracts.triage import (
 logger = logging.getLogger(__name__)
 
 
-def _compute_shock_index(hr: Optional[int], sbp: Optional[int]) -> Optional[float]:
+def _compute_shock_index(hr: int | None, sbp: int | None) -> float | None:
     """Compute Shock Index = HR / SBP. Returns None if inputs invalid."""
     if hr is None or sbp is None or sbp <= 0:
         return None
     return round(hr / sbp, 2)
 
 
-def _compute_gcs_severity(gcs_score: Optional[int]) -> Tuple[float, str]:
-    """
-    GCS component score for triage ranking.
+def _compute_gcs_severity(gcs_score: int | None) -> tuple[float, str]:
+    """GCS component score for triage ranking.
     Returns (weight, severity_level_description).
     """
     if gcs_score is None:
@@ -60,7 +57,7 @@ def _compute_gcs_severity(gcs_score: Optional[int]) -> Tuple[float, str]:
     return 0.0, "normal"
 
 
-def _compute_shock_index_score(shock_index: Optional[float]) -> Tuple[float, str]:
+def _compute_shock_index_score(shock_index: float | None) -> tuple[float, str]:
     """Shock Index component score for triage ranking."""
     if shock_index is None:
         return 0.0, "unknown"
@@ -109,16 +106,15 @@ def _map_severity_level(composite_score: float) -> SeverityLevel:
 
 
 def rank_diagnoses(
-    resolved_keywords: List[Dict[str, Any]],
-    gcs_score: Optional[int] = None,
-    acvpu: Optional[str] = None,
-    sbp: Optional[int] = None,
-    hr: Optional[int] = None,
-    rules: Optional[List[Dict[str, Any]]] = None,
+    resolved_keywords: list[dict[str, Any]],
+    gcs_score: int | None = None,
+    acvpu: str | None = None,
+    sbp: int | None = None,
+    hr: int | None = None,
+    rules: list[dict[str, Any]] | None = None,
     degraded_mode: bool = False,
-) -> List[DiagnosisRankItem]:
-    """
-    Stage 3 — Rank clinical diagnoses from resolved keywords.
+) -> list[DiagnosisRankItem]:
+    """Stage 3 — Rank clinical diagnoses from resolved keywords.
 
     Uses composite scoring: w_rule + w_semantic + w_modifier + w_scoring_system.
     Maps to triage_level (P1-P4) and esi_level (1-5).
@@ -142,18 +138,26 @@ def rank_diagnoses(
 
     # ACVPU to GCS mapping (approximation)
     acvpu_gcs_map = {
-        "a": 15, "alert": 15,
-        "c": 13, "confused": 13,
-        "v": 9, "voice": 9, "responds to voice": 9,
-        "p": 7, "pain": 7, "responds to pain": 7,
-        "u": 3, "unresponsive": 3, "unconscious": 3,
+        "a": 15,
+        "alert": 15,
+        "c": 13,
+        "confused": 13,
+        "v": 9,
+        "voice": 9,
+        "responds to voice": 9,
+        "p": 7,
+        "pain": 7,
+        "responds to pain": 7,
+        "u": 3,
+        "unresponsive": 3,
+        "unconscious": 3,
     }
     if gcs_score is None and acvpu:
         gcs_score = acvpu_gcs_map.get(acvpu.lower().strip())
         gcs_weight, gcs_desc = _compute_gcs_severity(gcs_score)
 
     # Score each keyword
-    scored: List[Dict[str, Any]] = []
+    scored: list[dict[str, Any]] = []
     for kw in resolved_keywords:
         # w_rule: severity weight from clinical rules
         w_rule = 0.0
@@ -189,19 +193,21 @@ def rank_diagnoses(
         # Total composite (clamped to 0-1)
         total = min(1.0, w_rule + w_semantic + w_modifier + gcs_weight + si_weight)
 
-        scored.append({
-            "text": kw.get("text", ""),
-            "category": category,
-            "composite_score": total,
-            "w_rule": w_rule,
-            "w_semantic": w_semantic,
-            "w_modifier": w_modifier,
-            "w_gcs": gcs_weight,
-            "w_shock_index": si_weight,
-            "icd10_code": (umls_res or {}).get("icd10_code", kw.get("icd10_prefix", "")),
-            "snomed_code": (umls_res or {}).get("snomed_code", kw.get("snomed_hint", "")),
-            "cui": (umls_res or {}).get("cui", ""),
-        })
+        scored.append(
+            {
+                "text": kw.get("text", ""),
+                "category": category,
+                "composite_score": total,
+                "w_rule": w_rule,
+                "w_semantic": w_semantic,
+                "w_modifier": w_modifier,
+                "w_gcs": gcs_weight,
+                "w_shock_index": si_weight,
+                "icd10_code": (umls_res or {}).get("icd10_code", kw.get("icd10_prefix", "")),
+                "snomed_code": (umls_res or {}).get("snomed_code", kw.get("snomed_hint", "")),
+                "cui": (umls_res or {}).get("cui", ""),
+            }
+        )
 
     # Sort by composite score descending
     scored.sort(key=lambda x: x["composite_score"], reverse=True)
@@ -209,7 +215,7 @@ def rank_diagnoses(
     # Build DiagnosisRankItem list
     ranking = []
     for i, s in enumerate(scored[:10]):  # Max 10 results
-        triage_level = _map_to_triage_level(s["composite_score"])
+        _map_to_triage_level(s["composite_score"])
         esi_level = _map_to_esi_level(s["composite_score"])
         severity_level = _map_severity_level(s["composite_score"])
 
@@ -226,40 +232,43 @@ def rank_diagnoses(
         for mod in modifiers:
             modifier_classes.append(mod)
 
-        ranking.append(DiagnosisRankItem(
-            rank=i + 1,
-            canonical_name=s["text"].title(),
-            umls_cui=s["cui"] or None,
-            snomed_code=s["snomed_code"] or None,
-            icd10_code=s["icd10_code"] or None,
-            severity_level=severity_level,
-            esi_level=esi_level,
-            score_breakdown={
-                "w_rule": s["w_rule"],
-                "w_semantic": s["w_semantic"],
-                "w_modifier": s["w_modifier"],
-                "w_gcs": s["w_gcs"],
-                "w_shock_index": s["w_shock_index"],
-                "total": s["composite_score"],
-            },
-            scoring_systems_applied=scoring_systems_applied,
-            modifier_classes=modifier_classes,
-        ))
+        ranking.append(
+            DiagnosisRankItem(
+                rank=i + 1,
+                canonical_name=s["text"].title(),
+                umls_cui=s["cui"] or None,
+                snomed_code=s["snomed_code"] or None,
+                icd10_code=s["icd10_code"] or None,
+                severity_level=severity_level,
+                esi_level=esi_level,
+                score_breakdown={
+                    "w_rule": s["w_rule"],
+                    "w_semantic": s["w_semantic"],
+                    "w_modifier": s["w_modifier"],
+                    "w_gcs": s["w_gcs"],
+                    "w_shock_index": s["w_shock_index"],
+                    "total": s["composite_score"],
+                },
+                scoring_systems_applied=scoring_systems_applied,
+                modifier_classes=modifier_classes,
+            )
+        )
 
     # Never return zero results — fallback
     if not ranking:
-        ranking.append(DiagnosisRankItem(
-            rank=1,
-            canonical_name="Undifferentiated Emergency",
-            umls_cui=None,
-            snomed_code=None,
-            icd10_code=None,
-            severity_level=SeverityLevel.MODERATE,
-            esi_level=3,
-            score_breakdown={"w_rule": 0.3, "total": 0.3},
-            scoring_systems_applied=[],
-            modifier_classes=[],
-        ))
-        degraded_mode = True
+        ranking.append(
+            DiagnosisRankItem(
+                rank=1,
+                canonical_name="Undifferentiated Emergency",
+                umls_cui=None,
+                snomed_code=None,
+                icd10_code=None,
+                severity_level=SeverityLevel.MODERATE,
+                esi_level=3,
+                score_breakdown={"w_rule": 0.3, "total": 0.3},
+                scoring_systems_applied=[],
+                modifier_classes=[],
+            )
+        )
 
     return ranking, shock_index

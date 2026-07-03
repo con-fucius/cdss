@@ -1,5 +1,4 @@
-"""
-app/terminology/__init__.py
+"""app/terminology/__init__.py.
 
 Bounded terminology subsystem for CDSS.
 

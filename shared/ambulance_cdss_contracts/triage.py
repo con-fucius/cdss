@@ -1,5 +1,4 @@
-"""
-shared/contracts/triage.py
+"""shared/contracts/triage.py.
 
 Pydantic v2 schemas for the Triage Ranker service HTTP API.
 
@@ -11,10 +10,9 @@ any change here must be reflected in both services simultaneously.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -72,7 +70,7 @@ class TriageRequest(BaseModel):
             "after spaCy tokenisation."
         ),
     )
-    gcs_score: Optional[int] = Field(
+    gcs_score: int | None = Field(
         default=None,
         ge=3,
         le=15,
@@ -82,7 +80,7 @@ class TriageRequest(BaseModel):
             "threshold indicating severe traumatic brain injury."
         ),
     )
-    acvpu: Optional[str] = Field(
+    acvpu: str | None = Field(
         default=None,
         description=(
             "Consciousness level: A (Alert), C (Confused), "
@@ -91,7 +89,7 @@ class TriageRequest(BaseModel):
             "detailed component scoring is not feasible."
         ),
     )
-    sbp: Optional[int] = Field(
+    sbp: int | None = Field(
         default=None,
         ge=30,
         le=300,
@@ -101,7 +99,7 @@ class TriageRequest(BaseModel):
             "an adult is hypotensive and suggests circulatory compromise."
         ),
     )
-    hr: Optional[int] = Field(
+    hr: int | None = Field(
         default=None,
         ge=20,
         le=300,
@@ -119,7 +117,7 @@ class TriageRequest(BaseModel):
             "or when canonical medical codes are not needed."
         ),
     )
-    semantic_type_filter: Optional[List[str]] = Field(
+    semantic_type_filter: list[str] | None = Field(
         default=None,
         description=(
             "Optional filter on UMLS semantic types to resolve. "
@@ -141,9 +139,7 @@ class ExtractedKeyword(BaseModel):
     detected (e.g. 'severe', 'acute').
     """
 
-    text: str = Field(
-        description="The matched text span from the incident description."
-    )
+    text: str = Field(description="The matched text span from the incident description.")
     category: ClinicalCategory = Field(
         description="Clinical category assigned by clinical_rules.yaml matching."
     )
@@ -155,7 +151,7 @@ class ExtractedKeyword(BaseModel):
             "Negated keywords should not contribute to diagnosis ranking."
         ),
     )
-    severity_modifiers: List[str] = Field(
+    severity_modifiers: list[str] = Field(
         default_factory=list,
         description=(
             "Severity modifiers detected around the keyword, e.g. "
@@ -163,13 +159,11 @@ class ExtractedKeyword(BaseModel):
             "('mkali', 'hatari'). These modify the w_rule component."
         ),
     )
-    icd10_prefix: Optional[str] = Field(
-        default=None,
-        description="ICD-10 code prefix from clinical_rules.yaml, if matched."
+    icd10_prefix: str | None = Field(
+        default=None, description="ICD-10 code prefix from clinical_rules.yaml, if matched."
     )
-    snomed_hint: Optional[str] = Field(
-        default=None,
-        description="SNOMED-CT concept hint from clinical_rules.yaml, if matched."
+    snomed_hint: str | None = Field(
+        default=None, description="SNOMED-CT concept hint from clinical_rules.yaml, if matched."
     )
     source: str = Field(
         default="rules",
@@ -192,29 +186,25 @@ class DiagnosisRankItem(BaseModel):
     modifiers, and scoring system inputs (GCS, Shock Index).
     """
 
-    rank: int = Field(
-        description="Ranking position (1 = most likely / most urgent)."
-    )
+    rank: int = Field(description="Ranking position (1 = most likely / most urgent).")
     canonical_name: str = Field(
         description=(
             "Standardised clinical condition name. E.g. 'Acute Myocardial "
             "Infarction', 'Severe Traumatic Brain Injury'."
         ),
     )
-    umls_cui: Optional[str] = Field(
+    umls_cui: str | None = Field(
         default=None,
         description=(
             "UMLS Concept Unique Identifier. Absent when UMLS resolution "
             "is in degraded mode (L4 fallback only)."
         ),
     )
-    snomed_code: Optional[str] = Field(
-        default=None,
-        description="SNOMED-CT code for this condition, if resolved via UMLS."
+    snomed_code: str | None = Field(
+        default=None, description="SNOMED-CT code for this condition, if resolved via UMLS."
     )
-    icd10_code: Optional[str] = Field(
-        default=None,
-        description="ICD-10 code for this condition, if available."
+    icd10_code: str | None = Field(
+        default=None, description="ICD-10 code for this condition, if available."
     )
     severity_level: SeverityLevel = Field(
         description="Clinical severity classification for this diagnosis."
@@ -227,26 +217,23 @@ class DiagnosisRankItem(BaseModel):
             "Mapped from the composite score."
         ),
     )
-    score_breakdown: Dict[str, float] = Field(
+    score_breakdown: dict[str, float] = Field(
         default_factory=dict,
         description=(
             "Decomposition of the composite score into its components: "
             "w_rule, w_semantic, w_modifier, w_scoring_system, total."
         ),
     )
-    scoring_systems_applied: List[str] = Field(
+    scoring_systems_applied: list[str] = Field(
         default_factory=list,
         description=(
             "Scoring systems that contributed to this diagnosis score, "
             "e.g. ['GCS_NUMERIC', 'SHOCK_INDEX_CRITICAL']."
         ),
     )
-    modifier_classes: List[str] = Field(
+    modifier_classes: list[str] = Field(
         default_factory=list,
-        description=(
-            "Severity modifier classes detected, e.g. "
-            "['SEVERITY_CRITICAL', 'ACTIVE']."
-        ),
+        description=("Severity modifier classes detected, e.g. ['SEVERITY_CRITICAL', 'ACTIVE']."),
     )
 
 
@@ -261,20 +248,18 @@ class TriageMetadata(BaseModel):
     request_id: str = Field(
         description="Unique identifier for this triage request, for traceability."
     )
-    processing_times_ms: Dict[str, float] = Field(
+    processing_times_ms: dict[str, float] = Field(
         default_factory=dict,
         description=(
             "Processing time per pipeline stage in milliseconds. "
             "E.g. {'extraction': 45.2, 'resolution': 120.5, 'ranking': 12.3}."
         ),
     )
-    cache_stats: Dict[str, Any] = Field(
+    cache_stats: dict[str, Any] = Field(
         default_factory=dict,
-        description=(
-            "Cache hit/miss statistics: L1 hits, L2 hits, L3 calls, L4 fallbacks."
-        ),
+        description=("Cache hit/miss statistics: L1 hits, L2 hits, L3 calls, L4 fallbacks."),
     )
-    shock_index: Optional[float] = Field(
+    shock_index: float | None = Field(
         default=None,
         description=(
             "Computed Shock Index (HR / SBP). Value > 1.0 indicates "
@@ -282,15 +267,14 @@ class TriageMetadata(BaseModel):
             "were provided in the request."
         ),
     )
-    scoring_systems_used: List[str] = Field(
+    scoring_systems_used: list[str] = Field(
         default_factory=list,
         description="List of scoring systems applied during ranking.",
     )
-    inferred_risks: List[str] = Field(
+    inferred_risks: list[str] = Field(
         default_factory=list,
         description=(
-            "Risk flags inferred from the input, e.g. "
-            "['SEVERE_TBI', 'HAEMODYNAMIC_INSTABILITY']."
+            "Risk flags inferred from the input, e.g. ['SEVERE_TBI', 'HAEMODYNAMIC_INSTABILITY']."
         ),
     )
 
@@ -304,14 +288,14 @@ class TriageResponse(BaseModel):
     outputs used by ambulance-cdss for incident enrichment.
     """
 
-    diagnosis_ranking: List[DiagnosisRankItem] = Field(
+    diagnosis_ranking: list[DiagnosisRankItem] = Field(
         description=(
             "Ranked list of potential diagnoses, sorted by urgency. "
             "Never empty — falls back to 'Undifferentiated Emergency' "
             "when the pipeline cannot extract meaningful entities."
         ),
     )
-    historical_findings: List[DiagnosisRankItem] = Field(
+    historical_findings: list[DiagnosisRankItem] = Field(
         default_factory=list,
         description=(
             "Diagnoses classified as historical (patient-reported past "
@@ -319,7 +303,7 @@ class TriageResponse(BaseModel):
             "identifies historical mentions."
         ),
     )
-    keywords: List[ExtractedKeyword] = Field(
+    keywords: list[ExtractedKeyword] = Field(
         description=(
             "Raw extracted keywords from Stage 1, before or after UMLS "
             "resolution depending on pipeline state."

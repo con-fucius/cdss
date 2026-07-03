@@ -12,7 +12,7 @@ import hashlib
 import json
 import re
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -26,28 +26,28 @@ from .providers import (
 )
 
 _EMBEDDING_CACHE_LIMIT = 256
-_embedding_lru: OrderedDict[str, List[float]] = OrderedDict()
+_embedding_lru: OrderedDict[str, list[float]] = OrderedDict()
 
 # Cheap models used for memory distillation — never the expensive reasoning model
-_DISTILL_MODELS: Dict[str, str] = {
+_DISTILL_MODELS: dict[str, str] = {
     "groq": "llama-3.1-8b-instant",
     "puter": "openai/gpt-4o-mini",
 }
 
 
-def patient_ref_from_context(patient_context: Optional[Dict[str, Any]]) -> str:
+def patient_ref_from_context(patient_context: dict[str, Any] | None) -> str:
     """Hash patient context before it can be used as a memory key."""
     return _hash_patient_ref(patient_context)
 
 
-def embedding_cache_key(query: str, model_name: Optional[str] = None) -> str:
-    payload = f"{model_name or get_embedding_model_name()}\n{query}".encode("utf-8")
+def embedding_cache_key(query: str, model_name: str | None = None) -> str:
+    payload = f"{model_name or get_embedding_model_name()}\n{query}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
 async def get_cached_embedding(
-    query: str, model_name: Optional[str] = None
-) -> Optional[List[float]]:
+    query: str, model_name: str | None = None
+) -> list[float] | None:
     key = embedding_cache_key(query, model_name)
     if key in _embedding_lru:
         value = _embedding_lru.pop(key)
@@ -65,8 +65,8 @@ async def get_cached_embedding(
 
 async def put_cached_embedding(
     query: str,
-    embedding: List[float],
-    model_name: Optional[str] = None,
+    embedding: list[float],
+    model_name: str | None = None,
 ) -> None:
     key = embedding_cache_key(query, model_name)
     _remember_embedding(key, embedding)
@@ -75,7 +75,7 @@ async def put_cached_embedding(
     await put_embedding_cache(key, model_name or get_embedding_model_name(), embedding)
 
 
-def _remember_embedding(key: str, embedding: List[float]) -> None:
+def _remember_embedding(key: str, embedding: list[float]) -> None:
     if key in _embedding_lru:
         _embedding_lru.pop(key)
     _embedding_lru[key] = embedding
@@ -84,15 +84,15 @@ def _remember_embedding(key: str, embedding: List[float]) -> None:
 
 
 def deterministic_session_facts(
-    messages: List[Dict[str, str]],
-) -> List[Dict[str, Any]]:
+    messages: list[dict[str, str]],
+) -> list[dict[str, Any]]:
     """Extract conservative memory candidates without an LLM call."""
     joined = "\n".join(
         f"{m.get('role', '')}: {m.get('content', '')}"
         for m in messages
         if m.get("content") and m.get("role") == "user"
     )
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     patterns = [
         (
             "drug_change",
@@ -145,8 +145,8 @@ def _normalize_fact_type(fact_type: str) -> str:
 
 async def distill_session_candidates(
     session_id: str,
-    patient_context: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    patient_context: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Distill a session into pending memory candidates; never approves them."""
     from .repositories import (
         create_pending_memory,
@@ -176,8 +176,8 @@ async def distill_session_candidates(
         )
         for row in [*existing_pending, *existing_approved]
     }
-    existing_text_by_type: Dict[str, List[str]] = {}
-    existing_texts_all: List[str] = []
+    existing_text_by_type: dict[str, list[str]] = {}
+    existing_texts_all: list[str] = []
     for row in [*existing_pending, *existing_approved]:
         fact_type = _normalize_fact_type(row.get("fact_type", ""))
         fact_text = str(row.get("fact_text", "")).strip().lower()
@@ -187,7 +187,9 @@ async def distill_session_candidates(
     created = []
     for fact in facts:
         fact_text = str(fact.get("fact_text", "")).strip()
-        fact_type = _normalize_fact_type(str(fact.get("fact_type", "decision")).strip() or "decision")
+        fact_type = _normalize_fact_type(
+            str(fact.get("fact_type", "decision")).strip() or "decision"
+        )
         if not fact_text:
             continue
         fact_key = (fact_type.lower(), fact_text.lower())
@@ -215,10 +217,9 @@ async def distill_session_candidates(
 
 
 async def _llm_distill(
-    messages: List[Dict[str, str]],
-) -> List[Dict[str, Any]]:
-    """
-    Use the cheapest available model to extract clinical facts from a session.
+    messages: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Use the cheapest available model to extract clinical facts from a session.
 
     Always uses _DISTILL_MODELS[provider] — never get_llm_model() — so the
     expensive reasoning model is never burned on routine memory extraction.

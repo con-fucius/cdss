@@ -16,7 +16,9 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("PUTER_AUTH_TOKEN=", env_example)
         self.assertIn("PUTER_MODEL=openai/gpt-4o-mini", env_example)
         self.assertIn("PUTER_OPENAI_BASE_URL=https://api.puter.com/puterai/openai/v1", env_example)
-        self.assertIn("DATABASE_URL=postgresql+asyncpg://cdss:cdss@localhost:5432/cdss", env_example)
+        self.assertIn(
+            "DATABASE_URL=postgresql+asyncpg://cdss:cdss@localhost:5432/cdss", env_example
+        )
         self.assertNotIn("FASTEMBED_CACHE_DIR", env_example)
         self.assertNotIn("CDSS_RUN_MIGRATIONS_ON_STARTUP", env_example)
 

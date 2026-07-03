@@ -1,17 +1,18 @@
-r"""
-Minimal one-shot: index Malaria, log to file, exit.
+r"""Minimal one-shot: index Malaria, log to file, exit.
 Skips the smoke diagnostic; just proves the pipeline writes a table.
 
 Run from D:\Projects\CDSS\HIV-agent:
     .\.venv\Scripts\python.exe -m scripts.index_malaria_minimal
 """
+
 import os
+
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
+import logging
 import sys
 import time
-import logging
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,8 +34,9 @@ log.info("=" * 60)
 log.info("STEP 2: Imports")
 log.info("=" * 60)
 t = time.time()
-from app.ingest import IngestionManager, list_lancedb_tables
 from app.config import DISEASE_CONFIG
+from app.ingest import IngestionManager, list_lancedb_tables
+
 log.info("Imports OK in %.1fs", time.time() - t)
 
 # Step 3: connect
@@ -65,9 +67,13 @@ n_rows = table.count_rows()
 log.info("table=%s rows=%d", table_name, n_rows)
 if n_rows > 0:
     sample = table.search().limit(1).to_list()[0]
-    log.info("sample row: disease=%s guideline_name=%s content_type=%s page=%s",
-             sample.get("disease"), sample.get("guideline_name"),
-             sample.get("content_type"), sample.get("page"))
+    log.info(
+        "sample row: disease=%s guideline_name=%s content_type=%s page=%s",
+        sample.get("disease"),
+        sample.get("guideline_name"),
+        sample.get("content_type"),
+        sample.get("page"),
+    )
     log.info("sample text: %r", (sample.get("text") or "")[:120])
 
 log.info("=" * 60)

@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/config.py
+"""facility-mapper/app/config.py.
 
 Environment configuration for the Facility Mapper service.
 
@@ -38,9 +37,7 @@ def get_database_url() -> str:
     """Async database URL for SQLAlchemy. Raises RuntimeError if not set."""
     url = os.getenv("DATABASE_URL", "").strip()
     if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Copy .env.example to .env and configure it."
-        )
+        raise RuntimeError("DATABASE_URL is not set. Copy .env.example to .env and configure it.")
     return url
 
 
@@ -55,8 +52,7 @@ def get_db_pool_max() -> int:
 
 
 def get_admin_api_key() -> str:
-    """
-    API key required for admin endpoints (/admin/*).
+    """API key required for admin endpoints (/admin/*).
     An empty string means admin endpoints are unrestricted — acceptable
     in development, must be set before production deployment.
     """
@@ -64,8 +60,7 @@ def get_admin_api_key() -> str:
 
 
 def get_allowed_origins() -> list[str]:
-    """
-    Comma-separated list of allowed CORS origins.
+    """Comma-separated list of allowed CORS origins.
     Defaults to ['*'] when not set (development only).
     Set ALLOWED_ORIGINS to a comma-separated list of specific origins
     before production deployment.
@@ -77,8 +72,7 @@ def get_allowed_origins() -> list[str]:
 
 
 def get_ambulance_speed_kmh() -> float:
-    """
-    Ambulance speed in km/h for ETA calculation.
+    """Ambulance speed in km/h for ETA calculation.
     Default 60 is a realistic urban/rural Kenya average.
     Documented: not a magic number.
     """
@@ -86,8 +80,7 @@ def get_ambulance_speed_kmh() -> float:
 
 
 def get_facility_cache_ttl_seconds() -> int:
-    """
-    Maximum age (seconds) of in-process BallTree cache before automatic
+    """Maximum age (seconds) of in-process BallTree cache before automatic
     rebuild on next request. 0 = no automatic expiry (manual reload only).
     """
     return int(os.getenv("FACILITY_CACHE_TTL_SECONDS", "3600"))
@@ -104,8 +97,7 @@ def get_geocoding_timeout_seconds() -> float:
 
 
 def validate_startup_config() -> None:
-    """
-    Hard assertions that must hold before the app is allowed to serve
+    """Hard assertions that must hold before the app is allowed to serve
     traffic in a non-development environment. Mirrors ambulance-cdss
     convention — fail loudly at startup, not silently at runtime.
     """

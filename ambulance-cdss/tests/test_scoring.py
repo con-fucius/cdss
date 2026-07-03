@@ -1,5 +1,4 @@
-"""
-tests/test_scoring.py
+"""tests/test_scoring.py.
 
 Per the established pattern (matches the chronic-disease CDSS's scoring
 test discipline): normal case, boundary score, missing required input
@@ -12,7 +11,6 @@ from __future__ import annotations
 import inspect
 
 import pytest
-
 from app.scoring import scorers
 from app.scoring.scorers import (
     ScoringError,
@@ -56,7 +54,8 @@ class TestNEWS2:
 
     def test_single_param_score_3_triggers_escalation_even_if_total_low(self):
         """A single 3-scoring parameter must escalate per NEWS2 spec,
-        regardless of total score magnitude."""
+        regardless of total score magnitude.
+        """
         result = compute_news2(
             {
                 "respiratory_rate": 16,  # 0
@@ -126,8 +125,7 @@ class TestGCS:
 
 
 def test_no_async_no_llm_no_network_imports_in_scorers_module():
-    """
-    Hard constraint per app/scoring/scorers.py module docstring and the
+    """Hard constraint per app/scoring/scorers.py module docstring and the
     Ambulance CDSS implementation plan: ClinicalScorer-equivalent functions
     must be synchronous, pure Python, with no LLM provider imports.
     """

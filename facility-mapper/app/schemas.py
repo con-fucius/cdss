@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/schemas.py
+"""facility-mapper/app/schemas.py.
 
 Re-exports shared contracts from the ambulance-cdss-contracts package.
 

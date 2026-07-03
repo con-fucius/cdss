@@ -1,5 +1,4 @@
-"""
-app/retry.py
+"""app/retry.py.
 
 Retry and timeout helpers. Vendored pattern from the chronic-disease CDSS,
 trimmed to exactly what this system needs: wrapping calls to the two live
@@ -18,7 +17,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from typing import Awaitable, Callable, Optional, Tuple, Type, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import httpx
 
@@ -38,11 +38,10 @@ async def async_retry(
     func: Callable[[], Awaitable[T]],
     max_attempts: int = 3,
     base_delay: float = 0.5,
-    retry_on: Tuple[Type[BaseException], ...] = (httpx.TransportError,),
-    retryable_status_codes: Optional[set] = None,
+    retry_on: tuple[type[BaseException], ...] = (httpx.TransportError,),
+    retryable_status_codes: set | None = None,
 ) -> T:
-    """
-    Retry an async callable with exponential backoff and jitter.
+    """Retry an async callable with exponential backoff and jitter.
 
     func: a zero-arg callable returning an awaitable (so it can be re-invoked
           on each attempt — pass a lambda wrapping the real call).
@@ -51,7 +50,7 @@ async def async_retry(
           response status code is in this set. Defaults to 429/500/502/503/504.
     """
     statuses = retryable_status_codes or _DEFAULT_RETRYABLE_STATUS
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
 
     for attempt in range(1, max_attempts + 1):
         try:

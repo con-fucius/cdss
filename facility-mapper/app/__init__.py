@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/__init__.py
+"""facility-mapper/app/__init__.py.
 
 Facility Mapper — geospatial facility routing service for the ambulance CDSS.
 """

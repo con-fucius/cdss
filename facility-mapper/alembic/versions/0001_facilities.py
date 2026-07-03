@@ -18,8 +18,9 @@ A database supports versioned updates, tracks data_as_of, and allows
 level/service filter queries without loading 10,000 records into memory
 on every request.
 """
-from alembic import op
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY
 
 # revision identifiers, used by Alembic.

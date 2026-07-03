@@ -1,5 +1,4 @@
-"""
-Disease-specific and runtime configuration for CDSS.
+"""Disease-specific and runtime configuration for CDSS.
 
 Phase 0 fixes:
 - TB: guideline_name and source_url updated to match actual indexed PDF
@@ -40,8 +39,7 @@ def get_cdss_env() -> str:
 
 
 def get_patient_salt() -> str:
-    """
-    Return the configured patient hashing salt.
+    """Return the configured patient hashing salt.
 
     Development falls back to an explicit non-production value so local smoke
     tests still run; production startup validation refuses this state.
@@ -90,8 +88,7 @@ def get_embedding_model_name() -> str:
 
 
 def validate_patient_salt() -> None:
-    """
-    Validate patient hash salt at startup.
+    """Validate patient hash salt at startup.
 
     Production refuses to start without at least 16 bytes of salt. Development
     logs once but keeps running so local remediation work is not blocked by a
@@ -116,6 +113,7 @@ def validate_patient_salt() -> None:
         )
     logger.warning(message)
 
+
 DISEASE_CONFIG = {
     "hiv": {
         "display_name": "HIV/AIDS",
@@ -124,17 +122,33 @@ DISEASE_CONFIG = {
         "table_name": "hiv_guidelines",
         "use_hyde": True,
         "population_options": [
-            "Select...", "Adult", "Adolescent (10-19)", "Child (<10)", "Infant (<1)",
+            "Select...",
+            "Adult",
+            "Adolescent (10-19)",
+            "Child (<10)",
+            "Infant (<1)",
         ],
         "condition_options": [
-            "Select...", "Treatment-naive", "Treatment-experienced",
-            "Pregnant", "Breastfeeding",
+            "Select...",
+            "Treatment-naive",
+            "Treatment-experienced",
+            "Pregnant",
+            "Breastfeeding",
         ],
         "comorbidity_options": [
-            "None", "TB", "Hepatitis B", "Hepatitis C", "CKD", "Diabetes",
+            "None",
+            "TB",
+            "Hepatitis B",
+            "Hepatitis C",
+            "CKD",
+            "Diabetes",
         ],
         "filter_options": [
-            "First-line", "Second-line", "Prophylaxis", "Monitoring", "PMTCT",
+            "First-line",
+            "Second-line",
+            "Prophylaxis",
+            "Monitoring",
+            "PMTCT",
         ],
         "clinical_params": [
             {"id": "cd4_count", "label": "CD4 Count", "unit": "cells/mm³"},
@@ -151,17 +165,33 @@ DISEASE_CONFIG = {
         "table_name": "diabetes_guidelines",
         "use_hyde": True,
         "population_options": [
-            "Select...", "Adult", "Elderly (>65)", "Pregnant", "Child/Adolescent",
+            "Select...",
+            "Adult",
+            "Elderly (>65)",
+            "Pregnant",
+            "Child/Adolescent",
         ],
         "condition_options": [
-            "Select...", "Type 1 DM", "Type 2 DM", "Gestational DM",
+            "Select...",
+            "Type 1 DM",
+            "Type 2 DM",
+            "Gestational DM",
             "DM with complications",
         ],
         "comorbidity_options": [
-            "None", "Hypertension", "CKD", "Heart failure", "HIV", "TB",
+            "None",
+            "Hypertension",
+            "CKD",
+            "Heart failure",
+            "HIV",
+            "TB",
         ],
         "filter_options": [
-            "Diagnosis", "Pharmacotherapy", "Insulin", "Monitoring", "Complications",
+            "Diagnosis",
+            "Pharmacotherapy",
+            "Insulin",
+            "Monitoring",
+            "Complications",
         ],
         "clinical_params": [
             {"id": "hba1c", "label": "HbA1c", "unit": "%"},
@@ -180,12 +210,19 @@ DISEASE_CONFIG = {
         "use_hyde": False,
         "population_options": ["Select...", "Adult", "Elderly (>65)", "Pregnant"],
         "condition_options": [
-            "Select...", "Hypertension", "Heart Failure",
-            "Ischemic Heart Disease", "Stroke Risk",
+            "Select...",
+            "Hypertension",
+            "Heart Failure",
+            "Ischemic Heart Disease",
+            "Stroke Risk",
         ],
         "comorbidity_options": ["None", "Diabetes", "CKD", "HIV", "Obesity"],
         "filter_options": [
-            "Screening", "Diagnosis", "Lifestyle", "Pharmacotherapy", "Emergency Care",
+            "Screening",
+            "Diagnosis",
+            "Lifestyle",
+            "Pharmacotherapy",
+            "Emergency Care",
         ],
         "clinical_params": [
             {"id": "bp_systolic", "label": "BP Systolic", "unit": "mmHg"},
@@ -193,7 +230,11 @@ DISEASE_CONFIG = {
             {"id": "total_cholesterol", "label": "Total Cholesterol", "unit": "mmol/L"},
         ],
         "validation_keywords": [
-            "hypertension", "statin", "amlodipine", "blood pressure", "CV risk",
+            "hypertension",
+            "statin",
+            "amlodipine",
+            "blood pressure",
+            "CV risk",
         ],
     },
     "tb": {
@@ -201,20 +242,30 @@ DISEASE_CONFIG = {
         # Actual indexed PDF: Integrated Guideline For Tuberculosis, Leprosy
         # And Lung Disease 2021 — not the 2025 URL which returns 404
         "guideline_name": "Integrated Guideline for Tuberculosis, Leprosy and Lung Disease 2021",
-        "source_url": "",   # No confirmed public URL; local PDF used for ingestion
+        "source_url": "",  # No confirmed public URL; local PDF used for ingestion
         "table_name": "tb_guidelines",
         "use_hyde": True,
         "population_options": [
-            "Select...", "Adult", "Child (<15)", "Infant", "Pregnant",
+            "Select...",
+            "Adult",
+            "Child (<15)",
+            "Infant",
+            "Pregnant",
         ],
         "condition_options": [
-            "Select...", "Drug-Susceptible TB", "MDR-TB",
-            "Extrapulmonary TB", "Latent TB",
+            "Select...",
+            "Drug-Susceptible TB",
+            "MDR-TB",
+            "Extrapulmonary TB",
+            "Latent TB",
         ],
         "comorbidity_options": ["None", "HIV", "Diabetes", "Malnutrition"],
         "filter_options": [
-            "Screening", "Diagnosis", "Intensive Phase",
-            "Continuation Phase", "TPT",
+            "Screening",
+            "Diagnosis",
+            "Intensive Phase",
+            "Continuation Phase",
+            "TPT",
         ],
         "clinical_params": [
             {"id": "weight", "label": "Weight", "unit": "kg"},
@@ -225,7 +276,11 @@ DISEASE_CONFIG = {
             },
         ],
         "validation_keywords": [
-            "rifampicin", "isoniazid", "sputum", "GeneXpert", "TPT",
+            "rifampicin",
+            "isoniazid",
+            "sputum",
+            "GeneXpert",
+            "TPT",
         ],
     },
     "malaria": {
@@ -242,16 +297,25 @@ DISEASE_CONFIG = {
         "table_name": "malaria_guidelines",
         "use_hyde": True,
         "population_options": [
-            "Select...", "Adult", "Child", "Infant", "Pregnant",
+            "Select...",
+            "Adult",
+            "Child",
+            "Infant",
+            "Pregnant",
         ],
         "condition_options": [
-            "Select...", "Uncomplicated Malaria", "Severe Malaria",
+            "Select...",
+            "Uncomplicated Malaria",
+            "Severe Malaria",
             "Malaria in Pregnancy",
         ],
         "comorbidity_options": ["None", "HIV", "Malnutrition", "Anemia"],
         "filter_options": [
-            "Diagnosis", "First-line Treatment", "Second-line Treatment",
-            "Prevention", "Severe Management",
+            "Diagnosis",
+            "First-line Treatment",
+            "Second-line Treatment",
+            "Prevention",
+            "Severe Management",
         ],
         "clinical_params": [
             {"id": "weight", "label": "Weight", "unit": "kg"},
@@ -259,26 +323,43 @@ DISEASE_CONFIG = {
             {"id": "parasitemia", "label": "Parasite Density", "unit": "parasites/µL"},
         ],
         "validation_keywords": [
-            "artemether", "lumefantrine", "AL", "artesunate", "ACT", "mRDT", "smear",
+            "artemether",
+            "lumefantrine",
+            "AL",
+            "artesunate",
+            "ACT",
+            "mRDT",
+            "smear",
         ],
     },
     "mental_health": {
         "display_name": "Mental Health",
         "guideline_name": "National Clinical Guideline for Management of Common Mental Disorders",
-        "source_url": "",   # No confirmed public URL; local PDF used for ingestion
+        "source_url": "",  # No confirmed public URL; local PDF used for ingestion
         "table_name": "mental_health_guidelines",
         "use_hyde": True,
         "population_options": [
-            "Select...", "Adult", "Adolescent", "Child", "Pregnant",
+            "Select...",
+            "Adult",
+            "Adolescent",
+            "Child",
+            "Pregnant",
         ],
         "condition_options": [
-            "Select...", "Depression", "Anxiety", "Psychosis",
-            "Substance Use", "Suicide Risk",
+            "Select...",
+            "Depression",
+            "Anxiety",
+            "Psychosis",
+            "Substance Use",
+            "Suicide Risk",
         ],
         "comorbidity_options": ["None", "HIV", "Diabetes", "TB", "Pregnancy"],
         "filter_options": [
-            "Screening", "Diagnosis", "Psychosocial",
-            "Pharmacotherapy", "Referral",
+            "Screening",
+            "Diagnosis",
+            "Psychosocial",
+            "Pharmacotherapy",
+            "Referral",
         ],
         "clinical_params": [
             {
@@ -293,7 +374,11 @@ DISEASE_CONFIG = {
             },
         ],
         "validation_keywords": [
-            "depression", "anxiety", "psychosis", "suicide", "counselling",
+            "depression",
+            "anxiety",
+            "psychosis",
+            "suicide",
+            "counselling",
         ],
     },
 }

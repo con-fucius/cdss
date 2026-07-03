@@ -1,5 +1,4 @@
-"""
-scripts/annotate_kb.py
+"""scripts/annotate_kb.py.
 
 Offline Knowledge Base Annotation Script
 =========================================
@@ -21,7 +20,7 @@ Usage
 -----
     uv run python scripts/annotate_kb.py [--disease hiv] [--dry-run] [--batch-size 50]
 
-Arguments
+Arguments:
 ---------
     --disease <id>    Annotate only one disease (e.g. "hiv"). Default: all.
     --dry-run         Run annotation without writing to Postgres.
@@ -35,7 +34,6 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Bootstrap: put the project root on sys.path so relative package imports work
@@ -55,12 +53,14 @@ logger = logging.getLogger("annotate_kb")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _upsert_batch(
-    rows: List[Dict],
+    rows: list[dict],
     dry_run: bool,
 ) -> int:
     """Upsert a batch of concept rows into guideline_chunk_concepts.
-    Returns the number of rows attempted."""
+    Returns the number of rows attempted.
+    """
     if not rows:
         return 0
     if dry_run:
@@ -95,8 +95,7 @@ async def _annotate_table(
     batch_size: int,
     dry_run: bool,
 ) -> int:
-    """
-    Annotate one LanceDB guideline table.
+    """Annotate one LanceDB guideline table.
     Returns total concepts written.
     """
     logger.info("Annotating table '%s' for disease '%s'", table_name, disease)
@@ -116,7 +115,7 @@ async def _annotate_table(
     logger.info("  Loaded %d chunks from '%s'", total, table_name)
 
     written = 0
-    batch: List[Dict] = []
+    batch: list[dict] = []
 
     for idx, (_, row) in enumerate(df.iterrows()):
         chunk_id = str(row.get("chunk_id", "")).strip()
@@ -134,14 +133,16 @@ async def _annotate_table(
         for c in concepts:
             if not c.get("cui"):
                 continue
-            batch.append({
-                "chunk_id": chunk_id,
-                "cui": c["cui"],
-                "preferred_name": c.get("preferred_name", "")[:500],
-                "disease": disease,
-                "confidence": float(c.get("confidence", 1.0)),
-                "annotation_source": c.get("annotation_source", "exact_alias"),
-            })
+            batch.append(
+                {
+                    "chunk_id": chunk_id,
+                    "cui": c["cui"],
+                    "preferred_name": c.get("preferred_name", "")[:500],
+                    "disease": disease,
+                    "confidence": float(c.get("confidence", 1.0)),
+                    "annotation_source": c.get("annotation_source", "exact_alias"),
+                }
+            )
 
         if len(batch) >= batch_size:
             written += await _upsert_batch(batch, dry_run)
@@ -165,8 +166,7 @@ async def _annotate_pageindex(
     batch_size: int,
     dry_run: bool,
 ) -> int:
-    """
-    Annotate the pageindex_chunks LanceDB table.
+    """Annotate the pageindex_chunks LanceDB table.
     chunk_id is synthesised as 'page_<disease>_<page>' since pageindex rows
     have no native chunk_id — they are page-level summaries.
     """
@@ -199,7 +199,7 @@ async def _annotate_pageindex(
     logger.info("  Found %d pageindex rows for '%s'", len(df), disease)
 
     written = 0
-    batch: List[Dict] = []
+    batch: list[dict] = []
 
     for _, row in df.iterrows():
         page = int(row.get("page", 0) or 0)
@@ -222,14 +222,16 @@ async def _annotate_pageindex(
         for c in concepts:
             if not c.get("cui"):
                 continue
-            batch.append({
-                "chunk_id": chunk_id,
-                "cui": c["cui"],
-                "preferred_name": c.get("preferred_name", "")[:500],
-                "disease": disease,
-                "confidence": float(c.get("confidence", 1.0)),
-                "annotation_source": c.get("annotation_source", "exact_alias"),
-            })
+            batch.append(
+                {
+                    "chunk_id": chunk_id,
+                    "cui": c["cui"],
+                    "preferred_name": c.get("preferred_name", "")[:500],
+                    "disease": disease,
+                    "confidence": float(c.get("confidence", 1.0)),
+                    "annotation_source": c.get("annotation_source", "exact_alias"),
+                }
+            )
 
         if len(batch) >= batch_size:
             written += await _upsert_batch(batch, dry_run)
@@ -246,7 +248,8 @@ async def _annotate_pageindex(
 # Main
 # ---------------------------------------------------------------------------
 
-async def main(disease_filter: Optional[str], dry_run: bool, batch_size: int) -> None:
+
+async def main(disease_filter: str | None, dry_run: bool, batch_size: int) -> None:
     from app.config import DISEASE_CONFIG
     from app.search_tools import SearchIndex
     from app.terminology.service import TerminologyService
@@ -266,7 +269,9 @@ async def main(disease_filter: Optional[str], dry_run: bool, batch_size: int) ->
     diseases = [disease_filter] if disease_filter else list(DISEASE_CONFIG.keys())
     # Validate user-supplied disease
     if disease_filter and disease_filter not in DISEASE_CONFIG:
-        logger.error("Unknown disease '%s'. Valid options: %s", disease_filter, list(DISEASE_CONFIG.keys()))
+        logger.error(
+            "Unknown disease '%s'. Valid options: %s", disease_filter, list(DISEASE_CONFIG.keys())
+        )
         sys.exit(1)
 
     grand_total = 0
@@ -286,9 +291,7 @@ async def main(disease_filter: Optional[str], dry_run: bool, batch_size: int) ->
                 grand_total += written
 
         # 2. Pageindex summaries (Vector 5: concept-aware pageindex)
-        written = await _annotate_pageindex(
-            index, term_svc, disease, batch_size, dry_run
-        )
+        written = await _annotate_pageindex(index, term_svc, disease, batch_size, dry_run)
         grand_total += written
 
         logger.info("=== Completed annotation for disease: %s ===", disease)
@@ -298,13 +301,19 @@ async def main(disease_filter: Optional[str], dry_run: bool, batch_size: int) ->
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Annotate CDSS knowledge base with UMLS concepts.")
-    parser.add_argument("--disease", type=str, default=None, help="Annotate one disease only (e.g. 'hiv').")
+    parser.add_argument(
+        "--disease", type=str, default=None, help="Annotate one disease only (e.g. 'hiv')."
+    )
     parser.add_argument("--dry-run", action="store_true", help="Run without writing to Postgres.")
-    parser.add_argument("--batch-size", type=int, default=50, help="Batch size for Postgres upsert (default: 50).")
+    parser.add_argument(
+        "--batch-size", type=int, default=50, help="Batch size for Postgres upsert (default: 50)."
+    )
     args = parser.parse_args()
 
-    asyncio.run(main(
-        disease_filter=args.disease,
-        dry_run=args.dry_run,
-        batch_size=args.batch_size,
-    ))
+    asyncio.run(
+        main(
+            disease_filter=args.disease,
+            dry_run=args.dry_run,
+            batch_size=args.batch_size,
+        )
+    )

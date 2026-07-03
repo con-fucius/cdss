@@ -1,5 +1,4 @@
-"""
-tests/test_list_incidents.py
+"""tests/test_list_incidents.py.
 
 Improvement 1 — tests for the concurrent incident search/list endpoint.
 Improvement 3.4 — tests for chief complaint substring search.
@@ -112,23 +111,24 @@ class TestChiefComplaintSearch:
     def test_endpoint_has_chief_complaint_contains_param(self):
         """The GET /incidents endpoint must accept chief_complaint_contains."""
         from app.main import list_incidents as endpoint
+
         source = inspect.getsource(endpoint)
         assert "chief_complaint_contains" in source
 
     def test_endpoint_passes_param_to_repository(self):
         """The endpoint must pass chief_complaint_contains to the repository."""
         from app.main import list_incidents as endpoint
+
         source = inspect.getsource(endpoint)
         assert "chief_complaint_contains=chief_complaint_contains" in source
 
 
 class TestListIncidentsAcceptanceCriteria:
-    """
-    Acceptance criteria from IMPROVEMENTS.txt:
+    """Acceptance criteria from IMPROVEMENTS.txt:
     - GET /incidents?status=dispatched returns only dispatched incidents
     - GET /incidents?limit=201 returns 422 with a clear message
     - A purged incident does not appear in results
-    - No new tables, no new models, no new dependencies
+    - No new tables, no new models, no new dependencies.
     """
 
     def test_created_at_ordering(self):
@@ -140,13 +140,31 @@ class TestListIncidentsAcceptanceCriteria:
     def test_no_new_tables_no_new_models(self):
         """No new SQLAlchemy models or table definitions added."""
         import app.models as models
+
         expected_models = {
-            "Base", "IncidentStatus", "RecordedBy", "Incident",
-            "IncidentDispatchLog", "IncidentFieldLog", "IncidentVitals",
-            "IncidentMedicationGiven", "GuidanceLookupLog",
+            "Base",
+            "IncidentStatus",
+            "RecordedBy",
+            "Incident",
+            "IncidentDispatchLog",
+            "IncidentFieldLog",
+            "IncidentVitals",
+            "IncidentMedicationGiven",
+            "GuidanceLookupLog",
         }
         actual_models = {name for name in dir(models) if not name.startswith("_")}
-        assert actual_models.issubset(expected_models | {
-            "__builtins__", "__doc__", "__file__", "__loader__",
-            "__name__", "__package__", "__spec__",
-        }) or True
+        assert (
+            actual_models.issubset(
+                expected_models
+                | {
+                    "__builtins__",
+                    "__doc__",
+                    "__file__",
+                    "__loader__",
+                    "__name__",
+                    "__package__",
+                    "__spec__",
+                }
+            )
+            or True
+        )

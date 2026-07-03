@@ -1,5 +1,4 @@
-"""
-tests/test_eta_tracking.py
+"""tests/test_eta_tracking.py.
 
 Improvement 3.1 — tests for incident-level ETA tracking and overdue detection.
 
@@ -13,7 +12,7 @@ Tests confirm:
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 from app.repositories import _incident_to_dict
@@ -27,7 +26,7 @@ def _make_incident(
     """Create a mock Incident object with the required fields."""
     row = MagicMock()
     row.incident_id = "test-id"
-    row.created_at = datetime(2026, 6, 25, 10, 0, 0, tzinfo=timezone.utc)
+    row.created_at = datetime(2026, 6, 25, 10, 0, 0, tzinfo=UTC)
     row.status = status
     row.priority_code = "P1_AIRWAY_COMPLETE"
     row.chief_complaint = "not breathing"
@@ -56,7 +55,7 @@ def _make_incident(
 class TestEtaTracking:
     def test_overdue_when_dispatched_and_past_eta(self):
         """Dispatched 15 minutes ago with eta_minutes=8 → overdue=True."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched = now - timedelta(minutes=15)
         row = _make_incident(status="dispatched", dispatched_at=dispatched, eta_minutes=8.0)
         d = _incident_to_dict(row)
@@ -66,7 +65,7 @@ class TestEtaTracking:
 
     def test_not_overdue_when_dispatched_within_eta(self):
         """Dispatched 5 minutes ago with eta_minutes=10 → overdue=False."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched = now - timedelta(minutes=5)
         row = _make_incident(status="dispatched", dispatched_at=dispatched, eta_minutes=10.0)
         d = _incident_to_dict(row)
@@ -81,7 +80,7 @@ class TestEtaTracking:
 
     def test_no_eta_minutes(self):
         """dispatched_at set but eta_minutes=None → overdue=False."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched = now - timedelta(minutes=15)
         row = _make_incident(status="dispatched", dispatched_at=dispatched, eta_minutes=None)
         d = _incident_to_dict(row)
@@ -89,7 +88,7 @@ class TestEtaTracking:
 
     def test_on_scene_not_overdue(self):
         """On-scene status → overdue=False regardless of timestamps."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched = now - timedelta(minutes=30)
         row = _make_incident(status="on_scene", dispatched_at=dispatched, eta_minutes=8.0)
         d = _incident_to_dict(row)
@@ -104,7 +103,7 @@ class TestEtaTracking:
 
     def test_estimated_on_scene_at_computed(self):
         """estimated_on_scene_at = dispatched_at + timedelta(minutes=eta_minutes)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched = now - timedelta(minutes=10)
         row = _make_incident(status="dispatched", dispatched_at=dispatched, eta_minutes=5.0)
         d = _incident_to_dict(row)
@@ -116,15 +115,19 @@ class TestEtaTracking:
 class TestSetDispatchEta:
     def test_function_exists(self):
         from app.repositories import set_dispatch_eta
+
         assert callable(set_dispatch_eta)
 
     def test_function_is_async(self):
         import asyncio
+
         from app.repositories import set_dispatch_eta
+
         assert asyncio.iscoroutinefunction(set_dispatch_eta)
 
     def test_function_signature(self):
         from app.repositories import set_dispatch_eta
+
         sig = inspect.signature(set_dispatch_eta)
         params = list(sig.parameters.keys())
         assert "incident_id" in params

@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/models.py
+"""facility-mapper/app/models.py.
 
 SQLAlchemy ORM models for the Facility Mapper service.
 
@@ -18,7 +17,7 @@ on every request.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -55,12 +54,8 @@ class Facility(Base):
     lat: Mapped[float] = mapped_column(Float, nullable=False)
     lon: Mapped[float] = mapped_column(Float, nullable=False)
     phone: Mapped[str | None] = mapped_column(Text, nullable=True)
-    services: Mapped[list[str] | None] = mapped_column(
-        ARRAY(Text), nullable=True
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
+    services: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     data_source: Mapped[str] = mapped_column(Text, nullable=False)
     last_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -88,9 +83,7 @@ class DataImport(Base):
 
     __tablename__ = "data_imports"
 
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, server_default=func.gen_random_uuid()
-    )
+    id: Mapped[str] = mapped_column(String, primary_key=True, server_default=func.gen_random_uuid())
     source: Mapped[str] = mapped_column(Text, nullable=False)
     record_count: Mapped[int] = mapped_column(Integer, nullable=False)
     loaded_at: Mapped[datetime] = mapped_column(

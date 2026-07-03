@@ -1,6 +1,7 @@
 """Alembic environment for Ambulance CDSS — sync engine for migrations,
 even though the app runs on an async engine at request time (standard
-pattern, matches the chronic-disease CDSS's alembic/env.py)."""
+pattern, matches the chronic-disease CDSS's alembic/env.py).
+"""
 
 from __future__ import annotations
 
@@ -43,9 +44,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = _sync_url()
-    connectable = engine_from_config(
-        configuration, prefix="sqlalchemy.", poolclass=pool.NullPool
-    )
+    connectable = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

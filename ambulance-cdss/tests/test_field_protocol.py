@@ -1,5 +1,4 @@
-"""
-tests/test_field_protocol.py
+"""tests/test_field_protocol.py.
 
 Phase 4 — field protocol registry loading and the field runner's checklist
 state mechanics. Deliberately tests a DIFFERENT contract than
@@ -13,8 +12,9 @@ entries is accurate and independent of any client-held state.
 
 from __future__ import annotations
 
-import pytest
+from pathlib import Path
 
+import pytest
 from app.protocols.field_registry import (
     FieldProtocolRegistry,
     FieldProtocolRejectedError,
@@ -22,7 +22,6 @@ from app.protocols.field_registry import (
 )
 from app.protocols.field_runner import FieldRunState, rebuild_from_field_log
 from app.protocols.schema import FieldProtocol, FieldProtocolStep
-from pathlib import Path
 
 
 @pytest.fixture()
@@ -94,9 +93,7 @@ class TestFieldProtocolStructuralValidation:
             "protocol_id": "x",
             "version": "1.0.0",
             "disease_or_presentation": "test",
-            "steps": [
-                {"step_id": "s1", "title": "A", "action_type": "not_a_real_type"}
-            ],
+            "steps": [{"step_id": "s1", "title": "A", "action_type": "not_a_real_type"}],
         }
         with pytest.raises(FieldProtocolRejectedError, match="invalid action_type"):
             _parse_field_protocol(raw, Path("test.json"))
@@ -138,8 +135,7 @@ class TestFieldRunState:
         assert state.next_pending_step().step_id == "s2"
 
     def test_out_of_order_marking_is_permitted_not_a_hard_fail(self, small_protocol):
-        """
-        Deliberately confirms the OPPOSITE of Mode 1's hard-fail rule —
+        """Deliberately confirms the OPPOSITE of Mode 1's hard-fail rule —
         see module docstring. Marking s3 before s1/s2 must not raise.
         """
         state = FieldRunState(protocol=small_protocol)
@@ -191,12 +187,13 @@ class TestRebuildFromFieldLog:
         assert all(s.status == "pending" for s in state.steps.values())
 
     def test_log_entries_for_unknown_step_ids_are_ignored_not_errors(self, small_protocol):
-        """
-        A field_log row referencing a step_id outside the current protocol
+        """A field_log row referencing a step_id outside the current protocol
         (e.g. patient was switched to a different field protocol mid-call)
         must not crash state reconstruction.
         """
-        field_log = [{"step_id": "some_other_protocols_step", "action_type": "assessment", "data": {}}]
+        field_log = [
+            {"step_id": "some_other_protocols_step", "action_type": "assessment", "data": {}}
+        ]
         state = rebuild_from_field_log(small_protocol, field_log)
         assert all(s.status == "pending" for s in state.steps.values())
 

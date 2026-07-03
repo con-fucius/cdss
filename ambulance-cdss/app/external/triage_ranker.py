@@ -1,5 +1,4 @@
-"""
-app/external/triage_ranker.py
+"""app/external/triage_ranker.py.
 
 Live client for the Triage Ranker service.
 
@@ -18,7 +17,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 
@@ -35,9 +33,9 @@ class TriageEnrichment:
     triage_level: str  # "P1", "P2", "P3", "P4"
     esi_level: int  # 1-5
     top_diagnosis: str
-    icd10_code: Optional[str]
-    snomed_code: Optional[str]
-    shock_index: Optional[float]
+    icd10_code: str | None
+    snomed_code: str | None
+    shock_index: float | None
     degraded_mode: bool
 
 
@@ -53,13 +51,12 @@ class TriageRankerClient:
     async def enrich(
         self,
         incident_desc: str,
-        gcs_score: Optional[int] = None,
-        acvpu: Optional[str] = None,
-        sbp: Optional[int] = None,
-        hr: Optional[int] = None,
-    ) -> Optional[TriageEnrichment]:
-        """
-        Enrich an incident with structured clinical triage.
+        gcs_score: int | None = None,
+        acvpu: str | None = None,
+        sbp: int | None = None,
+        hr: int | None = None,
+    ) -> TriageEnrichment | None:
+        """Enrich an incident with structured clinical triage.
 
         Returns TriageEnrichment on success, None on any failure.
         Never raises — callers must treat None as "enrichment not

@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/db.py
+"""facility-mapper/app/db.py.
 
 Async SQLAlchemy engine and session management.
 
@@ -13,8 +12,8 @@ Follows the same pattern as ambulance-cdss/app/db.py:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (

@@ -1,5 +1,4 @@
-"""
-FastAPI backend for CDSS.
+"""FastAPI backend for CDSS.
 
 Architecture:
 - All live queries route through the Groq/Puter OpenAI-compatible path.
@@ -20,9 +19,10 @@ import os
 import re
 import time
 import uuid
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -36,6 +36,7 @@ from .config import (
     get_session_storage_backend,
     validate_patient_salt,
 )
+from .ddx import DifferentialDiagnosisEngine
 from .logs import (
     log_correction,
     log_error,
@@ -43,6 +44,12 @@ from .logs import (
     log_query,
     log_response,
     read_audit_logs_async,
+)
+from .observability import (
+    MetricsMiddleware,
+    RateLimitMiddleware,
+    configure_tracing,
+    metrics_text,
 )
 from .providers import (
     get_llm_model,
@@ -53,57 +60,42 @@ from .providers import (
     provider_models_url,
     provider_offline,
 )
-from .observability import (
-    MetricsMiddleware,
-    RateLimitMiddleware,
-    configure_tracing,
-    metrics_text,
-)
 from .retry import with_timeout
 from .search_tools import SearchIndex
-from .ddx import DifferentialDiagnosisEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 configure_tracing()
 
 MAX_HISTORY_DEPTH = 20
-CHAT_STREAM_TIMEOUT_SECONDS = float(
-    os.getenv("CDSS_CHAT_STREAM_TIMEOUT_SECONDS", "120")
-)
-PAGEINDEX_CHAT_TIMEOUT_SECONDS = float(
-    os.getenv("CDSS_PAGEINDEX_CHAT_TIMEOUT_SECONDS", "3")
-)
+CHAT_STREAM_TIMEOUT_SECONDS = float(os.getenv("CDSS_CHAT_STREAM_TIMEOUT_SECONDS", "120"))
+PAGEINDEX_CHAT_TIMEOUT_SECONDS = float(os.getenv("CDSS_PAGEINDEX_CHAT_TIMEOUT_SECONDS", "3"))
 TERMINOLOGY_SHADOW_ENABLED = (
     os.getenv("CDSS_TERMINOLOGY_SHADOW_ENABLED", "false").strip().lower() == "true"
 )
 TERMINOLOGY_SHADOW_RETRIEVAL_ENABLED = (
-    os.getenv("CDSS_TERMINOLOGY_SHADOW_RETRIEVAL_ENABLED", "false").strip().lower()
-    == "true"
+    os.getenv("CDSS_TERMINOLOGY_SHADOW_RETRIEVAL_ENABLED", "false").strip().lower() == "true"
 )
 TERMINOLOGY_SHADOW_TIMEOUT_SECONDS = float(
     os.getenv("CDSS_TERMINOLOGY_SHADOW_TIMEOUT_SECONDS", "8")
 )
 TERMINOLOGY_QUERY_EXPANSION_ENABLED = (
-    os.getenv("CDSS_TERMINOLOGY_QUERY_EXPANSION_ENABLED", "false").strip().lower()
-    == "true"
+    os.getenv("CDSS_TERMINOLOGY_QUERY_EXPANSION_ENABLED", "false").strip().lower() == "true"
 )
 AUTO_MEMORY_DISTILLATION_ENABLED = (
-    os.getenv("CDSS_AUTO_MEMORY_DISTILLATION_ENABLED", "false").strip().lower()
-    == "true"
+    os.getenv("CDSS_AUTO_MEMORY_DISTILLATION_ENABLED", "false").strip().lower() == "true"
 )
 DRUG_INTERACTION_CHECK_ENABLED = (
-    os.getenv("CDSS_DRUG_INTERACTION_CHECK_ENABLED", "false").strip().lower()
-    == "true"
+    os.getenv("CDSS_DRUG_INTERACTION_CHECK_ENABLED", "false").strip().lower() == "true"
 )
 DRUG_INTERACTION_CHECK_TIMEOUT_SECONDS = float(
     os.getenv("CDSS_DRUG_INTERACTION_CHECK_TIMEOUT_SECONDS", "4")
 )
-_search_index: Optional[SearchIndex] = None
-_session_history: Dict[str, List[Dict[str, str]]] = {}
+_search_index: SearchIndex | None = None
+_session_history: dict[str, list[dict[str, str]]] = {}
 _is_offline_mode: bool = provider_offline()
 
-_DISEASE_QUERY_HINTS: Dict[str, List[str]] = {
+_DISEASE_QUERY_HINTS: dict[str, list[str]] = {
     "diabetes": [
         "diabetes",
         "diabetic",
@@ -261,9 +253,9 @@ def _is_dosing_query(query: str) -> bool:
     return False
 
 
-def _kb_filters_from_query(query: str) -> Dict[str, str]:
+def _kb_filters_from_query(query: str) -> dict[str, str]:
     """Build exact filters for the minimal HIV ARV dosing KB table."""
-    filters: Dict[str, str] = {}
+    filters: dict[str, str] = {}
     normalized = _normalise_query_text(query)
     weight_match = re.search(r"(?:weight\s*)?(\d+(?:\.\d+)?)\s*kg", normalized)
     if weight_match:
@@ -304,10 +296,10 @@ def _format_structured_kb_context(result: Any) -> str:
 
 async def _lookup_structured_kb_context(
     query: str,
-    disease: Optional[str],
+    disease: str | None,
     session_id: str,
     query_id: str,
-) -> Optional[str]:
+) -> str | None:
     if not _search_index or not disease or not _is_dosing_query(query):
         return None
     try:
@@ -329,6 +321,7 @@ async def _lookup_structured_kb_context(
 # ─────────────────────────────────────────────────────────────────────────────
 # Background tasks
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def check_guideline_updates() -> None:
     """HEAD-check configured guideline URLs. Gated behind CDSS_CHECK_GUIDELINE_UPDATES."""
@@ -376,10 +369,11 @@ async def check_llm_reachability() -> None:
 # Lifespan
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _search_index, _is_offline_mode
-    background_tasks: List[asyncio.Task[Any]] = []
+    background_tasks: list[asyncio.Task[Any]] = []
 
     validate_patient_salt()
 
@@ -443,6 +437,7 @@ app.add_middleware(MetricsMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
 from .terminology.router import router as terminology_router
+
 app.include_router(terminology_router)
 
 
@@ -450,30 +445,31 @@ app.include_router(terminology_router)
 # Pydantic models
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class PatientContext(BaseModel):
-    patient_type: Optional[str] = "Select..."
-    condition: Optional[str] = "Select..."
-    comorbidity: Optional[str] = "Select..."
-    filters: List[str] = Field(default_factory=list)
-    active_conditions: List[str] = Field(default_factory=list)
-    clinical_params: Dict[str, Any] = Field(default_factory=dict)
-    medications: List[str] = Field(default_factory=list)
+    patient_type: str | None = "Select..."
+    condition: str | None = "Select..."
+    comorbidity: str | None = "Select..."
+    filters: list[str] = Field(default_factory=list)
+    active_conditions: list[str] = Field(default_factory=list)
+    clinical_params: dict[str, Any] = Field(default_factory=dict)
+    medications: list[str] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
     session_id: str
     message: str
-    context: Optional[PatientContext] = None
-    patient_ref_hash: Optional[str] = None
+    context: PatientContext | None = None
+    patient_ref_hash: str | None = None
 
 
 class FeedbackRequest(BaseModel):
     session_id: str
     message_id: str
     feedback_type: str
-    note: Optional[str] = ""
-    correction: Optional[str] = ""
-    sources_used: List[str] = Field(default_factory=list)
+    note: str | None = ""
+    correction: str | None = ""
+    sources_used: list[str] = Field(default_factory=list)
 
 
 class UserCreateRequest(BaseModel):
@@ -483,38 +479,38 @@ class UserCreateRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    role: Optional[str] = None
-    display_name: Optional[str] = None
+    role: str | None = None
+    display_name: str | None = None
 
 
 class PageIndexQueryRequest(BaseModel):
     query: str
-    disease: Optional[str] = None
+    disease: str | None = None
     top_k: int = Field(default=3, ge=1, le=10)
 
 
 class StructuredKBQueryRequest(BaseModel):
     disease: str
     query_type: str = Field(default="dosing", min_length=1)
-    filters: Dict[str, Any] = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
 
 
 class MemoryCreateRequest(BaseModel):
     session_id: str
-    patient_context: Dict[str, Any] = Field(default_factory=dict)
+    patient_context: dict[str, Any] = Field(default_factory=dict)
     fact_type: str
     fact_text: str
-    source_message_ids: List[str] = Field(default_factory=list)
+    source_message_ids: list[str] = Field(default_factory=list)
 
 
 class MemoryListRequest(BaseModel):
-    patient_context: Dict[str, Any] = Field(default_factory=dict)
-    session_id: Optional[str] = None
+    patient_context: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
 
 
 class MemoryDistillRequest(BaseModel):
     session_id: str
-    patient_context: Dict[str, Any] = Field(default_factory=dict)
+    patient_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvidenceQueryRequest(BaseModel):
@@ -524,11 +520,11 @@ class EvidenceQueryRequest(BaseModel):
 
 
 class DrugInteractionCheckRequest(BaseModel):
-    medications: List[str] = Field(default_factory=list)
+    medications: list[str] = Field(default_factory=list)
 
 
 class SessionClearRequest(BaseModel):
-    patient_context: Optional[PatientContext] = None
+    patient_context: PatientContext | None = None
 
 
 class PatientEncounterCreateRequest(BaseModel):
@@ -540,24 +536,24 @@ class PatientEncounterCreateRequest(BaseModel):
 class PatientVitalsUpsertRequest(BaseModel):
     patient_ref_hash: str
     encounter_id: str
-    vitals: Dict[str, Any] = Field(default_factory=dict)
+    vitals: dict[str, Any] = Field(default_factory=dict)
 
 
 class PatientLabsUpsertRequest(BaseModel):
     patient_ref_hash: str
     encounter_id: str
-    labs: List[Dict[str, Any]]
+    labs: list[dict[str, Any]]
 
 
 class EvidenceNodesRequest(BaseModel):
-    disease: Optional[str] = None
-    node_type: Optional[str] = None
+    disease: str | None = None
+    node_type: str | None = None
     limit: int = Field(default=100, ge=1, le=500)
 
 
 class AlertOverrideRequest(BaseModel):
     session_id: str
-    patient_ref_hash: Optional[str] = None
+    patient_ref_hash: str | None = None
     alert_type: str
     alert_level: str
     alert_summary: str
@@ -566,18 +562,18 @@ class AlertOverrideRequest(BaseModel):
 
 class ClinicalScoreRequest(BaseModel):
     scorer: str
-    patient_ref: Optional[str] = None
-    inputs: Dict[str, Any]
+    patient_ref: str | None = None
+    inputs: dict[str, Any]
 
 
 class DDxRequest(BaseModel):
-    patient_ref: Optional[str] = None
-    presenting_symptoms: List[str] = Field(min_length=1)
-    duration_days: Optional[int] = None
-    vital_signs: Optional[Dict[str, Any]] = None
-    relevant_labs: Optional[Dict[str, Any]] = None
-    context: Optional[PatientContext] = None
-    target_diseases: Optional[List[str]] = None
+    patient_ref: str | None = None
+    presenting_symptoms: list[str] = Field(min_length=1)
+    duration_days: int | None = None
+    vital_signs: dict[str, Any] | None = None
+    relevant_labs: dict[str, Any] | None = None
+    context: PatientContext | None = None
+    target_diseases: list[str] | None = None
 
 
 class PathwayRunRequest(BaseModel):
@@ -589,20 +585,19 @@ class DocumentGenerateRequest(BaseModel):
     document_type: str
     patient_ref: str
     encounter_id: str
-    additional_context: Optional[str] = None
+    additional_context: str | None = None
 
 
 class DocumentReviewRequest(BaseModel):
     reviewed_by: str
 
 
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Role system
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_current_role(x_user_role: Optional[str] = Header(None)) -> str:
+
+def get_current_role(x_user_role: str | None = Header(None)) -> str:
     env_role = os.getenv("CDSS_ROLE")
     return (x_user_role or env_role or "CLINICIAN").upper()
 
@@ -617,7 +612,8 @@ def require_admin(role: str = Depends(get_current_role)) -> str:
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_available_diseases() -> List[str]:
+
+def get_available_diseases() -> list[str]:
     return _search_index.available_diseases() if _search_index else []
 
 
@@ -625,8 +621,8 @@ def format_timestamp() -> str:
     return datetime.now().strftime("%H:%M")
 
 
-def _build_context_block(context: PatientContext) -> Optional[str]:
-    payload: Dict[str, Any] = {}
+def _build_context_block(context: PatientContext) -> str | None:
+    payload: dict[str, Any] = {}
 
     def _meaningful(v: Any) -> bool:
         if v is None:
@@ -664,14 +660,16 @@ def _build_context_block(context: PatientContext) -> Optional[str]:
     return "\n".join(lines)
 
 
-def _format_patient_state_context(state: Dict[str, Any]) -> Optional[str]:
+def _format_patient_state_context(state: dict[str, Any]) -> str | None:
     if not state:
         return None
 
     lines = ["[PATIENT_STATE]"]
     encounter = state.get("most_recent_encounter") or {}
     if encounter:
-        lines.append(f"  Encounter: {encounter.get('encounter_id')} ({encounter.get('encounter_type', 'unknown')})")
+        lines.append(
+            f"  Encounter: {encounter.get('encounter_id')} ({encounter.get('encounter_type', 'unknown')})"
+        )
         if encounter.get("disease_scope"):
             lines.append(f"  Disease scope: {encounter['disease_scope']}")
         if encounter.get("encounter_date"):
@@ -754,18 +752,15 @@ def _format_patient_state_context(state: Dict[str, Any]) -> Optional[str]:
     return "\n".join(lines)
 
 
-def _context_as_text(results: List[Any]) -> str:
+def _context_as_text(results: list[Any]) -> str:
     blocks = []
     for idx, result in enumerate(results, start=1):
         source = result.guideline_name or f"{result.disease} guidelines"
-        blocks.append(
-            f"[{idx}] {source}, {result.section_title}, p.{result.page}\n"
-            f"{result.text}"
-        )
+        blocks.append(f"[{idx}] {source}, {result.section_title}, p.{result.page}\n{result.text}")
     return "\n\n".join(blocks)
 
 
-def _source_payload(results: List[Any]) -> List[Dict[str, Any]]:
+def _source_payload(results: list[Any]) -> list[dict[str, Any]]:
     return [
         {
             "source": (
@@ -783,44 +778,50 @@ def _source_payload(results: List[Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def _extract_hitl_markers(text: str) -> List[Dict[str, Any]]:
+def _extract_hitl_markers(text: str) -> list[dict[str, Any]]:
     import re
+
     events = []
-    pattern = re.compile(
-        r"\[HITL:(CLARIFICATION|MISSING_PARAMS|CONFLICT)(?::([^\]]*))?\]"
-    )
+    pattern = re.compile(r"\[HITL:(CLARIFICATION|MISSING_PARAMS|CONFLICT)(?::([^\]]*))?\]")
     for match in pattern.finditer(text):
         marker_type = match.group(1)
         detail = (match.group(2) or "").strip()
         if marker_type == "CLARIFICATION":
-            events.append({
-                "type": "hitl_prompt",
-                "hitl": {
-                    "text": detail or "Please clarify your request.",
-                    "options": ["Yes", "No", "Provide more details"],
-                },
-            })
+            events.append(
+                {
+                    "type": "hitl_prompt",
+                    "hitl": {
+                        "text": detail or "Please clarify your request.",
+                        "options": ["Yes", "No", "Provide more details"],
+                    },
+                }
+            )
         elif marker_type == "MISSING_PARAMS":
-            events.append({
-                "type": "hitl_prompt",
-                "hitl": {
-                    "text": f"Missing required parameters: {detail}. Please provide them.",
-                    "options": ["Add parameters"],
-                },
-            })
+            events.append(
+                {
+                    "type": "hitl_prompt",
+                    "hitl": {
+                        "text": f"Missing required parameters: {detail}. Please provide them.",
+                        "options": ["Add parameters"],
+                    },
+                }
+            )
         elif marker_type == "CONFLICT":
-            events.append({
-                "type": "hitl_prompt",
-                "hitl": {
-                    "text": f"Conflict in guidelines: {detail}. How would you like to proceed?",
-                    "options": ["Show both", "Use newest", "Cancel"],
-                },
-            })
+            events.append(
+                {
+                    "type": "hitl_prompt",
+                    "hitl": {
+                        "text": f"Conflict in guidelines: {detail}. How would you like to proceed?",
+                        "options": ["Show both", "Use newest", "Cancel"],
+                    },
+                }
+            )
     return events
 
 
 def _strip_hitl_markers(text: str) -> str:
     import re
+
     return re.sub(
         r"\[HITL:(?:CLARIFICATION|MISSING_PARAMS|CONFLICT)(?::[^\]]*)?\]",
         "",
@@ -833,8 +834,8 @@ def _strip_model_reasoning(text: str) -> str:
     return re.sub(r"(?is)<think>.*?</think>", "", text).strip()
 
 
-def _extract_sources_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
-    sources: List[Dict[str, Any]] = []
+def _extract_sources_from_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
     for msg in messages:
         if not hasattr(msg, "parts"):
             continue
@@ -856,18 +857,20 @@ def _extract_sources_from_messages(messages: List[Any]) -> List[Dict[str, Any]]:
                 if not isinstance(item, dict) or "source" not in item:
                     continue
                 confidence = item.get("confidence", 1.0)
-                sources.append({
-                    "source": item["source"],
-                    "text": item.get("text", ""),
-                    "disease": item.get("disease", "unknown"),
-                    "low_confidence": item.get(
-                        "low_confidence",
-                        isinstance(confidence, (int, float)) and confidence < 0.45,
-                    ),
-                    "confidence": confidence,
-                    "chunk_id": item.get("chunk_id"),
-                    "parent_id": item.get("parent_id"),
-                })
+                sources.append(
+                    {
+                        "source": item["source"],
+                        "text": item.get("text", ""),
+                        "disease": item.get("disease", "unknown"),
+                        "low_confidence": item.get(
+                            "low_confidence",
+                            isinstance(confidence, (int, float)) and confidence < 0.45,
+                        ),
+                        "confidence": confidence,
+                        "chunk_id": item.get("chunk_id"),
+                        "parent_id": item.get("parent_id"),
+                    }
+                )
     return sources
 
 
@@ -876,8 +879,8 @@ def _normalise_disease_id(value: str) -> str:
     return cleaned.replace(" ", "_") if cleaned else ""
 
 
-def _configured_disease_aliases() -> Dict[str, str]:
-    aliases: Dict[str, str] = {
+def _configured_disease_aliases() -> dict[str, str]:
+    aliases: dict[str, str] = {
         "hiv_aids": "hiv",
         "plhiv": "hiv",
         "diabetes_mellitus": "diabetes",
@@ -913,10 +916,10 @@ def _configured_disease_aliases() -> Dict[str, str]:
 
 
 def _append_unique_disease(
-    diseases: List[str],
+    diseases: list[str],
     available: set,
     value: str,
-    aliases: Dict[str, str],
+    aliases: dict[str, str],
 ) -> None:
     disease = _normalise_disease_id(value)
     if disease in available and disease not in diseases:
@@ -928,16 +931,16 @@ def _append_unique_disease(
 
 
 def _resolve_retrieval_diseases(
-    available: List[str],
-    context: Optional[PatientContext],
+    available: list[str],
+    context: PatientContext | None,
     query: str = "",
-) -> List[str]:
+) -> list[str]:
     """Resolve up to three retrieval diseases from query and patient context."""
     available_set = set(available)
     if not available_set:
         return []
 
-    resolved: List[str] = []
+    resolved: list[str] = []
     aliases = _configured_disease_aliases()
     for disease in _infer_disease_from_query(query, available):
         _append_unique_disease(resolved, available_set, disease, aliases)
@@ -954,20 +957,20 @@ def _resolve_retrieval_diseases(
 
 
 def _select_retrieval_disease(
-    available: List[str],
-    context: Optional[PatientContext],
+    available: list[str],
+    context: PatientContext | None,
     query: str = "",
-) -> Optional[str]:
+) -> str | None:
     """Narrow retrieval to one disease only when context is unambiguous."""
     resolved = _resolve_retrieval_diseases(available, context, query)
     return resolved[0] if resolved else None
 
 
-def _infer_disease_from_query(query: str, available: List[str]) -> List[str]:
+def _infer_disease_from_query(query: str, available: list[str]) -> list[str]:
     """Infer one or more likely disease targets from the user query."""
     available_set = set(available)
     normalized = f" {re.sub(r'[^a-z0-9]+', ' ', query.lower())} "
-    scores: Dict[str, int] = {}
+    scores: dict[str, int] = {}
     for disease, hints in _DISEASE_QUERY_HINTS.items():
         if disease not in available_set:
             continue
@@ -997,29 +1000,22 @@ def _is_smalltalk_query(query: str) -> bool:
     available = list(DISEASE_CONFIG)
     if _infer_disease_from_query(normalized, available):
         return False
-    if any(
-        f" {hint} " in f" {normalized} "
-        for hint in _CLINICAL_INTENT_HINTS
-    ):
+    if any(f" {hint} " in f" {normalized} " for hint in _CLINICAL_INTENT_HINTS):
         return False
     if normalized in _SMALLTALK_PATTERNS:
         return True
-    if len(normalized.split()) <= 4 and any(
-        normalized.startswith(pattern) for pattern in _SMALLTALK_PATTERNS
-    ):
-        return True
-    return False
+    return bool(len(normalized.split()) <= 4 and any(normalized.startswith(pattern) for pattern in _SMALLTALK_PATTERNS))
 
 
 async def _query_evidence_context_data(
-    disease: Optional[List[str]],
+    disease: list[str] | None,
     query: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     disease_values = disease or []
     if not disease_values:
         return []
 
-    triples: List[Dict[str, Any]] = []
+    triples: list[dict[str, Any]] = []
     try:
         from .evidence import format_evidence_triples, query_evidence_graph
 
@@ -1045,7 +1041,7 @@ async def _query_evidence_context_data(
     return triples
 
 
-def _format_evidence_context_from_triples(triples: List[Dict[str, Any]]) -> str:
+def _format_evidence_context_from_triples(triples: list[dict[str, Any]]) -> str:
     lines = []
     for triple in triples:
         lines.append(
@@ -1056,11 +1052,10 @@ def _format_evidence_context_from_triples(triples: List[Dict[str, Any]]) -> str:
 
 
 async def _query_evidence_context(
-    disease: Optional[List[str]],
+    disease: list[str] | None,
     query: str,
 ) -> str:
-    """
-    Fetch evidence graph context for one or more disease+query pairs.
+    """Fetch evidence graph context for one or more disease+query pairs.
     Returns empty string when:
       - no disease targets are resolved
       - graph is empty or unavailable
@@ -1076,7 +1071,7 @@ async def _query_evidence_context(
 
 
 async def _query_approved_memory_context(
-    context: Optional[PatientContext],
+    context: PatientContext | None,
     limit: int = 8,
 ) -> str:
     """Fetch approved clinical memory for the current patient context."""
@@ -1105,7 +1100,7 @@ async def _query_approved_memory_context(
     return "\n".join(lines) if len(lines) > 2 else ""
 
 
-def _format_pageindex_context(results: List[Any], min_score: float = 0.65) -> str:
+def _format_pageindex_context(results: list[Any], min_score: float = 0.65) -> str:
     accepted = [row for row in results if getattr(row, "score", 0.0) >= min_score]
     if not accepted:
         return ""
@@ -1127,7 +1122,7 @@ def _format_pageindex_context(results: List[Any], min_score: float = 0.65) -> st
 
 async def _query_pageindex_context(
     query: str,
-    disease: Optional[str],
+    disease: str | None,
 ) -> str:
     """Search page-level summaries as a bounded pre-LLM retrieval hint."""
     if not _search_index:
@@ -1143,7 +1138,7 @@ async def _query_pageindex_context(
         return ""
 
 
-def _chat_pageindex_enabled(query: str, disease: Optional[str]) -> bool:
+def _chat_pageindex_enabled(query: str, disease: str | None) -> bool:
     """Return whether PageIndex should be injected into the chat prompt."""
     mode = os.getenv("CDSS_CHAT_PAGEINDEX_MODE", "off").strip().lower()
     if mode in {"0", "false", "no", "off", "disabled"}:
@@ -1161,14 +1156,15 @@ def _chat_pageindex_enabled(query: str, disease: Optional[str]) -> bool:
 # OpenAI-compatible provider path
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _build_openai_compatible_payload(
     *,
     provider: str,
     query: str,
-    context_block: Optional[str],
-    retrieval_results: List[Any],
-    history: List[Dict[str, str]],
-) -> Dict[str, Any]:
+    context_block: str | None,
+    retrieval_results: list[Any],
+    history: list[dict[str, str]],
+) -> dict[str, Any]:
     from .search_agent import build_system_prompt
 
     system_content = build_system_prompt(get_available_diseases())
@@ -1191,7 +1187,7 @@ def _build_openai_compatible_payload(
         },
     ]
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "model": get_llm_model(),
         "messages": messages,
         "temperature": 0.1,
@@ -1209,10 +1205,10 @@ async def _stream_openai_compatible_chat(
     *,
     provider: str,
     query: str,
-    context_block: Optional[str],
-    retrieval_results: List[Any],
-    history: List[Dict[str, str]],
-) -> AsyncIterator[Dict[str, Any]]:
+    context_block: str | None,
+    retrieval_results: list[Any],
+    history: list[dict[str, str]],
+) -> AsyncIterator[dict[str, Any]]:
     payload = _build_openai_compatible_payload(
         provider=provider,
         query=query,
@@ -1233,41 +1229,40 @@ async def _stream_openai_compatible_chat(
         write=15.0,
         pool=15.0,
     )
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream(
-            "POST",
-            endpoint,
-            headers=headers,
-            json=payload,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line or not line.startswith("data:"):
-                    continue
-                data_line = line.removeprefix("data:").strip()
-                if not data_line or data_line == "[DONE]":
-                    break
-                try:
-                    data = json.loads(data_line)
-                except json.JSONDecodeError:
-                    logger.debug("Skipping malformed provider SSE line: %s", data_line[:200])
-                    continue
-                delta = data.get("choices", [{}])[0].get("delta", {})
-                reasoning = (
-                    delta.get("reasoning")
-                    or delta.get("reasoning_content")
-                    or delta.get("reasoning_details")
-                )
-                if reasoning:
-                    yield {
-                        "type": "reasoning",
-                        "summary": reasoning
-                        if isinstance(reasoning, str)
-                        else json.dumps(reasoning),
-                    }
-                content = delta.get("content")
-                if content:
-                    yield {"type": "chunk", "content": content}
+    async with httpx.AsyncClient(timeout=timeout) as client, client.stream(
+        "POST",
+        endpoint,
+        headers=headers,
+        json=payload,
+    ) as response:
+        response.raise_for_status()
+        async for line in response.aiter_lines():
+            if not line or not line.startswith("data:"):
+                continue
+            data_line = line.removeprefix("data:").strip()
+            if not data_line or data_line == "[DONE]":
+                break
+            try:
+                data = json.loads(data_line)
+            except json.JSONDecodeError:
+                logger.debug("Skipping malformed provider SSE line: %s", data_line[:200])
+                continue
+            delta = data.get("choices", [{}])[0].get("delta", {})
+            reasoning = (
+                delta.get("reasoning")
+                or delta.get("reasoning_content")
+                or delta.get("reasoning_details")
+            )
+            if reasoning:
+                yield {
+                    "type": "reasoning",
+                    "summary": reasoning
+                    if isinstance(reasoning, str)
+                    else json.dumps(reasoning),
+                }
+            content = delta.get("content")
+            if content:
+                yield {"type": "chunk", "content": content}
 
 
 async def _write_session_history(
@@ -1279,6 +1274,7 @@ async def _write_session_history(
     if get_session_storage_backend() == "postgres":
         try:
             from .repositories import append_session_message
+
             await append_session_message(session_id, "user", user_message)
             await append_session_message(session_id, "assistant", assistant_message)
         except Exception as exc:
@@ -1296,30 +1292,28 @@ def _mem_append(session_id: str, user_msg: str, assistant_msg: str) -> None:
     _session_history[session_id] = _session_history[session_id][-MAX_HISTORY_DEPTH:]
 
 
-async def _read_session_history(session_id: str) -> List[Dict[str, str]]:
+async def _read_session_history(session_id: str) -> list[dict[str, str]]:
     if get_session_storage_backend() == "postgres":
         try:
             from .repositories import get_session_messages
+
             return await get_session_messages(session_id, limit=MAX_HISTORY_DEPTH)
         except Exception as exc:
             logger.warning("Postgres session read failed; using in-memory: %s", exc)
     return _session_history.get(session_id, [])[-MAX_HISTORY_DEPTH:]
 
 
-def _has_patient_context(context: Optional[PatientContext]) -> bool:
+def _has_patient_context(context: PatientContext | None) -> bool:
     if not context:
         return False
     payload = context.model_dump()
-    return any(
-        value not in ("", "Select...", "None", None, [], {})
-        for value in payload.values()
-    )
+    return any(value not in ("", "Select...", "None", None, [], {}) for value in payload.values())
 
 
 async def _run_memory_distillation(
     session_id: str,
     context: PatientContext,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     try:
         from .memory import distill_session_candidates
 
@@ -1350,8 +1344,8 @@ async def _run_memory_distillation(
 
 def _queue_memory_distillation(
     session_id: str,
-    context: Optional[PatientContext],
-) -> Dict[str, Any]:
+    context: PatientContext | None,
+) -> dict[str, Any]:
     if not AUTO_MEMORY_DISTILLATION_ENABLED:
         return {"status": "skipped", "reason": "disabled"}
     if get_session_storage_backend() != "postgres":
@@ -1372,8 +1366,8 @@ def _queue_memory_distillation(
 
 
 async def _check_drug_interactions(
-    medications: Optional[List[str]],
-) -> Dict[str, Any]:
+    medications: list[str] | None,
+) -> dict[str, Any]:
     medication_list = [str(m).strip() for m in (medications or []) if str(m).strip()]
     if not DRUG_INTERACTION_CHECK_ENABLED:
         return {"status": "skipped", "reason": "disabled", "interactions": []}
@@ -1396,7 +1390,7 @@ async def _check_drug_interactions(
                 "medications": medication_list,
                 "interactions": [],
             }
-            
+
         for i in interactions:
             severity = str(i.get("severity", "")).lower()
             if "1" in severity or "contraindicated" in severity:
@@ -1405,7 +1399,7 @@ async def _check_drug_interactions(
                 i["alert_level"] = "WARNING"
             else:
                 i["alert_level"] = "INFO"
-                
+
         return {
             "status": "ok",
             "medications": medication_list,
@@ -1430,7 +1424,7 @@ async def _check_drug_interactions(
         }
 
 
-def _format_drug_interaction_context(interactions: List[Dict[str, Any]]) -> str:
+def _format_drug_interaction_context(interactions: list[dict[str, Any]]) -> str:
     if not interactions:
         return ""
     lines = [
@@ -1454,8 +1448,8 @@ def _format_drug_interaction_context(interactions: List[Dict[str, Any]]) -> str:
 async def _audit_drug_interaction_check(
     session_id: str,
     query_id: str,
-    disease: Optional[str],
-    payload: Dict[str, Any],
+    disease: str | None,
+    payload: dict[str, Any],
 ) -> None:
     try:
         from .logs import write_audit_log
@@ -1476,18 +1470,17 @@ async def _audit_drug_interaction_check(
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 async def health_check(role: str = Depends(get_current_role)):
-    lancedb_status = (
-        "ok" if _search_index and _search_index._initialized else "error"
-    )
+    lancedb_status = "ok" if _search_index and _search_index._initialized else "error"
     tables_status = "ok"
-    indexed_tables: List[str] = []
-    missing_tables: List[str] = []
-    indexed_diseases: List[str] = []
-    missing_diseases: List[str] = []
+    indexed_tables: list[str] = []
+    missing_tables: list[str] = []
+    indexed_diseases: list[str] = []
+    missing_diseases: list[str] = []
     pageindex_status = "missing"
-    pageindex_detail: Dict[str, Any] = {"total": 0, "by_disease": {}}
+    pageindex_detail: dict[str, Any] = {"total": 0, "by_disease": {}}
     database_status = "not_required"
     if _search_index:
         try:
@@ -1522,16 +1515,11 @@ async def health_check(role: str = Depends(get_current_role)):
         except Exception as exc:
             tables_status = f"error: {exc}"
             lancedb_status = "error"
-    if (
-        get_session_storage_backend() == "postgres"
-        or get_audit_storage_backend() == "postgres"
-    ):
+    if get_session_storage_backend() == "postgres" or get_audit_storage_backend() == "postgres":
         try:
             from .db import check_database
 
-            database_status = (
-                "ok" if await with_timeout(check_database(), 2.0) else "error"
-            )
+            database_status = "ok" if await with_timeout(check_database(), 2.0) else "error"
         except Exception as exc:
             database_status = f"error: {exc}"
     llm_online = provider_has_credentials()
@@ -1578,6 +1566,7 @@ async def metrics():
 @app.get("/phase7/status")
 async def phase7_status():
     from .phase7 import PHASE7_STATUS
+
     return PHASE7_STATUS
 
 
@@ -1585,23 +1574,22 @@ async def phase7_status():
 async def database_health_check(role: str = Depends(get_current_role)):
     try:
         from .db import check_database
+
         ok = await check_database()
     except ModuleNotFoundError as exc:
         raise HTTPException(
             status_code=503, detail=f"Database dependency missing: {exc.name}"
         ) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=503, detail=f"Database unavailable: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
     return {"status": "ok" if ok else "error", "role": role}
 
 
 @app.get("/diseases")
 async def list_diseases():
     indexed_tables: set = set()
-    pageindex_by_disease: Dict[str, int] = {}
-    graph_by_disease: Dict[str, Dict[str, int]] = {}
+    pageindex_by_disease: dict[str, int] = {}
+    graph_by_disease: dict[str, dict[str, int]] = {}
     if _search_index and _search_index._initialized:
         try:
             indexed_tables = set(_search_index.table_names())
@@ -1630,29 +1618,29 @@ async def list_diseases():
         if d_id == "hiv" and "documents" in indexed_tables:
             table_to_count = "documents"
         if table_to_count and _search_index:
-            try:
+            with suppress(Exception):
                 chunk_count = _search_index.db.open_table(table_to_count).count_rows()
-            except Exception:
-                pass
         pageindex_rows = int(pageindex_by_disease.get(d_id, 0) or 0)
         graph_counts = graph_by_disease.get(d_id, {})
         graph_nodes = int(graph_counts.get("nodes", 0) or 0)
         graph_edges = int(graph_counts.get("edges", 0) or 0)
-        diseases.append({
-            "id": d_id,
-            "display_name": cfg["display_name"],
-            "guideline": cfg["guideline_name"],
-            "status": "indexed" if is_indexed else "not_indexed",
-            "source_mode": source_mode,
-            "table_name": table_name,
-            "guideline_warning": cfg.get("guideline_warning"),
-            "chunk_count": chunk_count,
-            "pageindex_rows": pageindex_rows,
-            "pageindex_status": "ready" if pageindex_rows > 0 else "missing",
-            "graph_nodes": graph_nodes,
-            "graph_edges": graph_edges,
-            "graph_status": "ready" if graph_nodes > 0 else "missing",
-        })
+        diseases.append(
+            {
+                "id": d_id,
+                "display_name": cfg["display_name"],
+                "guideline": cfg["guideline_name"],
+                "status": "indexed" if is_indexed else "not_indexed",
+                "source_mode": source_mode,
+                "table_name": table_name,
+                "guideline_warning": cfg.get("guideline_warning"),
+                "chunk_count": chunk_count,
+                "pageindex_rows": pageindex_rows,
+                "pageindex_status": "ready" if pageindex_rows > 0 else "missing",
+                "graph_nodes": graph_nodes,
+                "graph_edges": graph_edges,
+                "graph_status": "ready" if graph_nodes > 0 else "missing",
+            }
+        )
     return {"diseases": diseases}
 
 
@@ -1671,7 +1659,9 @@ async def get_context_options(disease: str = "hiv"):
 
 
 @app.post("/drug-interactions/check")
-async def check_drug_interactions(request: DrugInteractionCheckRequest, role: str = Depends(get_current_role)):
+async def check_drug_interactions(
+    request: DrugInteractionCheckRequest, role: str = Depends(get_current_role)
+):
     payload = await _check_drug_interactions(request.medications)
     return {"status": payload.get("status", "ok"), "role": role, **payload}
 
@@ -1679,7 +1669,7 @@ async def check_drug_interactions(request: DrugInteractionCheckRequest, role: st
 @app.post("/alerts/override")
 async def override_alert(request: AlertOverrideRequest, role: str = Depends(get_current_role)):
     from .repositories import create_alert_override
-    
+
     return await create_alert_override(
         session_id=request.session_id,
         alert_type=request.alert_type,
@@ -1694,6 +1684,7 @@ async def override_alert(request: AlertOverrideRequest, role: str = Depends(get_
 @app.get("/admin/alerts/override-report")
 async def get_override_report(role: str = Depends(require_admin)):
     from .repositories import get_alert_override_report
+
     return await get_alert_override_report()
 
 
@@ -1712,36 +1703,36 @@ async def compute_clinical_score(
         inp = request.inputs
         # Dispatch matches actual ClinicalScorer method signatures
         if request.scorer == "news2":
-            result = scorer_fn(inp)                                    # news2(vitals: dict)
+            result = scorer_fn(inp)  # news2(vitals: dict)
         elif request.scorer == "egfr_ckd_stage":
-            result = scorer_fn(                                        # egfr_ckd_stage(creatinine, age, sex)
+            result = scorer_fn(  # egfr_ckd_stage(creatinine, age, sex)
                 float(inp["creatinine"]),
                 int(inp["age"]),
                 str(inp["sex"]),
             )
         elif request.scorer == "who_hiv_stage":
-            result = scorer_fn(                                        # who_hiv_stage(clinical_features, cd4)
+            result = scorer_fn(  # who_hiv_stage(clinical_features, cd4)
                 clinical_features=inp.get("clinical_features", []),
                 cd4=inp.get("cd4"),
             )
         elif request.scorer == "child_pugh":
-            result = scorer_fn(                                        # child_pugh(labs: dict, clinical: dict)
+            result = scorer_fn(  # child_pugh(labs: dict, clinical: dict)
                 labs=inp.get("labs", {}),
                 clinical=inp.get("clinical", {}),
             )
         elif request.scorer == "malaria_severity":
-            result = scorer_fn(                                        # malaria_severity(vitals, labs, clinical)
+            result = scorer_fn(  # malaria_severity(vitals, labs, clinical)
                 vitals=inp.get("vitals", {}),
                 labs=inp.get("labs", {}),
                 clinical=inp.get("clinical", {}),
             )
         elif request.scorer == "diabetes_risk_hba1c":
-            result = scorer_fn(                                        # diabetes_risk_hba1c(hba1c, fpg)
+            result = scorer_fn(  # diabetes_risk_hba1c(hba1c, fpg)
                 hba1c=inp.get("hba1c"),
                 fpg=inp.get("fpg"),
             )
         elif request.scorer == "cvd_risk_score":
-            result = scorer_fn(                                        # cvd_risk_score(age, sex, bp, chol, smoking, diabetes)
+            result = scorer_fn(  # cvd_risk_score(age, sex, bp, chol, smoking, diabetes)
                 age=int(inp["age"]),
                 sex=str(inp["sex"]),
                 bp_systolic=int(inp["bp_systolic"]),
@@ -1750,7 +1741,9 @@ async def compute_clinical_score(
                 diabetes=bool(inp.get("diabetes", False)),
             )
         else:
-            raise HTTPException(status_code=400, detail=f"No dispatch rule for scorer: {request.scorer!r}")
+            raise HTTPException(
+                status_code=400, detail=f"No dispatch rule for scorer: {request.scorer!r}"
+            )
     except HTTPException:
         raise
     except (KeyError, TypeError) as exc:
@@ -1795,6 +1788,7 @@ async def compute_clinical_score(
 
     # Write audit log
     from .logs import write_audit_log
+
     try:
         await write_audit_log(
             event_type="CLINICAL_SCORE",
@@ -1829,9 +1823,7 @@ async def create_patient_encounter(
 
     patient_ref_hash = patient_ref_from_context(request.patient_context.model_dump())
     disease_scope = (
-        request.disease_scope
-        or (request.patient_context.active_conditions or ["all"])[0]
-        or "all"
+        request.disease_scope or (request.patient_context.active_conditions or ["all"])[0] or "all"
     )
     encounter = await create_encounter(
         patient_ref=patient_ref_hash,
@@ -1908,7 +1900,11 @@ async def upsert_patient_vitals(
 ):
     from .repositories import upsert_vitals
 
-    return {"vitals": await upsert_vitals(request.patient_ref_hash, request.encounter_id, request.vitals)}
+    return {
+        "vitals": await upsert_vitals(
+            request.patient_ref_hash, request.encounter_id, request.vitals
+        )
+    }
 
 
 @app.post("/patient/labs")
@@ -1932,9 +1928,7 @@ async def get_guideline_toc(disease: str):
         table_name = table_names[0]
         if table_name == "documents":
             return {"toc": _search_index.legacy_toc()}
-        df = (
-            _search_index.db.open_table(table_name).search().limit(1000).to_pandas()
-        )
+        df = _search_index.db.open_table(table_name).search().limit(1000).to_pandas()
         toc = []
         if not df.empty:
             seen: set = set()
@@ -1943,12 +1937,14 @@ async def get_guideline_toc(disease: str):
                 title = str(row.get("section_title", "")).strip()
                 if pid and title and pid not in seen:
                     seen.add(pid)
-                    toc.append({
-                        "id": pid,
-                        "title": title,
-                        "level": 1,
-                        "page": int(row.get("page", 0) or 0),
-                    })
+                    toc.append(
+                        {
+                            "id": pid,
+                            "title": title,
+                            "level": 1,
+                            "page": int(row.get("page", 0) or 0),
+                        }
+                    )
         return {"toc": toc}
     except Exception as exc:
         logger.error("Failed to generate TOC for %s: %s", disease, exc)
@@ -2005,7 +2001,9 @@ async def pageindex_stats(role: str = Depends(get_current_role)):
 
 
 @app.post("/kb/lookup")
-async def lookup_structured_kb(request: StructuredKBQueryRequest, role: str = Depends(get_current_role)):
+async def lookup_structured_kb(
+    request: StructuredKBQueryRequest, role: str = Depends(get_current_role)
+):
     if request.disease not in DISEASE_CONFIG:
         raise HTTPException(status_code=404, detail="Disease not configured")
     if not _search_index:
@@ -2069,6 +2067,7 @@ async def post_feedback(request: FeedbackRequest):
     if get_session_storage_backend() == "postgres":
         try:
             from .repositories import write_feedback_db
+
             await write_feedback_db(
                 request.session_id,
                 request.message_id,
@@ -2086,14 +2085,14 @@ async def post_feedback(request: FeedbackRequest):
 # Shadow UMLS telemetry (fire-and-forget — never touches the live chat path)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _shadow_umls_telemetry(
     query: str,
-    disease: Optional[str],
+    disease: str | None,
     session_id: str,
     query_id: str,
 ) -> None:
-    """
-    Run in the background via asyncio.create_task() only when explicitly enabled
+    """Run in the background via asyncio.create_task() only when explicitly enabled
     with CDSS_TERMINOLOGY_SHADOW_ENABLED=true.
 
     Two shadow operations:
@@ -2178,10 +2177,11 @@ async def _shadow_umls_telemetry(
 # Chat stream
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
-    x_user_role: Optional[str] = Header(None),
+    x_user_role: str | None = Header(None),
 ):
     if not _search_index:
         raise HTTPException(status_code=503, detail="Search index not ready")
@@ -2200,7 +2200,7 @@ async def chat_stream(
     history = await _read_session_history(request.session_id)
     context_block = _build_context_block(request.context) if request.context else None
     patient_state_context = None
-    patient_state: Dict[str, Any] = {}
+    patient_state: dict[str, Any] = {}
     if request.patient_ref_hash:
         try:
             from .patient_state import get_patient_state
@@ -2217,36 +2217,46 @@ async def chat_stream(
     patient_scores = []
     if patient_state:
         from .scoring import _compute_patient_scores
+
         patient_scores = _compute_patient_scores(patient_state)
         if patient_scores:
             score_lines = ["[CLINICAL_SCORE]"]
             for s in patient_scores:
                 if s["alert_level"] in ("INFO", "WARNING", "CRITICAL"):
-                    score_lines.append(f"  {s['scorer'].upper()}: {s['score_result']} (Alert: {s['alert_level']})")
+                    score_lines.append(
+                        f"  {s['scorer'].upper()}: {s['score_result']} (Alert: {s['alert_level']})"
+                    )
             score_lines.append("[/CLINICAL_SCORE]")
             if len(score_lines) > 2:
                 score_block = "\n".join(score_lines)
-                patient_state_context = f"{patient_state_context}\n\n{score_block}" if patient_state_context else score_block
+                patient_state_context = (
+                    f"{patient_state_context}\n\n{score_block}"
+                    if patient_state_context
+                    else score_block
+                )
 
     temporal_flags = []
     if patient_state:
         try:
             from .patient_state import detect_temporal_flags
+
             temporal_flags = detect_temporal_flags(patient_state)
         except Exception as exc:
             logger.warning("Temporal flag detection failed: %s", exc)
         if temporal_flags:
             flag_lines = ["[TEMPORAL_FLAGS]"]
             for flag in temporal_flags:
-                flag_lines.append(f"  [{flag['severity'].upper()}] {flag['message']} [{flag['guideline_ref']}]")
+                flag_lines.append(
+                    f"  [{flag['severity'].upper()}] {flag['message']} [{flag['guideline_ref']}]"
+                )
             flag_lines.append("[/TEMPORAL_FLAGS]")
             flag_block = "\n".join(flag_lines)
-            patient_state_context = f"{patient_state_context}\n\n{flag_block}" if patient_state_context else flag_block
+            patient_state_context = (
+                f"{patient_state_context}\n\n{flag_block}" if patient_state_context else flag_block
+            )
 
     context_block = patient_state_context or context_block
-    disease_targets = _resolve_retrieval_diseases(
-        available, request.context, request.message
-    )
+    disease_targets = _resolve_retrieval_diseases(available, request.context, request.message)
     disease_target = disease_targets[0] if disease_targets else None
 
     if TERMINOLOGY_SHADOW_ENABLED:
@@ -2264,14 +2274,14 @@ async def chat_stream(
     async def run_stream():
         started_at = time.perf_counter()
         full_text = ""
-        sources: List[Dict[str, Any]] = []
+        sources: list[dict[str, Any]] = []
         stream_context_block = context_block
 
         try:
             provider = get_llm_provider()
 
-            yield f'data: {json.dumps({"type": "activity", "message": "Received query", "detail": f"Session {request.session_id[:8]}"})}\n\n'
-            yield f'data: {json.dumps({"type": "activity", "message": "Patient context", "detail": "Attached" if context_block else "None"})}\n\n'
+            yield f"data: {json.dumps({'type': 'activity', 'message': 'Received query', 'detail': f'Session {request.session_id[:8]}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'activity', 'message': 'Patient context', 'detail': 'Attached' if context_block else 'None'})}\n\n"
 
             if patient_state:
                 diag_count = len(patient_state.get("active_diagnoses") or [])
@@ -2280,12 +2290,14 @@ async def chat_stream(
                 detail_parts = [f"{diag_count} diagnoses", f"{med_count} medications"]
                 if flag_count:
                     detail_parts.append(f"{flag_count} flags")
-                yield f'data: {json.dumps({"type": "activity", "message": "Patient state loaded", "detail": ", ".join(detail_parts)})}\n\n'
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Patient state loaded', 'detail': ', '.join(detail_parts)})}\n\n"
 
             if patient_scores:
-                high_alerts = [s for s in patient_scores if s["alert_level"] in ("WARNING", "CRITICAL")]
+                high_alerts = [
+                    s for s in patient_scores if s["alert_level"] in ("WARNING", "CRITICAL")
+                ]
                 if high_alerts:
-                    yield f'data: {json.dumps({"type": "clinical_score", "scores": high_alerts})}\n\n'
+                    yield f"data: {json.dumps({'type': 'clinical_score', 'scores': high_alerts})}\n\n"
 
             if _is_smalltalk_query(request.message):
                 full_text = (
@@ -2293,13 +2305,11 @@ async def chat_stream(
                     "and I will answer using the indexed Kenya guideline sources."
                 )
                 latency = (time.perf_counter() - started_at) * 1000
-                yield f'data: {json.dumps({"type": "activity", "message": "Conversational turn", "detail": "No guideline retrieval needed"})}\n\n'
-                yield f'data: {json.dumps({"type": "chunk", "content": full_text})}\n\n'
-                yield f'data: {json.dumps({"type": "done", "full_text": full_text, "timestamp": format_timestamp(), "latency_ms": round(latency, 2)})}\n\n'
-                yield f'data: {json.dumps({"type": "sources", "sources": []})}\n\n'
-                await _write_session_history(
-                    request.session_id, request.message, full_text
-                )
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Conversational turn', 'detail': 'No guideline retrieval needed'})}\n\n"
+                yield f"data: {json.dumps({'type': 'chunk', 'content': full_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'full_text': full_text, 'timestamp': format_timestamp(), 'latency_ms': round(latency, 2)})}\n\n"
+                yield f"data: {json.dumps({'type': 'sources', 'sources': []})}\n\n"
+                await _write_session_history(request.session_id, request.message, full_text)
                 await log_response(
                     session_id=request.session_id,
                     query_id=query_id,
@@ -2316,7 +2326,7 @@ async def chat_stream(
                     if stream_context_block
                     else memory_context
                 )
-                yield f'data: {json.dumps({"type": "activity", "message": "Prior clinical memory", "detail": "Attached"})}\n\n'
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Prior clinical memory', 'detail': 'Attached'})}\n\n"
 
             drug_interaction_payload = await _check_drug_interactions(
                 request.context.medications if request.context else None
@@ -2336,42 +2346,40 @@ async def chat_stream(
                     if stream_context_block
                     else drug_interaction_context
                 )
-                yield f'data: {json.dumps({"type": "activity", "message": "Drug interaction check", "detail": f"{len(drug_interaction_payload.get('interactions', []))} found"})}\n\n'
-                yield f'data: {json.dumps({"type": "drug_interactions", **drug_interaction_payload})}\n\n'
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Drug interaction check', 'detail': f'{len(drug_interaction_payload.get('interactions', []))} found'})}\n\n"
+                yield f"data: {json.dumps({'type': 'drug_interactions', **drug_interaction_payload})}\n\n"
             elif drug_interaction_payload.get("status") in {"degraded", "ok"}:
-                detail = "unavailable" if drug_interaction_payload.get("status") == "degraded" else "none"
-                yield f'data: {json.dumps({"type": "activity", "message": "Drug interaction check", "detail": detail})}\n\n'
-                yield f'data: {json.dumps({"type": "drug_interactions", **drug_interaction_payload})}\n\n'
+                detail = (
+                    "unavailable"
+                    if drug_interaction_payload.get("status") == "degraded"
+                    else "none"
+                )
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Drug interaction check', 'detail': detail})}\n\n"
+                yield f"data: {json.dumps({'type': 'drug_interactions', **drug_interaction_payload})}\n\n"
 
             if _chat_pageindex_enabled(request.message, disease_target):
-                pageindex_context = await _query_pageindex_context(
-                    request.message, disease_target
-                )
+                pageindex_context = await _query_pageindex_context(request.message, disease_target)
                 if pageindex_context:
                     stream_context_block = (
                         f"{stream_context_block}\n\n{pageindex_context}"
                         if stream_context_block
                         else pageindex_context
                     )
-                    yield f'data: {json.dumps({"type": "activity", "message": "PageIndex", "detail": "Attached"})}\n\n'
+                    yield f"data: {json.dumps({'type': 'activity', 'message': 'PageIndex', 'detail': 'Attached'})}\n\n"
 
             # ── Always attempt evidence graph injection regardless of mode ──
-            evidence_triples = await _query_evidence_context_data(
-                disease_targets, request.message
-            )
+            evidence_triples = await _query_evidence_context_data(disease_targets, request.message)
             evidence_context = _format_evidence_context_from_triples(evidence_triples)
             if evidence_triples:
-                yield f'data: {json.dumps({"type": "evidence", "triples": evidence_triples})}\n\n'
+                yield f"data: {json.dumps({'type': 'evidence', 'triples': evidence_triples})}\n\n"
             if evidence_context:
-                graph_block = (
-                    f"[EVIDENCE_GRAPH]\n{evidence_context}\n[/EVIDENCE_GRAPH]"
-                )
+                graph_block = f"[EVIDENCE_GRAPH]\n{evidence_context}\n[/EVIDENCE_GRAPH]"
                 stream_context_block = (
                     f"{stream_context_block}\n\n{graph_block}"
                     if stream_context_block
                     else graph_block
                 )
-                yield f'data: {json.dumps({"type": "activity", "message": "Evidence graph", "detail": "Attached"})}\n\n'
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Evidence graph', 'detail': 'Attached'})}\n\n"
 
             kb_context = ""
             if disease_target:
@@ -2387,14 +2395,14 @@ async def chat_stream(
                         if stream_context_block
                         else kb_context
                     )
-                    yield f'data: {json.dumps({"type": "activity", "message": "Structured KB", "detail": "Attached"})}\n\n'
+                    yield f"data: {json.dumps({'type': 'activity', 'message': 'Structured KB', 'detail': 'Attached'})}\n\n"
 
             search_query = request.message
-            expanded_query_for_log: Optional[str] = None
+            expanded_query_for_log: str | None = None
 
             # ── Offline / KB-only mode ────────────────────────────────────
             if not provider_has_credentials(provider):
-                yield f'data: {json.dumps({"type": "activity", "message": "Offline mode", "detail": f"No {provider} credentials — returning raw guideline passages"})}\n\n'
+                yield f"data: {json.dumps({'type': 'activity', 'message': 'Offline mode', 'detail': f'No {provider} credentials — returning raw guideline passages'})}\n\n"
                 results = await with_timeout(
                     _search_index.search_guidelines(
                         query=request.message,
@@ -2414,24 +2422,19 @@ async def chat_stream(
                         f"{res.text}\n\n---\n\n"
                     )
                     full_text += chunk_text
-                    yield f'data: {json.dumps({"type": "chunk", "content": chunk_text})}\n\n'
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_text})}\n\n"
 
                 # In offline mode, surface evidence graph context as a text block
                 # after retrieved passages so the clinician sees it
                 if evidence_context:
-                    graph_text = (
-                        "\n\n### Validated Clinical Relationships\n"
-                        + evidence_context
-                    )
+                    graph_text = "\n\n### Validated Clinical Relationships\n" + evidence_context
                     full_text += graph_text
-                    yield f'data: {json.dumps({"type": "chunk", "content": graph_text})}\n\n'
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': graph_text})}\n\n"
 
                 latency = (time.perf_counter() - started_at) * 1000
-                yield f'data: {json.dumps({"type": "done", "full_text": full_text, "timestamp": format_timestamp(), "latency_ms": round(latency, 2)})}\n\n'
-                yield f'data: {json.dumps({"type": "sources", "sources": sources})}\n\n'
-                await _write_session_history(
-                    request.session_id, request.message, full_text
-                )
+                yield f"data: {json.dumps({'type': 'done', 'full_text': full_text, 'timestamp': format_timestamp(), 'latency_ms': round(latency, 2)})}\n\n"
+                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+                await _write_session_history(request.session_id, request.message, full_text)
                 await log_response(
                     session_id=request.session_id,
                     query_id=query_id,
@@ -2443,7 +2446,7 @@ async def chat_stream(
 
             # ── Online provider path (Groq / Puter) ──────────────────────
             if provider not in {"groq", "puter"}:
-                yield f'data: {json.dumps({"type": "error", "message": f"Unsupported provider: {provider!r}. Set QUERY_LLM_PROVIDER=groq or puter."})}\n\n'
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Unsupported provider: {provider!r}. Set QUERY_LLM_PROVIDER=groq or puter.'})}\n\n"
                 return
 
             use_hyde = bool(
@@ -2451,7 +2454,7 @@ async def chat_stream(
                 and disease_target
                 and DISEASE_CONFIG.get(disease_target, {}).get("use_hyde")
             )
-            yield f'data: {json.dumps({"type": "activity", "message": "Searching guidelines", "detail": ", ".join(disease_targets) if disease_targets else "all"})}\n\n'
+            yield f"data: {json.dumps({'type': 'activity', 'message': 'Searching guidelines', 'detail': ', '.join(disease_targets) if disease_targets else 'all'})}\n\n"
 
             if TERMINOLOGY_QUERY_EXPANSION_ENABLED and disease_target:
                 from .terminology.service import expand_query_with_terminology_details
@@ -2468,8 +2471,8 @@ async def chat_stream(
                         if c.get("cui")
                     ]
                     if concept_payload:
-                        yield f'data: {json.dumps({"type": "concepts", "concepts": concept_payload})}\n\n'
-                    yield f'data: {json.dumps({"type": "activity", "message": "Terminology expansion", "detail": str(len(concepts))})}\n\n'
+                        yield f"data: {json.dumps({'type': 'concepts', 'concepts': concept_payload})}\n\n"
+                    yield f"data: {json.dumps({'type': 'activity', 'message': 'Terminology expansion', 'detail': str(len(concepts))})}\n\n"
 
             results = await with_timeout(
                 _search_index.search_guidelines(
@@ -2484,8 +2487,8 @@ async def chat_stream(
                 CHAT_STREAM_TIMEOUT_SECONDS,
             )
             sources = _source_payload(results)
-            yield f'data: {json.dumps({"type": "activity", "message": "Retrieved passages", "detail": str(len(results))})}\n\n'
-            yield f'data: {json.dumps({"type": "activity", "message": "Calling provider", "detail": f"{provider}: {get_llm_model()}"})}\n\n'
+            yield f"data: {json.dumps({'type': 'activity', 'message': 'Retrieved passages', 'detail': str(len(results))})}\n\n"
+            yield f"data: {json.dumps({'type': 'activity', 'message': 'Calling provider', 'detail': f'{provider}: {get_llm_model()}'})}\n\n"
 
             reasoning_text = ""
             async for provider_event in _stream_openai_compatible_chat(
@@ -2502,10 +2505,10 @@ async def chat_stream(
                     continue
                 token = str(provider_event.get("content", ""))
                 full_text += token
-                yield f'data: {json.dumps({"type": "chunk", "content": token})}\n\n'
+                yield f"data: {json.dumps({'type': 'chunk', 'content': token})}\n\n"
 
             if reasoning_text:
-                yield f'data: {json.dumps({"type": "reasoning", "summary": reasoning_text[:1600]})}\n\n'
+                yield f"data: {json.dumps({'type': 'reasoning', 'summary': reasoning_text[:1600]})}\n\n"
 
             raw_text = full_text or "No response returned."
             cleaned_text = _strip_hitl_markers(_strip_model_reasoning(raw_text))
@@ -2517,18 +2520,16 @@ async def chat_stream(
                 full_text = cleaned_text
             if not full_text:
                 full_text = "No response returned."
-                yield f'data: {json.dumps({"type": "chunk", "content": full_text})}\n\n'
+                yield f"data: {json.dumps({'type': 'chunk', 'content': full_text})}\n\n"
 
             for hitl_event in _extract_hitl_markers(raw_text):
-                yield f'data: {json.dumps(hitl_event)}\n\n'
+                yield f"data: {json.dumps(hitl_event)}\n\n"
 
             latency = (time.perf_counter() - started_at) * 1000
-            yield f'data: {json.dumps({"type": "done", "full_text": full_text, "timestamp": format_timestamp(), "latency_ms": round(latency, 2)})}\n\n'
-            yield f'data: {json.dumps({"type": "sources", "sources": sources})}\n\n'
+            yield f"data: {json.dumps({'type': 'done', 'full_text': full_text, 'timestamp': format_timestamp(), 'latency_ms': round(latency, 2)})}\n\n"
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
-            await _write_session_history(
-                request.session_id, request.message, full_text
-            )
+            await _write_session_history(request.session_id, request.message, full_text)
             await log_response(
                 session_id=request.session_id,
                 query_id=query_id,
@@ -2546,13 +2547,11 @@ async def chat_stream(
                 f"chat_stream exceeded {CHAT_STREAM_TIMEOUT_SECONDS}s",
                 recovery_action="cancelled",
             )
-            yield f'data: {json.dumps({"type": "error", "message": "Request timed out before completion."})}\n\n'
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Request timed out before completion.'})}\n\n"
         except Exception as exc:
             logger.error("Stream error: %s", exc, exc_info=True)
-            await log_error(
-                request.session_id, query_id, type(exc).__name__, str(exc)
-            )
-            yield f'data: {json.dumps({"type": "error", "message": str(exc)})}\n\n'
+            await log_error(request.session_id, query_id, type(exc).__name__, str(exc))
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
         finally:
             yield 'data: {"type": "stream_end"}\n\n'
 
@@ -2563,11 +2562,13 @@ async def chat_stream(
 # Clinical Documents (Phase E)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/clinical/documents/generate")
 async def generate_clinical_document(
     req: DocumentGenerateRequest, role: str = Depends(get_current_role)
 ):
     from .documents import ClinicalDocumentGenerator
+
     generator = ClinicalDocumentGenerator()
     doc = await generator.generate(
         doc_type=req.document_type,
@@ -2580,6 +2581,7 @@ async def generate_clinical_document(
         raise HTTPException(status_code=500, detail=doc["message"])
     try:
         from .logs import write_audit_log
+
         await write_audit_log(
             event_type="DOCUMENT_GENERATED",
             session_id=req.patient_ref,
@@ -2592,25 +2594,31 @@ async def generate_clinical_document(
         logger.warning("Document generation audit log failed: %s", exc)
     return doc
 
+
 @app.get("/clinical/documents/{document_id}")
 async def get_document(document_id: str, role: str = Depends(get_current_role)):
     from .repositories import get_clinical_document
+
     doc = await get_clinical_document(document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
 
+
 @app.get("/clinical/documents/patient/{patient_ref}")
 async def list_patient_docs(patient_ref: str, role: str = Depends(get_current_role)):
     from .repositories import list_patient_documents
+
     docs = await list_patient_documents(patient_ref)
     return {"documents": docs}
+
 
 @app.patch("/clinical/documents/{document_id}/review")
 async def review_document(
     document_id: str, req: DocumentReviewRequest, role: str = Depends(get_current_role)
 ):
     from .repositories import review_clinical_document
+
     success = await review_clinical_document(document_id, req.reviewed_by)
     if not success:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -2621,10 +2629,11 @@ async def review_document(
 # Session management
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/sessions/{session_id}/clear")
 async def clear_session(
     session_id: str,
-    request: Optional[SessionClearRequest] = None,
+    request: SessionClearRequest | None = None,
     role: str = Depends(get_current_role),
 ):
     memory_status = _queue_memory_distillation(
@@ -2634,6 +2643,7 @@ async def clear_session(
     if get_session_storage_backend() == "postgres":
         try:
             from .repositories import clear_session_messages
+
             await clear_session_messages(session_id)
         except Exception as exc:
             logger.warning("Postgres session clear failed: %s", exc)
@@ -2645,6 +2655,7 @@ async def clear_session(
 # Admin
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/admin/stats")
 async def admin_stats(role: str = Depends(require_admin)):
     active_sessions = len(_session_history)
@@ -2652,11 +2663,12 @@ async def admin_stats(role: str = Depends(require_admin)):
     if get_session_storage_backend() == "postgres":
         try:
             from .repositories import count_active_sessions
+
             active_sessions = await count_active_sessions()
         except Exception:
             pass
 
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "active_sessions": active_sessions,
         "session_storage_backend": storage_backend,
         "audit_storage_backend": get_audit_storage_backend(),
@@ -2691,9 +2703,7 @@ async def admin_stats(role: str = Depends(require_admin)):
         from .terminology.models import TerminologyConcept
 
         async with get_session() as session:
-            count = await session.scalar(
-                select(func.count()).select_from(TerminologyConcept)
-            )
+            count = await session.scalar(select(func.count()).select_from(TerminologyConcept))
             stats["terminology_concepts_total"] = int(count or 0)
             stats["terminology_status"] = "ok"
     except Exception as exc:
@@ -2751,6 +2761,7 @@ async def admin_sessions(
         }
     try:
         from .repositories import list_sessions
+
         return {
             "sessions": await list_sessions(limit=limit),
             "storage_backend": "postgres",
@@ -2765,6 +2776,7 @@ async def admin_sessions(
 async def admin_list_users(role: str = Depends(require_admin)):
     try:
         from .repositories import list_users
+
         return {"users": await list_users()}
     except ModuleNotFoundError as exc:
         raise HTTPException(status_code=503, detail=f"Dependency missing: {exc.name}") from exc
@@ -2776,6 +2788,7 @@ async def admin_list_users(role: str = Depends(require_admin)):
 async def admin_create_user(request: UserCreateRequest, role: str = Depends(require_admin)):
     try:
         from .repositories import create_user
+
         return {"user": await create_user(request.external_id, request.role, request.display_name)}
     except ModuleNotFoundError as exc:
         raise HTTPException(status_code=503, detail=f"Dependency missing: {exc.name}") from exc
@@ -2789,6 +2802,7 @@ async def admin_update_user(
 ):
     try:
         from .repositories import update_user
+
         user = await update_user(user_id, role=request.role, display_name=request.display_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid user id") from exc
@@ -2805,6 +2819,7 @@ async def admin_update_user(
 async def admin_delete_user(user_id: str, role: str = Depends(require_admin)):
     try:
         from .repositories import delete_user
+
         deleted = await delete_user(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid user id") from exc
@@ -2821,6 +2836,7 @@ async def admin_delete_user(user_id: str, role: str = Depends(require_admin)):
 async def create_memory_candidate(request: MemoryCreateRequest, role: str = Depends(require_admin)):
     from .memory import patient_ref_from_context
     from .repositories import create_pending_memory
+
     return {
         "memory": await create_pending_memory(
             patient_ref_from_context(request.patient_context),
@@ -2836,6 +2852,7 @@ async def create_memory_candidate(request: MemoryCreateRequest, role: str = Depe
 async def list_memory_candidates(request: MemoryListRequest, role: str = Depends(require_admin)):
     from .memory import patient_ref_from_context
     from .repositories import list_pending_memory
+
     return {
         "pending": await list_pending_memory(
             patient_ref_hash=patient_ref_from_context(request.patient_context),
@@ -2858,11 +2875,12 @@ async def list_all_memory_candidates(
 @app.post("/memory/pending/{memory_id}/approve")
 async def approve_memory_candidate(
     memory_id: str,
-    x_user_role: Optional[str] = Header(None),
+    x_user_role: str | None = Header(None),
     role: str = Depends(require_admin),
 ):
     try:
         from .repositories import approve_pending_memory
+
         approved = await approve_pending_memory(memory_id, approved_by=x_user_role or role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid memory id") from exc
@@ -2875,7 +2893,10 @@ async def approve_memory_candidate(
 async def list_approved_memory(request: MemoryListRequest, role: str = Depends(require_admin)):
     from .memory import patient_ref_from_context
     from .repositories import list_long_term_memory
-    return {"memory": await list_long_term_memory(patient_ref_from_context(request.patient_context))}
+
+    return {
+        "memory": await list_long_term_memory(patient_ref_from_context(request.patient_context))
+    }
 
 
 @app.get("/memory/long-term/all")
@@ -2891,17 +2912,21 @@ async def list_all_approved_memory(
 @app.post("/memory/distill-session")
 async def distill_session_memory(request: MemoryDistillRequest, role: str = Depends(require_admin)):
     from .memory import distill_session_candidates
-    return {"pending": await distill_session_candidates(request.session_id, request.patient_context)}
+
+    return {
+        "pending": await distill_session_candidates(request.session_id, request.patient_context)
+    }
 
 
 @app.post("/evidence/seed/{disease}")
 async def seed_graph(
     disease: str,
-    x_user_role: Optional[str] = Header(None),
+    x_user_role: str | None = Header(None),
     role: str = Depends(require_admin),
 ):
     try:
         from .evidence import seed_evidence_graph
+
         return await seed_evidence_graph(disease, clinician_id=x_user_role or role)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Evidence seed file not found") from exc
@@ -2909,18 +2934,16 @@ async def seed_graph(
 
 @app.post("/evidence/seed-all")
 async def seed_all_graphs(
-    x_user_role: Optional[str] = Header(None),
+    x_user_role: str | None = Header(None),
     role: str = Depends(require_admin),
 ):
     from .evidence import seed_evidence_graph
 
-    seeded: Dict[str, Any] = {}
-    errors: Dict[str, str] = {}
+    seeded: dict[str, Any] = {}
+    errors: dict[str, str] = {}
     for disease in DISEASE_CONFIG:
         try:
-            seeded[disease] = await seed_evidence_graph(
-                disease, clinician_id=x_user_role or role
-            )
+            seeded[disease] = await seed_evidence_graph(disease, clinician_id=x_user_role or role)
         except Exception as exc:
             errors[disease] = str(exc)
     return {"seeded": seeded, "errors": errors}
@@ -2929,6 +2952,7 @@ async def seed_all_graphs(
 @app.post("/evidence/query")
 async def query_graph(request: EvidenceQueryRequest, role: str = Depends(get_current_role)):
     from .evidence import query_evidence_graph
+
     return {
         "results": await query_evidence_graph(
             disease=request.disease, query=request.query, top_k=request.top_k
@@ -2939,12 +2963,14 @@ async def query_graph(request: EvidenceQueryRequest, role: str = Depends(get_cur
 @app.get("/evidence/stats")
 async def graph_stats(role: str = Depends(require_admin)):
     from .repositories import evidence_graph_stats
+
     return await evidence_graph_stats()
 
 
 @app.post("/evidence/nodes")
 async def graph_nodes(request: EvidenceNodesRequest, role: str = Depends(require_admin)):
     from .repositories import list_evidence_nodes
+
     return {
         "nodes": await list_evidence_nodes(
             disease=request.disease,
@@ -2956,11 +2982,11 @@ async def graph_nodes(request: EvidenceNodesRequest, role: str = Depends(require
 
 @app.get("/admin/audit")
 async def get_audit_logs(
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-    session_id: Optional[str] = None,
-    disease: Optional[str] = None,
-    feedback_type: Optional[str] = None,
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    session_id: str | None = None,
+    disease: str | None = None,
+    feedback_type: str | None = None,
     page: int = 1,
     limit: int = 50,
     role: str = Depends(require_admin),
@@ -2976,7 +3002,9 @@ async def get_audit_logs(
             limit=limit,
         )
     except ModuleNotFoundError as exc:
-        raise HTTPException(status_code=503, detail=f"Audit dependency missing: {exc.name}") from exc
+        raise HTTPException(
+            status_code=503, detail=f"Audit dependency missing: {exc.name}"
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Audit backend unavailable: {exc}") from exc
 
@@ -2992,9 +3020,10 @@ async def get_audit_logs(
 # Phase C: Differential Diagnosis (DDx)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/clinical/ddx")
 async def run_ddx(request: DDxRequest, role: str = Depends(get_current_role)):
-    from .ddx import DifferentialDiagnosisEngine
+
     if not _search_index:
         raise HTTPException(status_code=503, detail="Search index not ready")
 
@@ -3007,7 +3036,7 @@ async def run_ddx(request: DDxRequest, role: str = Depends(get_current_role)):
                 if event.get("type") == "ddx_candidates":
                     candidate_count = len(event.get("candidates", []))
                 yield f"data: {json.dumps(event)}\n\n"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             yield f"data: {json.dumps({'type': 'error', 'message': 'Request timed out'})}\n\n"
         except Exception as exc:
             logger.error("DDx stream error: %s", exc)
@@ -3015,6 +3044,7 @@ async def run_ddx(request: DDxRequest, role: str = Depends(get_current_role)):
         finally:
             try:
                 from .logs import write_audit_log
+
                 await write_audit_log(
                     event_type="DDX_REQUEST",
                     session_id=request.patient_ref or "anonymous",
@@ -3037,9 +3067,11 @@ async def run_ddx(request: DDxRequest, role: str = Depends(get_current_role)):
 # Phase D: Treatment Pathway Engine
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/clinical/pathways")
 async def list_pathways(role: str = Depends(get_current_role)):
     from .pathways import PATHWAY_REGISTRY
+
     return {
         "pathways": [
             {
@@ -3056,8 +3088,8 @@ async def list_pathways(role: str = Depends(get_current_role)):
 
 @app.post("/clinical/pathway/run")
 async def run_pathway(req: PathwayRunRequest, role: str = Depends(get_current_role)):
-    from .patient_state import get_patient_state
     from .pathways import PathwayRunner
+    from .patient_state import get_patient_state
 
     patient_state = await get_patient_state(req.patient_ref)
     runner = PathwayRunner()
@@ -3081,6 +3113,7 @@ async def run_pathway(req: PathwayRunRequest, role: str = Depends(get_current_ro
         finally:
             try:
                 from .logs import write_audit_log
+
                 await write_audit_log(
                     event_type="PATHWAY_RUN",
                     session_id=req.patient_ref,
@@ -3103,6 +3136,7 @@ async def run_pathway(req: PathwayRunRequest, role: str = Depends(get_current_ro
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase F: CDS Hooks
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/.well-known/cds-services")
 async def cds_service_discovery():
@@ -3135,8 +3169,9 @@ async def cds_service_discovery():
 
 
 @app.post("/cds-hooks/patient-view")
-async def cds_patient_view(context: Dict[str, Any]):
+async def cds_patient_view(context: dict[str, Any]):
     from .cds_hooks import CDSHooksHandler
+
     handler = CDSHooksHandler()
     try:
         cards = await with_timeout(handler.handle_patient_view(context), 4.0)
@@ -3147,8 +3182,9 @@ async def cds_patient_view(context: Dict[str, Any]):
 
 
 @app.post("/cds-hooks/medication-prescribe")
-async def cds_medication_prescribe(context: Dict[str, Any]):
+async def cds_medication_prescribe(context: dict[str, Any]):
     from .cds_hooks import CDSHooksHandler
+
     handler = CDSHooksHandler()
     try:
         cards = await with_timeout(handler.handle_medication_prescribe(context), 4.0)
@@ -3160,4 +3196,5 @@ async def cds_medication_prescribe(context: Dict[str, Any]):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

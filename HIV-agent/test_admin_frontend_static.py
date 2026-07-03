@@ -6,7 +6,9 @@ class AdminFrontendStaticTests(unittest.TestCase):
     def test_admin_route_and_sidebar_are_wired(self):
         app_js = Path("frontend/src/App.jsx").read_text(encoding="utf-8")
         sidebar_js = Path("frontend/src/components/layout/Sidebar.jsx").read_text(encoding="utf-8")
-        settings_js = Path("frontend/src/components/modals/SettingsPanel.jsx").read_text(encoding="utf-8")
+        settings_js = Path("frontend/src/components/modals/SettingsPanel.jsx").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('path="/admin"', app_js)
         self.assertIn("AdminPage", app_js)
@@ -28,7 +30,9 @@ class AdminFrontendStaticTests(unittest.TestCase):
 
     def test_partial_coverage_copy_is_not_legacy_only(self):
         quick_chat = Path("frontend/src/components/pages/QuickChat.jsx").read_text(encoding="utf-8")
-        knowledge_base = Path("frontend/src/components/pages/KnowledgeBase.jsx").read_text(encoding="utf-8")
+        knowledge_base = Path("frontend/src/components/pages/KnowledgeBase.jsx").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("Coverage partial", quick_chat)
         self.assertIn("legacy document table", quick_chat)

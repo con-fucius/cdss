@@ -1,5 +1,4 @@
-"""
-tests/test_handoff.py
+"""tests/test_handoff.py.
 
 Phase 5 — unit tests for handoff summary rendering.
 
@@ -11,7 +10,6 @@ test file in this codebase.
 
 from __future__ import annotations
 
-import pytest
 from app.handoff import HandoffSummary, _max_by, _min_by, _render_text
 
 
@@ -79,7 +77,11 @@ class TestRenderText:
     def test_dispatch_qa_renders_verbatim(self):
         s = _minimal_summary(
             dispatch_qa=[
-                {"question_text": "Is the patient breathing?", "answer": "no", "is_backtrack": False}
+                {
+                    "question_text": "Is the patient breathing?",
+                    "answer": "no",
+                    "is_backtrack": False,
+                }
             ]
         )
         text = _render_text(s)
@@ -89,7 +91,11 @@ class TestRenderText:
     def test_backtrack_marker_present(self):
         s = _minimal_summary(
             dispatch_qa=[
-                {"question_text": "Is the patient breathing?", "answer": "yes", "is_backtrack": True}
+                {
+                    "question_text": "Is the patient breathing?",
+                    "answer": "yes",
+                    "is_backtrack": True,
+                }
             ]
         )
         text = _render_text(s)

@@ -1,5 +1,4 @@
-"""
-Semantic text splitter for intelligent chunking.
+"""Semantic text splitter for intelligent chunking.
 
 Phase 0 fix:
 - Uses tiktoken.get_encoding("cl100k_base") directly instead of
@@ -11,8 +10,6 @@ Phase 0 fix:
 
 from __future__ import annotations
 
-from typing import List
-
 import tiktoken
 from semantic_text_splitter import TextSplitter
 
@@ -23,11 +20,9 @@ _ENCODING_NAME = "cl100k_base"
 class SemanticChunker:
     def __init__(self, chunk_capacity: int = 400) -> None:
         self.tokenizer = tiktoken.get_encoding(_ENCODING_NAME)
-        self.splitter = TextSplitter.from_tiktoken_model(
-            "gpt-3.5-turbo", chunk_capacity
-        )
+        self.splitter = TextSplitter.from_tiktoken_model("gpt-3.5-turbo", chunk_capacity)
 
-    def chunk(self, text: str) -> List[str]:
+    def chunk(self, text: str) -> list[str]:
         if not text or not text.strip():
             return []
         return self.splitter.chunks(text)

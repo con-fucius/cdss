@@ -1,5 +1,4 @@
-"""
-app/main.py
+"""app/main.py.
 
 FastAPI app entrypoint.
 
@@ -24,16 +23,16 @@ import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Security
-from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 from starlette.responses import HTMLResponse, PlainTextResponse
-from starlette.staticfiles import StaticFiles
 
+from . import repositories as repo
 from .config import (
     get_admin_api_key,
     get_allowed_origins,
@@ -45,10 +44,13 @@ from .config import (
     is_formulary_configured,
     validate_startup_config,
 )
-from .external.triage_ranker import TriageRankerClient
 from .db import check_database, close_engine, init_engine
 from .external.emergency_dispatch import EmergencyDispatchClient
 from .external.facility_registry import FacilityRegistryClient
+from .external.triage_ranker import TriageRankerClient
+from .handoff import build_handoff_summary, render_audit_text
+from .handoff_link import generate_handoff_token, verify_handoff_token
+from .models import IncidentStatus
 from .observability import MetricsMiddleware, RateLimitMiddleware, metrics_text
 from .protocols.field_registry import field_registry
 from .protocols.field_runner import FieldRunState, rebuild_from_field_log
@@ -59,10 +61,6 @@ from .protocols.runner import (
     get_entry_question,
     submit_answer,
 )
-from .handoff import build_handoff_summary, render_audit_text
-from .handoff_link import generate_handoff_token, verify_handoff_token
-from . import repositories as repo
-from .models import IncidentStatus
 from .repositories import InvalidStatusTransitionError
 
 logging.basicConfig(level=logging.INFO)
@@ -70,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── Admin API key dependency ───────────────────────────────────────────────
@@ -79,8 +77,7 @@ _admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 
 
 async def _require_admin_key(key: str | None = Security(_admin_key_header)) -> None:
-    """
-    Validates the X-Admin-Key header for admin endpoints.
+    """Validates the X-Admin-Key header for admin endpoints.
     If ADMIN_API_KEY is not configured (empty string), the check is
     bypassed — this is the development default. In production,
     validate_startup_config() blocks startup if ADMIN_API_KEY is unset.
@@ -122,8 +119,7 @@ async def lifespan(app: FastAPI):
             len(field_rejected),
         )
     logger.info(
-        "Ambulance CDSS started. Active dispatch protocols: %d, active field "
-        "protocols: %d",
+        "Ambulance CDSS started. Active dispatch protocols: %d, active field protocols: %d",
         len(registry.list_active()),
         len(field_registry.list_active()),
     )
@@ -152,6 +148,7 @@ app.add_middleware(MetricsMiddleware)
 # ─────────────────────────────────────────────────────────────────────────────
 # Health & observability
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -183,6 +180,7 @@ async def metrics():
 # Protocol registry introspection
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/protocols")
 async def list_protocols():
     return {"active": registry.list_active(), "rejected": registry.list_rejected()}
@@ -198,8 +196,7 @@ async def list_field_protocols():
 
 @app.get("/formulary")
 async def get_formulary():
-    """
-    DEPRECATED — Phase 0.5 was resolved as unconditional logging with no
+    """DEPRECATED — Phase 0.5 was resolved as unconditional logging with no
     formulary gate. POST /incidents/{id}/medication no longer rejects
     drug names against this list. Retained only so any client still
     polling this endpoint gets a clear deprecated response instead of a
@@ -221,6 +218,7 @@ async def get_formulary():
 # ─────────────────────────────────────────────────────────────────────────────
 # Incident lifecycle — request/response models
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class CreateIncidentRequest(BaseModel):
     chief_complaint: str = Field(min_length=1)
@@ -340,6 +338,7 @@ class FromCaptureRequest(BaseModel):
     """Phase 4.1 — accepts CapturePayload from shared contracts.
     Maps structured fields to create_incident internally.
     """
+
     dispatchId: str = Field(min_length=1)
     patientInfo: dict = Field(default_factory=dict)
     incidentInfo: dict = Field(default_factory=dict)
@@ -372,8 +371,7 @@ _CONSCIOUSNESS_GCS_MAP = {
 
 @app.post("/incidents/from-capture")
 async def create_incident_from_capture(request: FromCaptureRequest):
-    """
-    Phase 4.1 — accepts a structured CapturePayload from the dispatcher
+    """Phase 4.1 — accepts a structured CapturePayload from the dispatcher
     UI or web listener, maps its fields to create_incident internals,
     and delegates to the same create_incident logic. No duplicate code.
 
@@ -384,15 +382,10 @@ async def create_incident_from_capture(request: FromCaptureRequest):
     patient_info = request.patientInfo or {}
 
     # Map structured payload to create_incident parameters
-    chief_complaint = (
-        incident_info.get("description", "")
-        or request.dispatchId
-    )
+    chief_complaint = incident_info.get("description", "") or request.dispatchId
 
     # Extract location from incidentInfo.location
     location = incident_info.get("location") or {}
-    caller_lat = None
-    caller_lon = None
     caller_text = None
     if isinstance(location, dict):
         caller_text = location.get("address")
@@ -440,9 +433,9 @@ async def create_incident_from_capture(request: FromCaptureRequest):
 
     task = asyncio.create_task(_run_triage_enrichment_capture())
     task.add_done_callback(
-        lambda t: logger.error(
-            "Triage enrichment (capture) task exception: %s", t.exception()
-        ) if t.exception() else None
+        lambda t: logger.error("Triage enrichment (capture) task exception: %s", t.exception())
+        if t.exception()
+        else None
     )
 
     if match is None:
@@ -484,10 +477,10 @@ async def create_incident_from_capture(request: FromCaptureRequest):
 # Incident lifecycle — endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/incidents")
 async def create_incident(request: CreateIncidentRequest):
-    """
-    Create an incident and, if a matching locked protocol is found by
+    """Create an incident and, if a matching locked protocol is found by
     chief complaint, snapshot it onto the incident and return the entry
     question. If no protocol matches, the incident is still created
     (dispatcher must reassess / select manually) — this mirrors the
@@ -570,9 +563,9 @@ async def create_incident(request: CreateIncidentRequest):
 
     task = asyncio.create_task(_run_triage_enrichment())
     task.add_done_callback(
-        lambda t: logger.error(
-            "Triage enrichment task exception: %s", t.exception()
-        ) if t.exception() else None
+        lambda t: logger.error("Triage enrichment task exception: %s", t.exception())
+        if t.exception()
+        else None
     )
 
     return resp
@@ -580,8 +573,7 @@ async def create_incident(request: CreateIncidentRequest):
 
 @app.post("/incidents/{incident_id}/answer")
 async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest):
-    """
-    Submit an answer to the current locked-script question.
+    """Submit an answer to the current locked-script question.
 
     On OutOfScriptAnswerError: returns 422 with the valid answer set —
     this is the loud, immediate, fully-logged rejection described in
@@ -620,8 +612,7 @@ async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest)
             "live_version": protocol.version,
         }
         logger.warning(
-            "Protocol version mismatch: incident %s started on v%s but live "
-            "registry is v%s",
+            "Protocol version mismatch: incident %s started on v%s but live registry is v%s",
             incident_id,
             snapshot_version,
             protocol.version,
@@ -708,8 +699,7 @@ async def correct_answer(
     log_id: str,
     request: CorrectAnswerRequest,
 ):
-    """
-    Improvement 4.2 — correct a dispatch answer within a configurable
+    """Improvement 4.2 — correct a dispatch answer within a configurable
     time window (default 60s). Writes a new dispatch log row with
     is_backtrack=True, marks the original as superseded, and re-runs
     the locked runner with the corrected answer.
@@ -815,14 +805,19 @@ async def list_incidents(
     status: str | None = Query(None, description="Filter by incident status"),
     priority_code: str | None = Query(None, description="Filter by priority code"),
     assigned_unit_id: str | None = Query(None, description="Filter by assigned unit"),
-    created_after: str | None = Query(None, description="ISO datetime — incidents created after this"),
-    created_before: str | None = Query(None, description="ISO datetime — incidents created before this"),
-    chief_complaint_contains: str | None = Query(None, min_length=2, description="Case-insensitive substring match against chief complaint"),
+    created_after: str | None = Query(
+        None, description="ISO datetime — incidents created after this"
+    ),
+    created_before: str | None = Query(
+        None, description="ISO datetime — incidents created before this"
+    ),
+    chief_complaint_contains: str | None = Query(
+        None, min_length=2, description="Case-insensitive substring match against chief complaint"
+    ),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
 ):
-    """
-    Search and list incidents. Supports filtering by status, priority code,
+    """Search and list incidents. Supports filtering by status, priority code,
     assigned unit, creation time window, and chief complaint substring.
     Returns paginated results ordered by created_at DESC (most recent first).
     Purged incidents (pii_purged_at set) are excluded from results.
@@ -876,8 +871,7 @@ async def get_incident_full(incident_id: str):
 
 @app.get("/incidents/{incident_id}/timeline")
 async def get_incident_timeline(incident_id: str):
-    """
-    Improvement 3 — returns a single chronologically-ordered list spanning
+    """Improvement 3 — returns a single chronologically-ordered list spanning
     all event types (dispatch answers, field actions, vitals, medications,
     guidance lookups). Each row has {"timestamp", "event_type", "source", "data"}.
     """
@@ -889,8 +883,7 @@ async def get_incident_timeline(incident_id: str):
 
 @app.post("/incidents/{incident_id}/status")
 async def update_incident_status(incident_id: str, request: UpdateIncidentStatusRequest):
-    """
-    Field-unit status transitions: on_scene, transporting, handoff_complete,
+    """Field-unit status transitions: on_scene, transporting, handoff_complete,
     closed. Also accepted by the dispatcher: dispatched (but the
     /dispatch-unit endpoint sets this automatically when unit assignment
     succeeds, so the dispatcher rarely needs to call this directly).
@@ -956,8 +949,7 @@ async def update_incident_status(incident_id: str, request: UpdateIncidentStatus
 
 @app.get("/incidents/{incident_id}/handoff-link")
 async def get_handoff_link(incident_id: str):
-    """
-    Returns a time-limited, HMAC-signed URL that the dispatcher can send
+    """Returns a time-limited, HMAC-signed URL that the dispatcher can send
     to the receiving hospital via any channel (SMS, WhatsApp, radio, phone).
     The ER doctor opens this URL to see the handoff page.
     """
@@ -985,8 +977,7 @@ async def get_handoff_link(incident_id: str):
 
 @app.get("/receiving/{incident_id}", response_class=HTMLResponse)
 async def receiving_handoff_page(incident_id: str, token: str):
-    """
-    Serves the receiving hospital handoff HTML page. Validates the
+    """Serves the receiving hospital handoff HTML page. Validates the
     time-limited token before rendering. The page itself fetches the
     handoff JSON via the API and renders it client-side.
 
@@ -1011,13 +1002,13 @@ async def receiving_handoff_page(incident_id: str, token: str):
         css_content = css_path.read_text(encoding="utf-8")
         html = html.replace(
             '<link rel="stylesheet" href="style.css">',
-            f'<style>{css_content}</style>',
+            f"<style>{css_content}</style>",
         )
     if js_path.exists():
         js_content = js_path.read_text(encoding="utf-8")
         html = html.replace(
             '<script src="app.js"></script>',
-            f'<script>{js_content}</script>',
+            f"<script>{js_content}</script>",
         )
 
     # Inject the incident_id and token so the page can fetch data
@@ -1034,8 +1025,7 @@ async def receiving_handoff_page(incident_id: str, token: str):
 
 @app.get("/incidents/{incident_id}/handoff")
 async def get_incident_handoff(incident_id: str):
-    """
-    Phase 5 — returns the deterministic handoff summary assembled from
+    """Phase 5 — returns the deterministic handoff summary assembled from
     get_incident_full(). No LLM, no inference. Everything in the response
     is a direct field from the incident record or a fixed-format rendering
     of an existing append-only log row. See app/handoff.py module docstring
@@ -1071,8 +1061,7 @@ async def get_incident_handoff(incident_id: str):
 
 @app.get("/incidents/{incident_id}/export")
 async def export_incident(incident_id: str):
-    """
-    Improvement 5 — returns a plain-text medico-legal audit export of the
+    """Improvement 5 — returns a plain-text medico-legal audit export of the
     incident. Downloads as a file attachment with Content-Disposition header.
     """
     full = await repo.get_incident_full(incident_id)
@@ -1088,8 +1077,7 @@ async def export_incident(incident_id: str):
 
 @app.patch("/incidents/{incident_id}/notes")
 async def append_incident_note(incident_id: str, request: AppendNoteRequest):
-    """
-    Improvement 5 — append-only dispatcher annotation. Adds a timestamped
+    """Improvement 5 — append-only dispatcher annotation. Adds a timestamped
     free-text note to Incident.notes. Never overwrites — each PATCH appends
     a new line. The notes field accumulates chronologically across calls.
     """
@@ -1109,11 +1097,8 @@ async def append_incident_note(incident_id: str, request: AppendNoteRequest):
 
 
 @app.post("/incidents/{incident_id}/confirm-pre-arrival")
-async def confirm_pre_arrival_instructions(
-    incident_id: str, request: ConfirmPreArrivalRequest
-):
-    """
-    Improvement 3.5 — logs a pre-arrival instruction read-back confirmation
+async def confirm_pre_arrival_instructions(incident_id: str, request: ConfirmPreArrivalRequest):
+    """Improvement 3.5 — logs a pre-arrival instruction read-back confirmation
     to the field log. Appends an 'incident_field_log' row with
     action_type='pre_arrival_confirmation'. The dispatcher UI calls this
     after reading instructions to the caller.
@@ -1149,32 +1134,27 @@ async def confirm_pre_arrival_instructions(
 # (e.g. a freshly provisioned instance or a test environment).
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/dashboard/active-incidents")
 async def dashboard_active_incidents(limit: int = 100):
-    """
-    All non-closed incidents ordered by priority severity (P1 first)
+    """All non-closed incidents ordered by priority severity (P1 first)
     then age (oldest first within the same priority group). Intended for
     a control-room display refreshed on a poll interval by the dispatcher
     or supervisor UI.
     """
     if limit < 1 or limit > 500:
-        raise HTTPException(
-            status_code=422, detail="limit must be between 1 and 500"
-        )
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 500")
     return {"incidents": await repo.get_active_incidents(limit=limit)}
 
 
 @app.get("/dashboard/stats")
 async def dashboard_stats(window_hours: int = 24):
-    """
-    Incident counts by status and priority_code over a rolling window.
+    """Incident counts by status and priority_code over a rolling window.
     window_hours defaults to 24; max 168 (7 days) to keep the query
     bounded on a busy system.
     """
     if window_hours < 1 or window_hours > 168:
-        raise HTTPException(
-            status_code=422, detail="window_hours must be between 1 and 168"
-        )
+        raise HTTPException(status_code=422, detail="window_hours must be between 1 and 168")
     return await repo.get_dashboard_stats(window_hours=window_hours)
 
 
@@ -1183,8 +1163,7 @@ async def shift_handover(
     shift_start: str = Query(..., description="ISO datetime — shift start"),
     shift_end: str = Query(..., description="ISO datetime — shift end"),
 ):
-    """
-    Improvement 4.1 — structured shift handover report. Returns counts
+    """Improvement 4.1 — structured shift handover report. Returns counts
     by status/priority, active incidents at shift end, and the top 3
     highest-priority resolved incidents with timeline durations.
     Also returns a plain-text rendering alongside the JSON.
@@ -1192,19 +1171,13 @@ async def shift_handover(
     try:
         start_dt = datetime.fromisoformat(shift_start)
     except ValueError:
-        raise HTTPException(
-            status_code=422, detail="shift_start must be a valid ISO datetime"
-        )
+        raise HTTPException(status_code=422, detail="shift_start must be a valid ISO datetime")
     try:
         end_dt = datetime.fromisoformat(shift_end)
     except ValueError:
-        raise HTTPException(
-            status_code=422, detail="shift_end must be a valid ISO datetime"
-        )
+        raise HTTPException(status_code=422, detail="shift_end must be a valid ISO datetime")
     if start_dt >= end_dt:
-        raise HTTPException(
-            status_code=422, detail="shift_start must be before shift_end"
-        )
+        raise HTTPException(status_code=422, detail="shift_start must be before shift_end")
 
     handover = await repo.get_shift_handover(start_dt, end_dt)
     handover["text_rendering"] = repo.render_shift_handover_text(handover)
@@ -1215,10 +1188,10 @@ async def shift_handover(
 # Admin — operational maintenance endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/admin/purge-expired-incidents", dependencies=[Security(_require_admin_key)])
 async def purge_expired_incidents():
-    """
-    Triggers the Phase 1.9 retention purge: nullifies caller_location PII
+    """Triggers the Phase 1.9 retention purge: nullifies caller_location PII
     fields on incidents closed longer than INCIDENT_RETENTION_DAYS ago
     (resolved: 30 days) and stamps pii_purged_at. Safe to call repeatedly —
     already-purged incidents are skipped via the pii_purged_at IS NULL filter.
@@ -1233,8 +1206,7 @@ async def purge_expired_incidents():
 
 @app.post("/admin/reload-protocols", dependencies=[Security(_require_admin_key)])
 async def reload_protocols():
-    """
-    Hot-reload both dispatch and field protocol registries without a
+    """Hot-reload both dispatch and field protocol registries without a
     server restart. Calls load_all() on each registry in sequence. A
     broken protocol file must not crash the reload or leave the registry
     in a partially-cleared state — load_all() clears then reloads, and
@@ -1271,8 +1243,7 @@ async def reload_protocols():
 
 @app.get("/admin/protocol-status", dependencies=[Security(_require_admin_key)])
 async def protocol_status():
-    """
-    Returns active and rejected protocols for both dispatch and field
+    """Returns active and rejected protocols for both dispatch and field
     registries, including rejection reasons. Useful for confirming
     that real sign-off has been recorded in the protocol files and
     the approved protocols are actually selectable.
@@ -1314,8 +1285,7 @@ async def add_incident_field_log(incident_id: str, request: AddFieldLogRequest):
 
 @app.post("/incidents/{incident_id}/medication")
 async def add_incident_medication(incident_id: str, request: AddMedicationRequest):
-    """
-    Records a drug or item a unit carried, considered, or administered.
+    """Records a drug or item a unit carried, considered, or administered.
 
     Resolved per Phase 0.5: logging is unconditional — every relevant
     item should be logged regardless of whether it was actually given.
@@ -1350,6 +1320,7 @@ async def add_incident_medication(incident_id: str, request: AddMedicationReques
 # orientation/checklist convenience layered on top of it, not a new
 # source of truth.
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _build_field_run_state(incident_id: str, protocol_id: str) -> FieldRunState:
     protocol = field_registry.get(protocol_id)
@@ -1411,8 +1382,7 @@ async def get_field_protocol_state(incident_id: str):
 
 @app.post("/incidents/{incident_id}/field-protocol/step")
 async def mark_field_protocol_step(incident_id: str, request: MarkFieldStepRequest):
-    """
-    Marks a checklist step's status AND writes the corresponding
+    """Marks a checklist step's status AND writes the corresponding
     incident_field_log row in the same call — the field UI does not need
     to call /field-log separately for protocol-driven steps. Manual,
     protocol-independent field log entries (radio updates, free-text
@@ -1438,9 +1408,7 @@ async def mark_field_protocol_step(incident_id: str, request: MarkFieldStepReque
             ),
         )
 
-    matching_step = next(
-        (s for s in protocol.steps if s.step_id == request.step_id), None
-    )
+    matching_step = next((s for s in protocol.steps if s.step_id == request.step_id), None)
     if matching_step is None:
         raise HTTPException(
             status_code=404,
@@ -1475,10 +1443,10 @@ async def mark_field_protocol_step(incident_id: str, request: MarkFieldStepReque
 # Improvement 4.3 — Responder location updates
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/incidents/{incident_id}/unit-location")
 async def add_unit_location(incident_id: str, request: UnitLocationRequest):
-    """
-    Stores a field-unit GPS ping. The latest location is used by
+    """Stores a field-unit GPS ping. The latest location is used by
     route_facility to find the nearest hospital from the unit's
     current position rather than the caller's intake coordinates.
     """
@@ -1518,6 +1486,7 @@ async def get_latest_unit_location(incident_id: str):
 # incident_dispatch_log so Mode 1 and Mode 2 are independently
 # reconstructable and never conflated, per governance.
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.post("/incidents/{incident_id}/guidance-lookup")
 async def guidance_lookup(incident_id: str, request: GuidanceLookupRequest):
@@ -1592,6 +1561,7 @@ async def guidance_lookup(incident_id: str, request: GuidanceLookupRequest):
 # manual action is required. See each client module's docstring for the
 # interim-contract caveat (Phase 0.3/0.4 — open decisions).
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.post("/incidents/{incident_id}/dispatch-unit")
 async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
@@ -1720,9 +1690,7 @@ async def report_admission(incident_id: str, request: ReportAdmissionRequest):
     # Facility name is not returned by the report_admission contract;
     # record the incident's routed facility by ID only. A separate facility
     # lookup (route_facility) is the place a name would come from.
-    await repo.set_routed_facility(
-        incident_id, request.facility_id, request.facility_id
-    )
+    await repo.set_routed_facility(incident_id, request.facility_id, request.facility_id)
 
     if result is None:
         return {
@@ -1741,6 +1709,7 @@ async def report_admission(incident_id: str, request: ReportAdmissionRequest):
 # ─────────────────────────────────────────────────────────────────────────────
 # Serialisation helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _question_to_dict(question) -> dict:
     return {

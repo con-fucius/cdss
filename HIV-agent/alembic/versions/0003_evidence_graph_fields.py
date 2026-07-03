@@ -7,8 +7,8 @@ Create Date: 2026-06-01
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0003_evidence_graph_fields"
 down_revision = "0002_memory_foundation"

@@ -1,5 +1,4 @@
-"""
-tests/test_unit_location.py
+"""tests/test_unit_location.py.
 
 Improvement 4.3 — tests for responder location updates.
 
@@ -44,9 +43,11 @@ class TestUnitLocationEndpoints:
     def test_post_endpoint_exists(self):
         """POST /incidents/{id}/unit-location is registered."""
         from app.main import app
+
         routes = [(r.path, list(r.methods)) for r in app.routes]
         post_routes = [
-            path for path, methods in routes
+            path
+            for path, methods in routes
             if path == "/incidents/{incident_id}/unit-location" and "POST" in methods
         ]
         assert len(post_routes) == 1
@@ -54,9 +55,11 @@ class TestUnitLocationEndpoints:
     def test_get_latest_endpoint_exists(self):
         """GET /incidents/{id}/unit-location/latest is registered."""
         from app.main import app
+
         routes = [(r.path, list(r.methods)) for r in app.routes]
         get_routes = [
-            path for path, methods in routes
+            path
+            for path, methods in routes
             if path == "/incidents/{incident_id}/unit-location/latest" and "GET" in methods
         ]
         assert len(get_routes) == 1
@@ -75,10 +78,12 @@ class TestUnitLocationEndpoints:
 class TestUnitLocationRepository:
     def test_add_unit_location_is_async(self):
         import asyncio
+
         assert asyncio.iscoroutinefunction(add_unit_location)
 
     def test_get_latest_unit_location_is_async(self):
         import asyncio
+
         assert asyncio.iscoroutinefunction(get_latest_unit_location)
 
     def test_add_unit_location_signature(self):

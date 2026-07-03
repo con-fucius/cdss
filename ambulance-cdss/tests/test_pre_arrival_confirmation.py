@@ -1,5 +1,4 @@
-"""
-tests/test_pre_arrival_confirmation.py
+"""tests/test_pre_arrival_confirmation.py.
 
 Improvement 3.5 — tests for pre-arrival instruction read-back confirmation.
 
@@ -24,11 +23,12 @@ class TestConfirmPreArrivalEndpoint:
     def test_endpoint_exists(self):
         """POST /incidents/{id}/confirm-pre-arrival is registered."""
         from app.main import app
+
         routes = [(r.path, list(r.methods)) for r in app.routes]
         post_routes = [
-            path for path, methods in routes
-            if path == "/incidents/{incident_id}/confirm-pre-arrival"
-            and "POST" in methods
+            path
+            for path, methods in routes
+            if path == "/incidents/{incident_id}/confirm-pre-arrival" and "POST" in methods
         ]
         assert len(post_routes) == 1
 
@@ -58,10 +58,12 @@ class TestConfirmPreArrivalEndpoint:
 class TestConfirmPreArrivalRequest:
     def test_model_exists(self):
         from app.main import ConfirmPreArrivalRequest
+
         assert hasattr(ConfirmPreArrivalRequest, "model_fields")
 
     def test_has_required_fields(self):
         from app.main import ConfirmPreArrivalRequest
+
         field_names = set(ConfirmPreArrivalRequest.model_fields.keys())
         assert "dispatcher_id" in field_names
         assert "terminal_outcome_id" in field_names
@@ -69,6 +71,7 @@ class TestConfirmPreArrivalRequest:
 
     def test_all_instructions_read_defaults_true(self):
         from app.main import ConfirmPreArrivalRequest
+
         req = ConfirmPreArrivalRequest(
             dispatcher_id="disp-1",
             terminal_outcome_id="outcome_a",
@@ -80,18 +83,26 @@ class TestRenderAuditTextConfirmation:
     def test_confirmed_row_renders_confirmed_label(self):
         """A pre_arrival_confirmation row renders [CONFIRMED] in the export."""
         full = {
-            "incident": {"incident_id": "test", "created_at": "2026-06-25T10:00:00",
-                         "status": "closed", "chief_complaint": "test",
-                         "dispatch_protocol_id": None, "dispatch_protocol_version": None,
-                         "dispatch_protocol_snapshot": None},
+            "incident": {
+                "incident_id": "test",
+                "created_at": "2026-06-25T10:00:00",
+                "status": "closed",
+                "chief_complaint": "test",
+                "dispatch_protocol_id": None,
+                "dispatch_protocol_version": None,
+                "dispatch_protocol_snapshot": None,
+            },
             "dispatch_log": [],
             "field_log": [
                 {
                     "id": "log-1",
                     "step_id": "pre_arrival_confirmation",
                     "action_type": "pre_arrival_confirmation",
-                    "data": {"confirmed_by": "disp-1", "all_instructions_read": True,
-                             "terminal_outcome_id": "outcome_a"},
+                    "data": {
+                        "confirmed_by": "disp-1",
+                        "all_instructions_read": True,
+                        "terminal_outcome_id": "outcome_a",
+                    },
                     "recorded_by": "disp-1",
                     "timestamp": "2026-06-25T10:05:00",
                 }
@@ -107,10 +118,15 @@ class TestRenderAuditTextConfirmation:
     def test_no_confirmation_renders_not_recorded(self):
         """Without confirmation rows, the section shows 'Not recorded'."""
         full = {
-            "incident": {"incident_id": "test", "created_at": "2026-06-25T10:00:00",
-                         "status": "closed", "chief_complaint": "test",
-                         "dispatch_protocol_id": None, "dispatch_protocol_version": None,
-                         "dispatch_protocol_snapshot": None},
+            "incident": {
+                "incident_id": "test",
+                "created_at": "2026-06-25T10:00:00",
+                "status": "closed",
+                "chief_complaint": "test",
+                "dispatch_protocol_id": None,
+                "dispatch_protocol_version": None,
+                "dispatch_protocol_snapshot": None,
+            },
             "dispatch_log": [],
             "field_log": [],
             "vitals_history": [],
@@ -124,10 +140,15 @@ class TestRenderAuditTextConfirmation:
     def test_non_confirmation_field_actions_not_affected(self):
         """Regular field actions are not rendered as [CONFIRMED]."""
         full = {
-            "incident": {"incident_id": "test", "created_at": "2026-06-25T10:00:00",
-                         "status": "closed", "chief_complaint": "test",
-                         "dispatch_protocol_id": None, "dispatch_protocol_version": None,
-                         "dispatch_protocol_snapshot": None},
+            "incident": {
+                "incident_id": "test",
+                "created_at": "2026-06-25T10:00:00",
+                "status": "closed",
+                "chief_complaint": "test",
+                "dispatch_protocol_id": None,
+                "dispatch_protocol_version": None,
+                "dispatch_protocol_snapshot": None,
+            },
             "dispatch_log": [],
             "field_log": [
                 {

@@ -11,8 +11,8 @@ import argparse
 import asyncio
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -20,8 +20,8 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
-from app.ingest import DISEASE_PDF_MAP, IngestionManager
 from app.indexers.pageindex import PageIndexBuilder
+from app.ingest import DISEASE_PDF_MAP, IngestionManager
 from app.search_tools import SearchIndex
 
 

@@ -1,5 +1,4 @@
-"""
-app/handoff.py
+"""app/handoff.py.
 
 Phase 5 — handoff summary.
 
@@ -35,8 +34,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from . import repositories as repo
 
@@ -46,30 +45,30 @@ class HandoffSummary:
     incident_id: str
     status: str
     chief_complaint: str
-    priority_code: Optional[str]
-    recommended_unit_type: Optional[str]
-    assigned_unit_id: Optional[str]
-    dispatch_protocol_id: Optional[str]
-    dispatch_protocol_version: Optional[str]
-    field_protocol_id: Optional[str]
-    field_protocol_version: Optional[str]
-    routed_facility_id: Optional[str]
-    routed_facility_name: Optional[str]
+    priority_code: str | None
+    recommended_unit_type: str | None
+    assigned_unit_id: str | None
+    dispatch_protocol_id: str | None
+    dispatch_protocol_version: str | None
+    field_protocol_id: str | None
+    field_protocol_version: str | None
+    routed_facility_id: str | None
+    routed_facility_name: str | None
 
-    dispatch_qa: List[Dict[str, Any]] = field(default_factory=list)
-    field_actions: List[Dict[str, Any]] = field(default_factory=list)
-    vitals_timeline: List[Dict[str, Any]] = field(default_factory=list)
-    medications_given: List[Dict[str, Any]] = field(default_factory=list)
-    guidance_lookups_used: List[Dict[str, Any]] = field(default_factory=list)
+    dispatch_qa: list[dict[str, Any]] = field(default_factory=list)
+    field_actions: list[dict[str, Any]] = field(default_factory=list)
+    vitals_timeline: list[dict[str, Any]] = field(default_factory=list)
+    medications_given: list[dict[str, Any]] = field(default_factory=list)
+    guidance_lookups_used: list[dict[str, Any]] = field(default_factory=list)
 
-    latest_vitals: Optional[Dict[str, Any]] = None
-    highest_news2: Optional[Dict[str, Any]] = None
-    lowest_gcs: Optional[Dict[str, Any]] = None
+    latest_vitals: dict[str, Any] | None = None
+    highest_news2: dict[str, Any] | None = None
+    lowest_gcs: dict[str, Any] | None = None
 
     text_rendering: str = ""
 
 
-async def build_handoff_summary(incident_id: str) -> Optional[HandoffSummary]:
+async def build_handoff_summary(incident_id: str) -> HandoffSummary | None:
     full = await repo.get_incident_full(incident_id)
     if full is None:
         return None
@@ -107,14 +106,14 @@ async def build_handoff_summary(incident_id: str) -> Optional[HandoffSummary]:
     return summary
 
 
-def _max_by(rows: List[Dict[str, Any]], key: str) -> Optional[Dict[str, Any]]:
+def _max_by(rows: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
     candidates = [r for r in rows if r.get(key) is not None]
     if not candidates:
         return None
     return max(candidates, key=lambda r: r[key])
 
 
-def _min_by(rows: List[Dict[str, Any]], key: str) -> Optional[Dict[str, Any]]:
+def _min_by(rows: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
     candidates = [r for r in rows if r.get(key) is not None]
     if not candidates:
         return None
@@ -122,7 +121,7 @@ def _min_by(rows: List[Dict[str, Any]], key: str) -> Optional[Dict[str, Any]]:
 
 
 def _render_text(s: HandoffSummary) -> str:
-    lines: List[str] = []
+    lines: list[str] = []
 
     lines.append("AMBULANCE HANDOFF SUMMARY")
     lines.append(f"Incident: {s.incident_id}")
@@ -137,8 +136,7 @@ def _render_text(s: HandoffSummary) -> str:
         f"(v{s.dispatch_protocol_version or '-'})"
     )
     lines.append(
-        f"Field protocol: {s.field_protocol_id or 'none'} "
-        f"(v{s.field_protocol_version or '-'})"
+        f"Field protocol: {s.field_protocol_id or 'none'} (v{s.field_protocol_version or '-'})"
     )
     lines.append(
         f"Routed facility: {s.routed_facility_name or s.routed_facility_id or 'not recorded'}"
@@ -249,9 +247,9 @@ def _render_text(s: HandoffSummary) -> str:
 # Improvement 5 — Medico-legal audit export
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_audit_text(full: Dict[str, Any]) -> str:
-    """
-    Produces a complete, immutable, timestamped plain-text export of every
+
+def render_audit_text(full: dict[str, Any]) -> str:
+    """Produces a complete, immutable, timestamped plain-text export of every
     row associated with an incident, formatted for medico-legal/audit
     records. Takes the raw get_incident_full() dict directly (not a
     HandoffSummary) so it has access to every row ID and raw timestamp.
@@ -261,7 +259,7 @@ def render_audit_text(full: Dict[str, Any]) -> str:
     lets a verifier confirm the export matches the stored data.
     """
     incident = full["incident"]
-    lines: List[str] = []
+    lines: list[str] = []
 
     # Header block
     lines.append("=" * 72)
@@ -271,8 +269,10 @@ def render_audit_text(full: Dict[str, Any]) -> str:
     lines.append(f"Created at: {incident.get('created_at', 'not recorded')}")
     lines.append(f"Status: {incident.get('status', 'not recorded')}")
     lines.append(f"Chief complaint: {incident.get('chief_complaint', 'not recorded')}")
-    lines.append(f"Dispatch protocol: {incident.get('dispatch_protocol_id', 'none')} "
-                 f"v{incident.get('dispatch_protocol_version', '-')}")
+    lines.append(
+        f"Dispatch protocol: {incident.get('dispatch_protocol_id', 'none')} "
+        f"v{incident.get('dispatch_protocol_version', '-')}"
+    )
     snapshot = incident.get("dispatch_protocol_snapshot") or {}
     lines.append(f"Approved by: {snapshot.get('approved_by', 'not recorded')}")
     lines.append(f"Approved date: {snapshot.get('approved_date', 'not recorded')}")
@@ -310,8 +310,7 @@ def render_audit_text(full: Dict[str, Any]) -> str:
 
     # Pre-arrival instruction confirmation block
     confirmation_rows = [
-        a for a in full["field_log"]
-        if a.get("action_type") == "pre_arrival_confirmation"
+        a for a in full["field_log"] if a.get("action_type") == "pre_arrival_confirmation"
     ]
     if confirmation_rows:
         lines.append("-" * 72)
@@ -407,7 +406,7 @@ def render_audit_text(full: Dict[str, Any]) -> str:
 
     # Footer
     lines.append("=" * 72)
-    lines.append(f"EXPORT GENERATED AT: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"EXPORT GENERATED AT: {datetime.now(UTC).isoformat()}")
 
     # Compute SHA256 of the serialised full dict for integrity verification
     serialised = json.dumps(full, sort_keys=True, default=str, ensure_ascii=False)

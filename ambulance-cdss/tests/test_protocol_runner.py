@@ -1,5 +1,4 @@
-"""
-tests/test_protocol_runner.py
+"""tests/test_protocol_runner.py.
 
 Phase 2.7 exit criterion: "every defined branch path through each of the
 3 protocols is walked and asserted to reach a valid terminal outcome; an
@@ -24,18 +23,15 @@ their branch logic itself is correct once sign-off lands.)
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
-
 from app.protocols.registry import DISPATCH_PROTOCOLS_DIR
 from app.protocols.runner import OutOfScriptAnswerError, get_entry_question, submit_answer
 from app.protocols.schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
 
 
 def _load_protocol_ignoring_governance(filename: str) -> DispatchProtocol:
-    """
-    Parses a protocol JSON file into a DispatchProtocol WITHOUT running
+    """Parses a protocol JSON file into a DispatchProtocol WITHOUT running
     registry._parse_protocol's governance/placeholder checks — this is
     deliberate, see module docstring. Branch integrity (dangling targets,
     unknown entry question) is still a basic structural concern, not a
@@ -105,14 +101,16 @@ class TestCardiacArrestProtocolBranchCoverage:
     def test_breathing_normally_routes_to_unconscious_breathing(self, cardiac_protocol):
         """Phase 3: unconscious but breathing patients now route to a
         specific P2_UNCONSCIOUS_BREATHING outcome with recovery position
-        instructions (no dangling redirect)."""
+        instructions (no dangling redirect).
+        """
         result = _walk(cardiac_protocol, ["no", "normal", "acknowledged"])
         assert result.terminal_outcome.priority_code == "P2_UNCONSCIOUS_BREATHING"
         assert result.terminal_outcome.recommended_unit_type == "ALS_AMBULANCE"
 
     def test_has_definite_pulse_routes_to_respiratory_distress(self, cardiac_protocol):
         """Phase 3: pulse-present patients with abnormal breathing now route
-        to a specific P2_RESPIRATORY_DISTRESS outcome (no dangling redirect)."""
+        to a specific P2_RESPIRATORY_DISTRESS outcome (no dangling redirect).
+        """
         result = _walk(
             cardiac_protocol,
             ["no", "not_breathing", "definite_pulse", "acknowledged"],
@@ -135,9 +133,7 @@ class TestCardiacArrestProtocolBranchCoverage:
             ["no", "not_breathing", "no_pulse", "no"],
         )
         assert result.terminal_outcome.priority_code == "P1_CARDIAC_ARREST"
-        assert "I will guide you" in " ".join(
-            result.terminal_outcome.pre_arrival_instructions
-        )
+        assert "I will guide you" in " ".join(result.terminal_outcome.pre_arrival_instructions)
 
     def test_unsure_breathing_proceeds_to_pulse_check(self, cardiac_protocol):
         result = _walk(
@@ -167,9 +163,7 @@ class TestOutOfScriptAnswerHardFail:
         entry = get_entry_question(cardiac_protocol)
         step1 = submit_answer(cardiac_protocol, entry.question_id, "no")
         with pytest.raises(OutOfScriptAnswerError):
-            submit_answer(
-                cardiac_protocol, step1.next_question.question_id, "sort_of"
-            )
+            submit_answer(cardiac_protocol, step1.next_question.question_id, "sort_of")
 
     def test_unknown_question_id_raises_keyerror(self, cardiac_protocol):
         with pytest.raises(KeyError):

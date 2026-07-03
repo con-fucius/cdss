@@ -1,0 +1,40 @@
+# CDSS monorepo — unified ruff configuration
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # isort (import sorting)
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "SIM",  # flake8-simplify
+  "D",    # pydocstyle (docstrings)
+  "N",    # pep8-naming
+  "W",    # pycodestyle warnings
+]
+ignore = [
+  "D100",  # Missing docstring in public module
+  "D104",  # Missing docstring in public package
+  "D105",  # Missing docstring in magic method
+  "D107",  # Missing docstring in __init__
+  "D203",  # 1 blank line before class docstring (conflicts with D211)
+  "D213",  # Multi-line summary second line (conflicts with D212)
+  "E501",  # Line too long — handled by formatter
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[lint.per-file-ignores]
+"tests/*" = ["D"]          # Relax docstring rules in tests
+"*/alembic/versions/*" = ["D", "E"]  # Skip docstrings in migration files
+"*/__init__.py" = ["F401"]  # Allow unused imports in __init__
+"scripts/*" = ["D"]         # Relax docstrings in scripts

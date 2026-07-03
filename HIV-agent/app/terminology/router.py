@@ -1,5 +1,4 @@
-"""
-app/terminology/router.py
+"""app/terminology/router.py.
 
 FastAPI router for terminology admin endpoints.
 
@@ -42,7 +41,6 @@ POST /terminology/annotate-chunk
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -56,9 +54,10 @@ router = APIRouter(prefix="/terminology", tags=["terminology"])
 # Request models
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class ConceptSearchRequest(BaseModel):
     query: str
-    semantic_types: Optional[List[str]] = None
+    semantic_types: list[str] | None = None
     top_k: int = Field(default=10, ge=1, le=50)
 
 
@@ -69,12 +68,12 @@ class TerminologyAutocompleteRequest(BaseModel):
 
 class TerminologyExpandRequest(BaseModel):
     query: str
-    disease: Optional[str] = None
+    disease: str | None = None
 
 
 class LinkTextRequest(BaseModel):
     text: str
-    disease: Optional[str] = None
+    disease: str | None = None
 
 
 class AnnotateChunkRequest(BaseModel):
@@ -87,18 +86,18 @@ class AnnotateChunkRequest(BaseModel):
 # Dependency: require admin role (mirrors api.py pattern)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _require_admin(x_user_role: Optional[str] = Header(None)) -> str:
-    """
-    Reads the X-User-Role HTTP header (FastAPI injects via Header(None)).
+
+def _require_admin(x_user_role: str | None = Header(None)) -> str:
+    """Reads the X-User-Role HTTP header (FastAPI injects via Header(None)).
     Falls back to CDSS_ROLE env var for local dev without a reverse proxy.
     Raises 403 if the resolved role is not ADMIN.
     """
     import os
+
     role = (x_user_role or os.getenv("CDSS_ROLE", "CLINICIAN")).upper()
     if role != "ADMIN":
         raise HTTPException(status_code=403, detail="Admin access required")
     return role
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +111,9 @@ def _get_service():
     global _service
     if _service is None:
         import os
+
         from .service import TerminologyService
+
         qdrant_url = os.getenv("CDSS_QDRANT_URL") or None
         _service = TerminologyService(qdrant_url=qdrant_url)
     return _service
@@ -122,11 +123,13 @@ def _get_service():
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def terminology_health(role: str = Depends(_require_admin)):
     """Confirm terminology tables exist and return row counts."""
     try:
         from sqlalchemy import func, select
+
         from ..db import get_session
         from .models import (
             GuidelineChunkConcept,
@@ -139,9 +142,7 @@ async def terminology_health(role: str = Depends(_require_admin)):
             concept_count = await session.scalar(
                 select(func.count()).select_from(TerminologyConcept)
             )
-            alias_count = await session.scalar(
-                select(func.count()).select_from(TerminologyAlias)
-            )
+            alias_count = await session.scalar(select(func.count()).select_from(TerminologyAlias))
             relation_count = await session.scalar(
                 select(func.count()).select_from(TerminologyRelation)
             )
@@ -230,13 +231,12 @@ async def link_text(request: LinkTextRequest, role: str = Depends(_require_admin
 @router.get("/related/{cui}")
 async def related_concepts(
     cui: str,
-    relation_types: Optional[str] = None,
-    source_sabs: Optional[str] = None,
+    relation_types: str | None = None,
+    source_sabs: str | None = None,
     limit: int = 20,
     role: str = Depends(_require_admin),
 ):
-    """
-    Return UMLS relations for a CUI.
+    """Return UMLS relations for a CUI.
 
     relation_types: comma-separated list e.g. "RB,RN,CHD"
     source_sabs:    comma-separated list e.g. "SNOMEDCT_US,MSH"
@@ -255,13 +255,13 @@ async def related_concepts(
 
 @router.get("/coverage")
 async def coverage_report(role: str = Depends(_require_admin)):
-    """
-    Recompute and return per-disease annotation coverage.
+    """Recompute and return per-disease annotation coverage.
     Writes results to terminology_coverage table.
     """
     svc = _get_service()
     try:
         from ..search_tools import SearchIndex
+
         index = SearchIndex()
         stats = index.pageindex_stats()
         total_chunks_by_disease = stats.get("by_disease", {})
@@ -275,8 +275,7 @@ async def coverage_report(role: str = Depends(_require_admin)):
 
 @router.post("/annotate-chunk")
 async def annotate_chunk(request: AnnotateChunkRequest, role: str = Depends(_require_admin)):
-    """
-    Annotate one guideline chunk with UMLS concepts.
+    """Annotate one guideline chunk with UMLS concepts.
     Writes to guideline_chunk_concepts.
 
     This is the ingestion-time annotation entry point, also callable
@@ -290,6 +289,7 @@ async def annotate_chunk(request: AnnotateChunkRequest, role: str = Depends(_req
 
     try:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from ..db import get_session
         from .models import GuidelineChunkConcept
 
@@ -322,24 +322,29 @@ async def annotate_chunk(request: AnnotateChunkRequest, role: str = Depends(_req
         logger.error("annotate_chunk failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+
 @router.get("/chunk/{chunk_id}")
 async def get_chunk_concepts(chunk_id: str, role: str = Depends(_require_admin)):
-    """
-    Return all UMLS concepts annotated for a specific chunk (Admin X-Ray).
-    """
+    """Return all UMLS concepts annotated for a specific chunk (Admin X-Ray)."""
     try:
         from sqlalchemy import select
+
         from ..db import get_session
         from .models import GuidelineChunkConcept
-        
+
         async with get_session() as session:
             rows = (
-                await session.execute(
-                    select(GuidelineChunkConcept)
-                    .where(GuidelineChunkConcept.chunk_id == chunk_id)
+                (
+                    await session.execute(
+                        select(GuidelineChunkConcept).where(
+                            GuidelineChunkConcept.chunk_id == chunk_id
+                        )
+                    )
                 )
-            ).scalars().all()
-            
+                .scalars()
+                .all()
+            )
+
             return {
                 "chunk_id": chunk_id,
                 "concepts": [
@@ -347,10 +352,10 @@ async def get_chunk_concepts(chunk_id: str, role: str = Depends(_require_admin))
                         "cui": r.cui,
                         "preferred_name": r.preferred_name,
                         "confidence": r.confidence,
-                        "annotation_source": r.annotation_source
+                        "annotation_source": r.annotation_source,
                     }
                     for r in rows
-                ]
+                ],
             }
     except Exception as exc:
         logger.warning("get_chunk_concepts failed: %s", exc)

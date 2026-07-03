@@ -1,5 +1,4 @@
-"""
-facility-mapper/scripts/load_facilities.py
+"""facility-mapper/scripts/load_facilities.py.
 
 Idempotent CLI tool to load facility data from CSV or JSON into PostgreSQL.
 
@@ -25,7 +24,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -49,7 +48,7 @@ def _validate_coordinates(lat: float, lon: float) -> bool:
     return LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX
 
 
-def _parse_facility_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _parse_facility_row(row: dict[str, Any]) -> dict[str, Any] | None:
     """Parse a single row dict into a normalized facility dict.
 
     Returns None if the row has invalid data (missing ID, invalid coords).
@@ -101,20 +100,20 @@ def _parse_facility_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {
         "facility_id": facility_id,
         "name": name,
-        "county": row.get("county", None),
+        "county": row.get("county"),
         "level": level,
         "lat": lat,
         "lon": lon,
-        "phone": row.get("phone", row.get("telephone", None)),
+        "phone": row.get("phone", row.get("telephone")),
         "services": services,
         "is_active": is_active,
     }
 
 
-def _load_csv(source_path: str) -> List[Dict[str, Any]]:
+def _load_csv(source_path: str) -> list[dict[str, Any]]:
     """Load facilities from a CSV file. Returns list of parsed facility dicts."""
     facilities = []
-    with open(source_path, "r", encoding="utf-8") as f:
+    with open(source_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             parsed = _parse_facility_row(row)
@@ -123,9 +122,9 @@ def _load_csv(source_path: str) -> List[Dict[str, Any]]:
     return facilities
 
 
-def _load_json(source_path: str) -> List[Dict[str, Any]]:
+def _load_json(source_path: str) -> list[dict[str, Any]]:
     """Load facilities from a JSON file. Returns list of parsed facility dicts."""
-    with open(source_path, "r", encoding="utf-8") as f:
+    with open(source_path, encoding="utf-8") as f:
         data = json.load(f)
 
     # Handle nested structures: {"facilities": [...]}, {"results": [...]}, or flat list
@@ -172,7 +171,9 @@ async def load_facilities(source_path: str, source_name: str, dry_run: bool = Fa
     if dry_run:
         # Print sample for validation
         for f in facilities[:5]:
-            print(f"  {f['facility_id']}: {f['name']} (L{f['level']}, {f['lat']:.4f}, {f['lon']:.4f})")
+            print(
+                f"  {f['facility_id']}: {f['name']} (L{f['level']}, {f['lat']:.4f}, {f['lon']:.4f})"
+            )
         if len(facilities) > 5:
             print(f"  ... and {len(facilities) - 5} more")
         print(f"\nDry run complete — {len(facilities)} facilities would be upserted.")
@@ -180,9 +181,7 @@ async def load_facilities(source_path: str, source_name: str, dry_run: bool = Fa
 
     # Connect to database
     engine = create_async_engine(db_url, echo=False)
-    session_factory = async_sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     upserted = 0
     rejected = 0
@@ -250,7 +249,7 @@ async def load_facilities(source_path: str, source_name: str, dry_run: bool = Fa
 
     await engine.dispose()
 
-    print(f"\nLoad complete:")
+    print("\nLoad complete:")
     print(f"  Upserted: {upserted}")
     print(f"  Rejected: {rejected}")
     print(f"  Source:   {source_name}")
@@ -267,7 +266,8 @@ def main() -> None:
         "--source-name", required=True, help="Identifier for this data load (e.g. KMHFL_2024_02)."
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Parse and validate data without writing to the database.",
     )
     args = parser.parse_args()

@@ -1,288 +1,363 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ambulance CDSS — Field Console</title>
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-<!-- Phase 6.5: Offline mode indicator — full-width amber banner -->
-<div id="offline-banner" class="offline-banner hidden" role="alert" aria-live="assertive">
-  <span class="offline-banner__icon">⚠</span>
-  <span class="offline-banner__text">API unreachable — working offline. Actions will sync when connection is restored.</span>
-  <span class="offline-banner__queue" id="offline-queue-count"></span>
-</div>
-
-<header class="app-header">
-  <div class="app-header__title">Ambulance CDSS — Field Console</div>
-  <div class="app-header__status" id="connection-status">checking connection…</div>
-</header>
-
-<main class="app-main">
-
-  <!-- ── Incident lookup ───────────────────────────────────────────── -->
-  <section id="lookup-screen" class="screen">
-    <h1>Open incident</h1>
-    <form id="lookup-form">
-      <label for="incident-id-input">Incident ID</label>
-      <input type="text" id="incident-id-input" required placeholder="paste incident ID from dispatch">
-
-      <label for="recorder-id">Your ID <span class="required">*</span></label>
-      <input type="text" id="recorder-id" required placeholder="paramedic / unit ID">
-
-      <button type="submit" class="btn-primary">Open incident</button>
-    </form>
-    <div id="lookup-error" class="error-banner hidden"></div>
-  </section>
-
-  <!-- ── Incident workspace ────────────────────────────────────────── -->
-  <section id="workspace-screen" class="screen hidden">
-    <div class="incident-banner" id="incident-banner"></div>
-    <div class="dispatch-summary" id="dispatch-summary"></div>
-
-    <!-- Phase 6.4: Triage context from dispatch — read-only display -->
-    <div id="triage-context-card" class="triage-context-card hidden">
-      <div class="triage-context-header">
-        <span class="triage-context-label">Dispatch triage</span>
-        <span class="triage-context-sublabel">(from dispatcher — read only)</span>
-      </div>
-      <div class="triage-context-body">
-        <div class="triage-context-row">
-          <span class="triage-context-field-label">Level:</span>
-          <span id="triage-level-badge" class="triage-level-badge"></span>
-        </div>
-        <div class="triage-context-row">
-          <span class="triage-context-field-label">Diagnosis:</span>
-          <span id="triage-diagnosis" class="triage-context-value"></span>
-        </div>
-        <div class="triage-context-row">
-          <span class="triage-context-field-label">ESI:</span>
-          <span id="triage-esi" class="triage-context-value"></span>
-        </div>
-      </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ambulance CDSS — Field Console</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Phase 6.5: Offline mode indicator — full-width amber banner -->
+    <div
+      id="offline-banner"
+      class="offline-banner hidden"
+      role="alert"
+      aria-live="assertive"
+    >
+      <span class="offline-banner__icon">⚠</span>
+      <span class="offline-banner__text"
+        >API unreachable — working offline. Actions will sync when connection is
+        restored.</span
+      >
+      <span class="offline-banner__queue" id="offline-queue-count"></span>
     </div>
 
-    <nav class="tab-bar" id="tab-bar">
-      <button class="tab-btn tab-btn--active" data-tab="checklist">Checklist</button>
-      <button class="tab-btn" data-tab="vitals">Vitals</button>
-      <button class="tab-btn" data-tab="medications">Medications</button>
-      <button class="tab-btn" data-tab="log">Field log</button>
-      <button class="tab-btn" data-tab="summary">Incident summary</button>
+    <header class="app-header">
+      <div class="app-header__title">Ambulance CDSS — Field Console</div>
+      <div class="app-header__status" id="connection-status">
+        checking connection…
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- ── Incident lookup ───────────────────────────────────────────── -->
+      <section id="lookup-screen" class="screen">
+        <h1>Open incident</h1>
+        <form id="lookup-form">
+          <label for="incident-id-input">Incident ID</label>
+          <input
+            type="text"
+            id="incident-id-input"
+            required
+            placeholder="paste incident ID from dispatch"
+          />
+
+          <label for="recorder-id"
+            >Your ID <span class="required">*</span></label
+          >
+          <input
+            type="text"
+            id="recorder-id"
+            required
+            placeholder="paramedic / unit ID"
+          />
+
+          <button type="submit" class="btn-primary">Open incident</button>
+        </form>
+        <div id="lookup-error" class="error-banner hidden"></div>
+      </section>
+
+      <!-- ── Incident workspace ────────────────────────────────────────── -->
+      <section id="workspace-screen" class="screen hidden">
+        <div class="incident-banner" id="incident-banner"></div>
+        <div class="dispatch-summary" id="dispatch-summary"></div>
+
+        <!-- Phase 6.4: Triage context from dispatch — read-only display -->
+        <div id="triage-context-card" class="triage-context-card hidden">
+          <div class="triage-context-header">
+            <span class="triage-context-label">Dispatch triage</span>
+            <span class="triage-context-sublabel"
+              >(from dispatcher — read only)</span
+            >
+          </div>
+          <div class="triage-context-body">
+            <div class="triage-context-row">
+              <span class="triage-context-field-label">Level:</span>
+              <span id="triage-level-badge" class="triage-level-badge"></span>
+            </div>
+            <div class="triage-context-row">
+              <span class="triage-context-field-label">Diagnosis:</span>
+              <span id="triage-diagnosis" class="triage-context-value"></span>
+            </div>
+            <div class="triage-context-row">
+              <span class="triage-context-field-label">ESI:</span>
+              <span id="triage-esi" class="triage-context-value"></span>
+            </div>
+          </div>
+        </div>
+
+        <nav class="tab-bar" id="tab-bar">
+          <button class="tab-btn tab-btn--active" data-tab="checklist">
+            Checklist
+          </button>
+          <button class="tab-btn" data-tab="vitals">Vitals</button>
+          <button class="tab-btn" data-tab="medications">Medications</button>
+          <button class="tab-btn" data-tab="log">Field log</button>
+          <button class="tab-btn" data-tab="summary">Incident summary</button>
+        </nav>
+
+        <!-- Checklist tab -->
+        <div class="tab-panel tab-panel--active" id="tab-checklist">
+          <div id="protocol-select-card" class="card">
+            <h2>Select field protocol</h2>
+            <div class="field-row">
+              <select id="field-protocol-select">
+                <option value="">Loading protocols…</option>
+              </select>
+              <button id="select-protocol-btn" class="btn-primary">
+                Select
+              </button>
+            </div>
+            <div id="protocol-select-error" class="error-banner hidden"></div>
+          </div>
+
+          <div id="checklist-card" class="card hidden">
+            <div class="card-header">
+              <h2 id="checklist-protocol-name"></h2>
+              <span id="checklist-progress" class="progress-label"></span>
+            </div>
+            <ol class="step-list" id="step-list"></ol>
+            <div id="checklist-complete-banner" class="success-banner hidden">
+              All checklist steps addressed. This does not end the incident —
+              continue logging vitals, medications, and disposition as the call
+              proceeds.
+            </div>
+          </div>
+        </div>
+
+        <!-- Vitals tab -->
+        <div class="tab-panel" id="tab-vitals">
+          <div id="vitals-trend-alert" class="error-banner hidden"></div>
+          <div id="gcs-trend-alert" class="error-banner hidden"></div>
+          <div
+            id="news2-missing-fields-banner"
+            class="info-banner hidden"
+          ></div>
+          <div class="card">
+            <h2>Record vitals</h2>
+            <!-- Phase 6.3: Vitals pre-population indicator -->
+            <div id="vitals-prefill-banner" class="info-banner hidden">
+              Pre-filled from last recording at
+              <span id="vitals-prefill-timestamp"></span>
+            </div>
+            <form id="vitals-form">
+              <div class="field-grid">
+                <div>
+                  <label>Respiratory rate (/min)</label>
+                  <input type="number" id="v-rr" />
+                </div>
+                <div>
+                  <label>SpO2 (%)</label>
+                  <input type="number" id="v-spo2" />
+                </div>
+                <div>
+                  <label>SpO2 scale</label>
+                  <select id="v-spo2-scale">
+                    <option value="">—</option>
+                    <option value="1">Scale 1</option>
+                    <option value="2">Scale 2 (COPD)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>On supplemental O2</label>
+                  <select id="v-supp-o2">
+                    <option value="">—</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Systolic BP</label>
+                  <input type="number" id="v-bp-sys" />
+                </div>
+                <div>
+                  <label>Diastolic BP</label>
+                  <input type="number" id="v-bp-dia" />
+                </div>
+                <div>
+                  <label>Heart rate (bpm)</label>
+                  <input type="number" id="v-hr" />
+                </div>
+                <div>
+                  <label>Consciousness (AVPU)</label>
+                  <select id="v-consciousness">
+                    <option value="">—</option>
+                    <option value="A">Alert</option>
+                    <option value="V">Voice</option>
+                    <option value="P">Pain</option>
+                    <option value="U">Unresponsive</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Temperature (°C)</label>
+                  <input type="number" step="0.1" id="v-temp" />
+                </div>
+                <div>
+                  <label>GCS eye (1-4)</label>
+                  <input type="number" min="1" max="4" id="v-gcs-eye" />
+                </div>
+                <div>
+                  <label>GCS verbal (1-5)</label>
+                  <input type="number" min="1" max="5" id="v-gcs-verbal" />
+                </div>
+                <div>
+                  <label>GCS motor (1-6)</label>
+                  <input type="number" min="1" max="6" id="v-gcs-motor" />
+                </div>
+              </div>
+              <button type="submit" class="btn-primary">Record vitals</button>
+            </form>
+            <div id="vitals-error" class="error-banner hidden"></div>
+          </div>
+
+          <div class="card">
+            <h2>Vitals history</h2>
+            <div id="vitals-history" class="record-list"></div>
+          </div>
+        </div>
+
+        <!-- Medications tab -->
+        <div class="tab-panel" id="tab-medications">
+          <div class="card">
+            <h2>Record medication given</h2>
+            <div id="formulary-unavailable" class="warning-banner hidden">
+              Medication logging is not available — the prehospital formulary
+              has not been configured on this server (Phase 0.5, open decision).
+              Contact your system administrator.
+            </div>
+            <form id="medication-form">
+              <div class="field-row">
+                <div>
+                  <label>Drug name (select suggestion or type)</label>
+                  <select id="m-drug">
+                    <option value="">Loading suggestions…</option>
+                  </select>
+                  <input
+                    type="text"
+                    id="m-drug-text"
+                    placeholder="Or type drug / item name"
+                    style="margin-top: 6px"
+                  />
+                </div>
+                <input type="text" id="m-dose" placeholder="Dose (or N/A)" />
+                <input type="text" id="m-route" placeholder="Route (or N/A)" />
+              </div>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  font-weight: 400;
+                  color: var(--text);
+                "
+              >
+                <input type="checkbox" id="m-not-administered" />
+                Not administered (carried / considered / declined)
+              </label>
+              <button
+                type="submit"
+                class="btn-primary"
+                id="medication-submit-btn"
+              >
+                Record medication / item
+              </button>
+            </form>
+            <div id="medication-error" class="error-banner hidden"></div>
+          </div>
+          <div class="card">
+            <h2>Medications given</h2>
+            <div id="medication-history" class="record-list"></div>
+          </div>
+        </div>
+
+        <!-- Field log tab -->
+        <div class="tab-panel" id="tab-log">
+          <div class="card">
+            <h2>Add field log entry</h2>
+            <form id="field-log-form">
+              <label>Action type</label>
+              <select id="fl-action-type" required>
+                <option value="assessment">Assessment</option>
+                <option value="intervention">Intervention</option>
+                <option value="vitals">Vitals</option>
+                <option value="disposition">Disposition</option>
+              </select>
+              <label>Note</label>
+              <input
+                type="text"
+                id="fl-note"
+                placeholder="free text note"
+                required
+              />
+              <button type="submit" class="btn-primary">Add entry</button>
+            </form>
+            <div id="field-log-error" class="error-banner hidden"></div>
+          </div>
+          <div class="card">
+            <h2>Field log</h2>
+            <div id="field-log-history" class="record-list"></div>
+          </div>
+        </div>
+
+        <!-- Summary tab -->
+        <div class="tab-panel" id="tab-summary">
+          <div class="card">
+            <div class="card-header">
+              <h2>Full incident record</h2>
+              <button id="refresh-summary-btn" class="btn-secondary">
+                Refresh
+              </button>
+            </div>
+            <pre id="incident-summary-json" class="json-view"></pre>
+          </div>
+        </div>
+
+        <button id="close-incident-btn" class="btn-tertiary">
+          Close incident, return to lookup
+        </button>
+      </section>
+    </main>
+
+    <!-- Mobile bottom navigation bar (hidden on desktop via CSS) -->
+    <nav class="mobile-nav" id="mobile-nav">
+      <button
+        class="mobile-nav__btn mobile-nav__btn--active"
+        data-section="checklist"
+        onclick="scrollToSection('tab-checklist')"
+      >
+        <span>Checklist</span>
+      </button>
+      <button
+        class="mobile-nav__btn"
+        data-section="vitals"
+        onclick="scrollToSection('tab-vitals')"
+      >
+        <span>Vitals</span>
+      </button>
+      <button
+        class="mobile-nav__btn"
+        data-section="medications"
+        onclick="scrollToSection('tab-medications')"
+      >
+        <span>Meds</span>
+      </button>
+      <button
+        class="mobile-nav__btn"
+        data-section="log"
+        onclick="scrollToSection('tab-log')"
+      >
+        <span>Log</span>
+      </button>
+      <button
+        class="mobile-nav__btn"
+        data-section="summary"
+        onclick="scrollToSection('tab-summary')"
+      >
+        <span>Summary</span>
+      </button>
     </nav>
 
-    <!-- Checklist tab -->
-    <div class="tab-panel tab-panel--active" id="tab-checklist">
-
-      <div id="protocol-select-card" class="card">
-        <h2>Select field protocol</h2>
-        <div class="field-row">
-          <select id="field-protocol-select">
-            <option value="">Loading protocols…</option>
-          </select>
-          <button id="select-protocol-btn" class="btn-primary">Select</button>
-        </div>
-        <div id="protocol-select-error" class="error-banner hidden"></div>
-      </div>
-
-      <div id="checklist-card" class="card hidden">
-        <div class="card-header">
-          <h2 id="checklist-protocol-name"></h2>
-          <span id="checklist-progress" class="progress-label"></span>
-        </div>
-        <ol class="step-list" id="step-list"></ol>
-        <div id="checklist-complete-banner" class="success-banner hidden">
-          All checklist steps addressed. This does not end the incident —
-          continue logging vitals, medications, and disposition as the
-          call proceeds.
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Vitals tab -->
-    <div class="tab-panel" id="tab-vitals">
-      <div id="vitals-trend-alert" class="error-banner hidden"></div>
-      <div id="gcs-trend-alert" class="error-banner hidden"></div>
-      <div id="news2-missing-fields-banner" class="info-banner hidden"></div>
-      <div class="card">
-        <h2>Record vitals</h2>
-        <!-- Phase 6.3: Vitals pre-population indicator -->
-        <div id="vitals-prefill-banner" class="info-banner hidden">
-          Pre-filled from last recording at <span id="vitals-prefill-timestamp"></span>
-        </div>
-        <form id="vitals-form">
-          <div class="field-grid">
-            <div>
-              <label>Respiratory rate (/min)</label>
-              <input type="number" id="v-rr">
-            </div>
-            <div>
-              <label>SpO2 (%)</label>
-              <input type="number" id="v-spo2">
-            </div>
-            <div>
-              <label>SpO2 scale</label>
-              <select id="v-spo2-scale">
-                <option value="">—</option>
-                <option value="1">Scale 1</option>
-                <option value="2">Scale 2 (COPD)</option>
-              </select>
-            </div>
-            <div>
-              <label>On supplemental O2</label>
-              <select id="v-supp-o2">
-                <option value="">—</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </div>
-            <div>
-              <label>Systolic BP</label>
-              <input type="number" id="v-bp-sys">
-            </div>
-            <div>
-              <label>Diastolic BP</label>
-              <input type="number" id="v-bp-dia">
-            </div>
-            <div>
-              <label>Heart rate (bpm)</label>
-              <input type="number" id="v-hr">
-            </div>
-            <div>
-              <label>Consciousness (AVPU)</label>
-              <select id="v-consciousness">
-                <option value="">—</option>
-                <option value="A">Alert</option>
-                <option value="V">Voice</option>
-                <option value="P">Pain</option>
-                <option value="U">Unresponsive</option>
-              </select>
-            </div>
-            <div>
-              <label>Temperature (°C)</label>
-              <input type="number" step="0.1" id="v-temp">
-            </div>
-            <div>
-              <label>GCS eye (1-4)</label>
-              <input type="number" min="1" max="4" id="v-gcs-eye">
-            </div>
-            <div>
-              <label>GCS verbal (1-5)</label>
-              <input type="number" min="1" max="5" id="v-gcs-verbal">
-            </div>
-            <div>
-              <label>GCS motor (1-6)</label>
-              <input type="number" min="1" max="6" id="v-gcs-motor">
-            </div>
-          </div>
-          <button type="submit" class="btn-primary">Record vitals</button>
-        </form>
-        <div id="vitals-error" class="error-banner hidden"></div>
-      </div>
-
-      <div class="card">
-        <h2>Vitals history</h2>
-        <div id="vitals-history" class="record-list"></div>
-      </div>
-    </div>
-
-    <!-- Medications tab -->
-    <div class="tab-panel" id="tab-medications">
-      <div class="card">
-        <h2>Record medication given</h2>
-        <div id="formulary-unavailable" class="warning-banner hidden">
-          Medication logging is not available — the prehospital formulary
-          has not been configured on this server (Phase 0.5, open decision).
-          Contact your system administrator.
-        </div>
-        <form id="medication-form">
-          <div class="field-row">
-            <div>
-              <label>Drug name (select suggestion or type)</label>
-              <select id="m-drug">
-                <option value="">Loading suggestions…</option>
-              </select>
-              <input type="text" id="m-drug-text" placeholder="Or type drug / item name" style="margin-top:6px">
-            </div>
-            <input type="text" id="m-dose" placeholder="Dose (or N/A)">
-            <input type="text" id="m-route" placeholder="Route (or N/A)">
-          </div>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:400;color:var(--text)">
-            <input type="checkbox" id="m-not-administered">
-            Not administered (carried / considered / declined)
-          </label>
-          <button type="submit" class="btn-primary" id="medication-submit-btn">Record medication / item</button>
-        </form>
-        <div id="medication-error" class="error-banner hidden"></div>
-      </div>
-      <div class="card">
-        <h2>Medications given</h2>
-        <div id="medication-history" class="record-list"></div>
-      </div>
-    </div>
-
-    <!-- Field log tab -->
-    <div class="tab-panel" id="tab-log">
-      <div class="card">
-        <h2>Add field log entry</h2>
-        <form id="field-log-form">
-          <label>Action type</label>
-          <select id="fl-action-type" required>
-            <option value="assessment">Assessment</option>
-            <option value="intervention">Intervention</option>
-            <option value="vitals">Vitals</option>
-            <option value="disposition">Disposition</option>
-          </select>
-          <label>Note</label>
-          <input type="text" id="fl-note" placeholder="free text note" required>
-          <button type="submit" class="btn-primary">Add entry</button>
-        </form>
-        <div id="field-log-error" class="error-banner hidden"></div>
-      </div>
-      <div class="card">
-        <h2>Field log</h2>
-        <div id="field-log-history" class="record-list"></div>
-      </div>
-    </div>
-
-    <!-- Summary tab -->
-    <div class="tab-panel" id="tab-summary">
-      <div class="card">
-        <div class="card-header">
-          <h2>Full incident record</h2>
-          <button id="refresh-summary-btn" class="btn-secondary">Refresh</button>
-        </div>
-        <pre id="incident-summary-json" class="json-view"></pre>
-      </div>
-    </div>
-
-    <button id="close-incident-btn" class="btn-tertiary">Close incident, return to lookup</button>
-  </section>
-
-</main>
-
-<!-- Mobile bottom navigation bar (hidden on desktop via CSS) -->
-<nav class="mobile-nav" id="mobile-nav">
-  <button class="mobile-nav__btn mobile-nav__btn--active" data-section="checklist" onclick="scrollToSection('tab-checklist')">
-    <span>Checklist</span>
-  </button>
-  <button class="mobile-nav__btn" data-section="vitals" onclick="scrollToSection('tab-vitals')">
-    <span>Vitals</span>
-  </button>
-  <button class="mobile-nav__btn" data-section="medications" onclick="scrollToSection('tab-medications')">
-    <span>Meds</span>
-  </button>
-  <button class="mobile-nav__btn" data-section="log" onclick="scrollToSection('tab-log')">
-    <span>Log</span>
-  </button>
-  <button class="mobile-nav__btn" data-section="summary" onclick="scrollToSection('tab-summary')">
-    <span>Summary</span>
-  </button>
-</nav>
-
-<script src="config.js"></script>
-<script src="app.js"></script>
-</body>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>

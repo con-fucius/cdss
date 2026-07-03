@@ -1,11 +1,10 @@
-"""
-DEPRECATED emergency repair for one Windows FastEmbed cache failure.
+"""DEPRECATED emergency repair for one Windows FastEmbed cache failure.
 
 Normal development and Docker runtime use the default Hugging Face/FastEmbed
 cache locations. Do not run this as part of setup unless you have confirmed a
 local cache corruption matching the historical Windows symlink issue.
 """
-import os
+
 import shutil
 import sys
 from pathlib import Path
@@ -28,8 +27,15 @@ if not snapshots:
 snapshot_dir = snapshots[0]
 print(f"Snapshot dir: {snapshot_dir}", flush=True)
 
-EXPECTED = ["config.json", "model_optimized.onnx", "special_tokens_map.json",
-            "tokenizer.json", "tokenizer_config.json", "vocab.txt", "ort_config.json"]
+EXPECTED = [
+    "config.json",
+    "model_optimized.onnx",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.txt",
+    "ort_config.json",
+]
 
 copied = 0
 for fname in EXPECTED:

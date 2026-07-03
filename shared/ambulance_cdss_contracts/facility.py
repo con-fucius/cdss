@@ -1,5 +1,4 @@
-"""
-shared/contracts/facility.py
+"""shared/contracts/facility.py.
 
 Pydantic v2 schemas for the Facility Mapper service HTTP API.
 
@@ -9,9 +8,6 @@ any change here must be reflected in both services simultaneously.
 """
 
 from __future__ import annotations
-
-from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -57,7 +53,7 @@ class FacilitySearchRequest(BaseModel):
             "Level 3 has basic ER with limited surgery."
         ),
     )
-    required_services: Optional[List[str]] = Field(
+    required_services: list[str] | None = Field(
         default=None,
         description=(
             "Services the facility must provide, e.g. ['icu', 'cardiac', "
@@ -104,7 +100,7 @@ class FacilitySearchByLocationRequest(BaseModel):
         le=6,
         description="Minimum facility level (Kenya KEPH levels 1–6).",
     )
-    required_services: Optional[List[str]] = Field(
+    required_services: list[str] | None = Field(
         default=None,
         description="Services the facility must provide.",
     )
@@ -131,7 +127,7 @@ class FacilityResult(BaseModel):
     name: str = Field(
         description="Official facility name as registered with the county health ministry."
     )
-    county: Optional[str] = Field(
+    county: str | None = Field(
         default=None,
         description="County where the facility is located.",
     )
@@ -141,24 +137,19 @@ class FacilityResult(BaseModel):
             "Level 4+ = comprehensive care, Level 3 = basic ER."
         ),
     )
-    lat: float = Field(
-        description="Facility latitude coordinate."
-    )
-    lon: float = Field(
-        description="Facility longitude coordinate."
-    )
-    phone: Optional[str] = Field(
+    lat: float = Field(description="Facility latitude coordinate.")
+    lon: float = Field(description="Facility longitude coordinate.")
+    phone: str | None = Field(
         default=None,
         description=(
             "Facility phone number for pre-arrival notification. "
             "Used by the dispatcher to call ahead."
         ),
     )
-    services: List[str] = Field(
+    services: list[str] = Field(
         default_factory=list,
         description=(
-            "Services available at this facility, e.g. "
-            "['surgery', 'blood_bank', 'icu', 'ct_scan']."
+            "Services available at this facility, e.g. ['surgery', 'blood_bank', 'icu', 'ct_scan']."
         ),
     )
     distance_km: float = Field(
@@ -173,7 +164,7 @@ class FacilityResult(BaseModel):
             "(distance_km / AMBULANCE_SPEED_KMH) * 60."
         ),
     )
-    capacity_status: Optional[str] = Field(
+    capacity_status: str | None = Field(
         default=None,
         description=(
             "Current capacity status if available from the facility's "
@@ -191,7 +182,7 @@ class FacilitySearchResponse(BaseModel):
     not hidden behind a 'last updated' field nobody checks.
     """
 
-    facilities: List[FacilityResult] = Field(
+    facilities: list[FacilityResult] = Field(
         description=(
             "Nearest facilities matching the search criteria, sorted by "
             "distance ascending. Empty list when no facilities are within "
@@ -201,14 +192,14 @@ class FacilitySearchResponse(BaseModel):
     total_found: int = Field(
         description="Total number of facilities matching the query before max_results limit."
     )
-    data_as_of: Optional[str] = Field(
+    data_as_of: str | None = Field(
         default=None,
         description=(
             "Timestamp of the most recent facility data import. "
             "Dispatchers must be able to see how current the data is."
         ),
     )
-    geocoded_location: Optional[str] = Field(
+    geocoded_location: str | None = Field(
         default=None,
         description=(
             "The geocoded coordinates when the search was initiated "
@@ -225,10 +216,8 @@ class FacilityDetailResponse(BaseModel):
     available services and contact information.
     """
 
-    facility: FacilityResult = Field(
-        description="Full facility details."
-    )
-    data_as_of: Optional[str] = Field(
+    facility: FacilityResult = Field(description="Full facility details.")
+    data_as_of: str | None = Field(
         default=None,
         description="Timestamp of the most recent facility data import.",
     )
@@ -243,17 +232,15 @@ class FacilityHealthResponse(BaseModel):
     freshness.
     """
 
-    status: str = Field(
-        description="Service health status: 'ok' or 'degraded'."
-    )
+    status: str = Field(description="Service health status: 'ok' or 'degraded'.")
     facility_count: int = Field(
         description="Number of active facilities loaded in the BallTree index."
     )
-    data_as_of: Optional[str] = Field(
+    data_as_of: str | None = Field(
         default=None,
         description="Identifier of the most recent data source loaded (e.g. 'KMHFL_2024_02').",
     )
-    last_loaded_at: Optional[str] = Field(
+    last_loaded_at: str | None = Field(
         default=None,
         description="ISO timestamp of the most recent successful data load.",
     )
@@ -271,17 +258,11 @@ class DataImportRecord(BaseModel):
     """
 
     source: str = Field(
-        description=(
-            "Identifier of the data source loaded, e.g. 'KMHFL_2024_02'."
-        ),
+        description=("Identifier of the data source loaded, e.g. 'KMHFL_2024_02'."),
     )
-    record_count: int = Field(
-        description="Number of facility records loaded in this import."
-    )
-    loaded_at: str = Field(
-        description="ISO timestamp of when this import was completed."
-    )
-    loaded_by: Optional[str] = Field(
+    record_count: int = Field(description="Number of facility records loaded in this import.")
+    loaded_at: str = Field(description="ISO timestamp of when this import was completed.")
+    loaded_by: str | None = Field(
         default=None,
         description="Identifier of who or what triggered this data load.",
     )
@@ -294,10 +275,10 @@ class DataCurrencyResponse(BaseModel):
     verify data freshness and audit load operations.
     """
 
-    imports: List[DataImportRecord] = Field(
+    imports: list[DataImportRecord] = Field(
         description="Chronological list of data import operations."
     )
-    current_source: Optional[str] = Field(
+    current_source: str | None = Field(
         default=None,
         description="The currently active data source identifier.",
     )

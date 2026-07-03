@@ -1,5 +1,4 @@
-"""
-app/terminology/service.py
+"""app/terminology/service.py.
 
 TerminologyService — the single stable interface for all UMLS operations.
 
@@ -11,7 +10,7 @@ Current implementation tier: Postgres-only, no Qdrant dependency.
 Qdrant concept-vector search is added in the next tier once the ETL
 has been run and embeddings exist.  The interface is stable either way.
 
-Methods
+Methods:
 -------
 search_concepts(query, semantic_types, top_k)
     Full-text search over preferred_name + alias table.
@@ -43,23 +42,28 @@ import asyncio
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Relation types we surface — others are suppressed as clinically noisy
 _CLINICAL_RELATION_TYPES = {
-    "RB",   # broader
-    "RN",   # narrower
+    "RB",  # broader
+    "RN",  # narrower
     "CHD",  # child
     "PAR",  # parent
-    "RO",   # other
+    "RO",  # other
     "SIB",  # sibling
 }
 
 # Source trust order (index = priority; lower = higher trust)
 _SOURCE_TRUST_ORDER = [
-    "SNOMEDCT_US", "MSH", "ICD10CM", "ICD10", "RXNORM", "CPT",
+    "SNOMEDCT_US",
+    "MSH",
+    "ICD10CM",
+    "ICD10",
+    "RXNORM",
+    "CPT",
 ]
 
 _TERMINOLOGY_EXPANSION_TIMEOUT_SECONDS = float(
@@ -69,7 +73,7 @@ _TERMINOLOGY_EXPANSION_TIMEOUT_SECONDS = float(
 
 async def expand_query_with_terminology(
     query: str,
-    disease: Optional[str] = None,
+    disease: str | None = None,
 ) -> str:
     """Return query expanded with matched UMLS preferred names, or the raw query."""
     expanded, _ = await expand_query_with_terminology_details(query, disease)
@@ -78,8 +82,8 @@ async def expand_query_with_terminology(
 
 async def expand_query_with_terminology_details(
     query: str,
-    disease: Optional[str] = None,
-) -> Tuple[str, List[Dict[str, Any]]]:
+    disease: str | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
     """Link terminology and return the expanded query plus matched concepts."""
     if not query or not query.strip():
         return query, []
@@ -103,7 +107,7 @@ async def expand_query_with_terminology_details(
     return expanded, concepts
 
 
-def _source_rank(sab: Optional[str]) -> int:
+def _source_rank(sab: str | None) -> int:
     try:
         return _SOURCE_TRUST_ORDER.index(sab or "")
     except ValueError:
@@ -111,16 +115,14 @@ def _source_rank(sab: Optional[str]) -> int:
 
 
 class TerminologyService:
-    """
-    Stable public interface for all UMLS terminology operations.
+    """Stable public interface for all UMLS terminology operations.
 
     Instantiate once and reuse; the Postgres session is acquired
     per-call so this is safe in an async FastAPI context.
     """
 
-    def __init__(self, qdrant_url: Optional[str] = None) -> None:
-        """
-        qdrant_url: optional Qdrant endpoint for concept-vector search.
+    def __init__(self, qdrant_url: str | None = None) -> None:
+        """qdrant_url: optional Qdrant endpoint for concept-vector search.
         When None (default), all lookups use Postgres only.
         The Qdrant path activates automatically once embeddings exist.
         """
@@ -134,11 +136,10 @@ class TerminologyService:
     async def search_concepts(
         self,
         query: str,
-        semantic_types: Optional[List[str]] = None,
+        semantic_types: list[str] | None = None,
         top_k: int = 10,
-    ) -> List[Dict[str, Any]]:
-        """
-        Search UMLS concepts by preferred name or alias.
+    ) -> list[dict[str, Any]]:
+        """Search UMLS concepts by preferred name or alias.
 
         semantic_types: list of TUI codes (e.g. "T047") or plain names
                         (e.g. "Disease or Syndrome").
@@ -158,10 +159,9 @@ class TerminologyService:
     async def link_text(
         self,
         text: str,
-        disease: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Find UMLS concepts mentioned in a text string.
+        disease: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Find UMLS concepts mentioned in a text string.
 
         Uses a two-step process:
         1. Tokenise text into candidate spans (noun-phrase heuristic).
@@ -178,7 +178,7 @@ class TerminologyService:
         if not text or not text.strip():
             return []
         candidates = _extract_candidate_spans(text)
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         seen_cuis: set = set()
 
         for span in candidates:
@@ -199,10 +199,8 @@ class TerminologyService:
         results.sort(key=lambda r: r.get("confidence", 0.0), reverse=True)
         return results[:20]
 
-    async def get_concept(self, cui: str) -> Optional[Dict[str, Any]]:
-        """
-        Exact CUI lookup.  Returns None if not found.
-        """
+    async def get_concept(self, cui: str) -> dict[str, Any] | None:
+        """Exact CUI lookup.  Returns None if not found."""
         if not cui or not cui.strip():
             return None
         try:
@@ -214,12 +212,11 @@ class TerminologyService:
     async def related_concepts(
         self,
         cui: str,
-        relation_types: Optional[List[str]] = None,
-        source_sabs: Optional[List[str]] = None,
+        relation_types: list[str] | None = None,
+        source_sabs: list[str] | None = None,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
-        """
-        Return UMLS relations for a CUI.
+    ) -> list[dict[str, Any]]:
+        """Return UMLS relations for a CUI.
 
         relation_types: subset of _CLINICAL_RELATION_TYPES to include.
                         Defaults to all clinical relation types.
@@ -239,9 +236,10 @@ class TerminologyService:
             logger.warning("related_concepts(%s) failed: %s", cui, exc)
             return []
 
-    async def coverage_report(self, total_chunks_by_disease: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
-        """
-        Compute per-disease annotation coverage and persist to
+    async def coverage_report(
+        self, total_chunks_by_disease: dict[str, int] | None = None
+    ) -> list[dict[str, Any]]:
+        """Compute per-disease annotation coverage and persist to
         terminology_coverage table.
 
         Returns list of {disease, total_chunks, annotated_chunks,
@@ -260,9 +258,9 @@ class TerminologyService:
     async def _pg_search_concepts(
         self,
         query: str,
-        semantic_types: Optional[List[str]],
+        semantic_types: list[str] | None,
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         from sqlalchemy import func, or_, select
 
         from ..db import get_session
@@ -276,9 +274,7 @@ class TerminologyService:
             stmt = (
                 select(
                     TerminologyConcept,
-                    func.similarity(
-                        func.lower(TerminologyConcept.preferred_name), q
-                    ).label("sim"),
+                    func.similarity(func.lower(TerminologyConcept.preferred_name), q).label("sim"),
                 )
                 .outerjoin(
                     TerminologyAlias,
@@ -290,11 +286,7 @@ class TerminologyService:
                         func.lower(TerminologyAlias.alias).contains(q),
                     )
                 )
-                .order_by(
-                    func.similarity(
-                        func.lower(TerminologyConcept.preferred_name), q
-                    ).desc()
-                )
+                .order_by(func.similarity(func.lower(TerminologyConcept.preferred_name), q).desc())
                 .limit(top_k * 5)  # over-fetch before de-dupe and semantic filter
             )
 
@@ -330,8 +322,8 @@ class TerminologyService:
     async def _alias_lookup(
         self,
         span: str,
-        disease: Optional[str],
-    ) -> List[Dict[str, Any]]:
+        disease: str | None,
+    ) -> list[dict[str, Any]]:
         from sqlalchemy import func, select
 
         from ..db import get_session
@@ -364,7 +356,7 @@ class TerminologyService:
             for concept, sab in rows
         ]
 
-    async def _pg_get_concept(self, cui: str) -> Optional[Dict[str, Any]]:
+    async def _pg_get_concept(self, cui: str) -> dict[str, Any] | None:
         from sqlalchemy import select
 
         from ..db import get_session
@@ -372,9 +364,7 @@ class TerminologyService:
 
         async with get_session() as session:
             concept = await session.scalar(
-                select(TerminologyConcept).where(
-                    TerminologyConcept.cui == cui
-                )
+                select(TerminologyConcept).where(TerminologyConcept.cui == cui)
             )
         if concept is None:
             return None
@@ -392,10 +382,10 @@ class TerminologyService:
     async def _pg_related_concepts(
         self,
         cui: str,
-        relation_types: List[str],
-        source_sabs: Optional[List[str]],
+        relation_types: list[str],
+        source_sabs: list[str] | None,
         limit: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         from sqlalchemy import select
 
         from ..db import get_session
@@ -411,9 +401,7 @@ class TerminologyService:
                 .limit(limit * 2)
             )
             if source_sabs:
-                stmt = stmt.where(
-                    TerminologyRelation.source_sab.in_(source_sabs)
-                )
+                stmt = stmt.where(TerminologyRelation.source_sab.in_(source_sabs))
             rows = (await session.scalars(stmt)).all()
 
         results = [
@@ -430,7 +418,9 @@ class TerminologyService:
         results.sort(key=lambda r: r["trust_rank"])
         return results[:limit]
 
-    async def _compute_coverage(self, total_chunks_by_disease: Dict[str, int]) -> List[Dict[str, Any]]:
+    async def _compute_coverage(
+        self, total_chunks_by_disease: dict[str, int]
+    ) -> list[dict[str, Any]]:
         from sqlalchemy import func, select
         from sqlalchemy.dialects.postgresql import insert
 
@@ -442,12 +432,10 @@ class TerminologyService:
                 await session.execute(
                     select(
                         GuidelineChunkConcept.disease,
-                        func.count(
-                            func.distinct(GuidelineChunkConcept.chunk_id)
-                        ).label("annotated_chunks"),
-                        func.count(
-                            func.distinct(GuidelineChunkConcept.cui)
-                        ).label("unique_cuis"),
+                        func.count(func.distinct(GuidelineChunkConcept.chunk_id)).label(
+                            "annotated_chunks"
+                        ),
+                        func.count(func.distinct(GuidelineChunkConcept.cui)).label("unique_cuis"),
                     ).group_by(GuidelineChunkConcept.disease)
                 )
             ).all()
@@ -456,9 +444,9 @@ class TerminologyService:
             for disease, annotated, unique in rows:
                 # Get real total_chunks if passed, else fallback to annotated
                 total_chunks = total_chunks_by_disease.get(disease, annotated)
-                total_chunks = max(total_chunks, annotated) # ensure at least annotated count
+                total_chunks = max(total_chunks, annotated)  # ensure at least annotated count
                 pct = (annotated / total_chunks * 100.0) if total_chunks > 0 else 0.0
-                
+
                 stmt = insert(TerminologyCoverage).values(
                     disease=disease,
                     total_chunks=total_chunks,
@@ -501,21 +489,18 @@ class TerminologyService:
             self._qdrant_client = QdrantClient(url=self._qdrant_url)
             return self._qdrant_client
         except ImportError:
-            logger.warning(
-                "qdrant_client not installed; concept-vector search unavailable"
-            )
+            logger.warning("qdrant_client not installed; concept-vector search unavailable")
             return None
 
     async def _qdrant_link(
         self,
         text: str,
-        disease: Optional[str],
+        disease: str | None,
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Embed text and search Qdrant for nearest concepts."""
-        import os
-
         import asyncio
+        import os
 
         client = self._get_qdrant_client()
         if client is None:
@@ -525,12 +510,11 @@ class TerminologyService:
 
         try:
             from fastembed import TextEmbedding
+
             from ..config import get_embedding_model_name
 
             model = TextEmbedding(model_name=get_embedding_model_name())
-            vector = await asyncio.to_thread(
-                lambda: list(model.embed([text]))[0].tolist()
-            )
+            vector = await asyncio.to_thread(lambda: list(model.embed([text]))[0].tolist())
             results = await asyncio.to_thread(
                 lambda: client.search(
                     collection_name=collection,
@@ -563,16 +547,47 @@ _MIN_SPAN_LEN = 3
 _MAX_SPAN_LEN = 80
 # Stop words that should not be looked up as standalone concepts
 _STOP_WORDS = {
-    "the", "a", "an", "and", "or", "of", "in", "for", "to", "with",
-    "is", "are", "was", "be", "been", "by", "at", "on", "from",
-    "this", "that", "it", "its", "as", "if", "not", "no", "but",
-    "all", "any", "use", "used", "per", "ml", "mg", "kg",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "in",
+    "for",
+    "to",
+    "with",
+    "is",
+    "are",
+    "was",
+    "be",
+    "been",
+    "by",
+    "at",
+    "on",
+    "from",
+    "this",
+    "that",
+    "it",
+    "its",
+    "as",
+    "if",
+    "not",
+    "no",
+    "but",
+    "all",
+    "any",
+    "use",
+    "used",
+    "per",
+    "ml",
+    "mg",
+    "kg",
 }
 
 
-def _extract_candidate_spans(text: str) -> List[str]:
-    """
-    Heuristic noun-phrase span extractor — no NLP library required.
+def _extract_candidate_spans(text: str) -> list[str]:
+    """Heuristic noun-phrase span extractor — no NLP library required.
 
     Generates candidates from:
     1. Every token of 3+ characters that is not a stop word or pure number.
@@ -584,7 +599,7 @@ def _extract_candidate_spans(text: str) -> List[str]:
     tokens = re.findall(r"[A-Za-z][A-Za-z0-9\-']{2,}", text)
 
     seen: set = set()
-    candidates: List[str] = []
+    candidates: list[str] = []
 
     def _add(span: str) -> None:
         s = span.strip()
@@ -597,10 +612,7 @@ def _extract_candidate_spans(text: str) -> List[str]:
             _add(tok)
 
     for i in range(len(tokens) - 1):
-        if (
-            tokens[i].lower() not in _STOP_WORDS
-            and tokens[i + 1].lower() not in _STOP_WORDS
-        ):
+        if tokens[i].lower() not in _STOP_WORDS and tokens[i + 1].lower() not in _STOP_WORDS:
             _add(f"{tokens[i]} {tokens[i + 1]}")
 
     for i in range(len(tokens) - 2):

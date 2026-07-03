@@ -1,5 +1,4 @@
-"""
-app/repositories.py
+"""app/repositories.py.
 
 Data access layer for the incident model.
 
@@ -22,8 +21,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select, update
 
@@ -67,12 +66,13 @@ class InvalidStatusTransitionError(ValueError):
 # Incident lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def create_incident(
     chief_complaint: str,
-    caller_location_lat: Optional[float] = None,
-    caller_location_lon: Optional[float] = None,
-    caller_location_text: Optional[str] = None,
-) -> Dict[str, Any]:
+    caller_location_lat: float | None = None,
+    caller_location_lon: float | None = None,
+    caller_location_text: str | None = None,
+) -> dict[str, Any]:
     async with get_session() as session:
         incident = Incident(
             chief_complaint=chief_complaint,
@@ -91,10 +91,9 @@ async def set_dispatch_protocol(
     incident_id: str,
     protocol_id: str,
     protocol_version: str,
-    protocol_snapshot: Dict[str, Any],
+    protocol_snapshot: dict[str, Any],
 ) -> None:
-    """
-    Snapshot the full protocol content into the incident at the moment a
+    """Snapshot the full protocol content into the incident at the moment a
     call starts using it — see docs/GOVERNANCE.md. Guarantees the incident
     remains reproducible even if the protocol registry is edited later.
     """
@@ -116,8 +115,7 @@ async def set_field_protocol(
     protocol_id: str,
     protocol_version: str,
 ) -> None:
-    """
-    Records which FieldProtocol checklist the field unit selected for this
+    """Records which FieldProtocol checklist the field unit selected for this
     incident. Deliberately no snapshot argument — see
     app/models.py::Incident.field_protocol_id docstring. The selection is
     a convenience/orientation aid for the field runner, not a governance
@@ -136,7 +134,7 @@ async def set_field_protocol(
         await session.commit()
 
 
-VALID_TRANSITIONS: Dict[IncidentStatus, set[IncidentStatus]] = {
+VALID_TRANSITIONS: dict[IncidentStatus, set[IncidentStatus]] = {
     IncidentStatus.RECEIVED: {IncidentStatus.DISPATCHED, IncidentStatus.CLOSED},
     IncidentStatus.DISPATCHED: {IncidentStatus.ON_SCENE, IncidentStatus.CLOSED},
     IncidentStatus.ON_SCENE: {IncidentStatus.TRANSPORTING, IncidentStatus.CLOSED},
@@ -151,8 +149,7 @@ async def update_incident_status(
     status: IncidentStatus,
     **timestamp_fields: Any,
 ) -> None:
-    """
-    timestamp_fields: any of dispatched_at, on_scene_at, transporting_at,
+    """timestamp_fields: any of dispatched_at, on_scene_at, transporting_at,
     handoff_complete_at, closed_at — pass the field name with a datetime
     value to stamp it alongside the status change in one write.
 
@@ -170,12 +167,10 @@ async def update_incident_status(
         allowed = VALID_TRANSITIONS.get(current_status, set())
         if status not in allowed:
             raise InvalidStatusTransitionError(current_status, status, allowed)
-        values: Dict[str, Any] = {"status": status}
+        values: dict[str, Any] = {"status": status}
         values.update(timestamp_fields)
         await session.execute(
-            update(Incident)
-            .where(Incident.incident_id == uuid.UUID(incident_id))
-            .values(**values)
+            update(Incident).where(Incident.incident_id == uuid.UUID(incident_id)).values(**values)
         )
         await session.commit()
 
@@ -218,9 +213,7 @@ async def set_dispatch_eta(incident_id: str, eta_minutes: float) -> None:
         await session.commit()
 
 
-async def set_routed_facility(
-    incident_id: str, facility_id: str, facility_name: str
-) -> None:
+async def set_routed_facility(incident_id: str, facility_id: str, facility_name: str) -> None:
     async with get_session() as session:
         await session.execute(
             update(Incident)
@@ -232,7 +225,7 @@ async def set_routed_facility(
 
 async def set_triage_enrichment(
     incident_id: str,
-    enrichment_dict: Dict[str, Any],
+    enrichment_dict: dict[str, Any],
 ) -> None:
     """Persist triage enrichment result from the Triage Ranker service.
     Written asynchronously by a background create_task in create_incident.
@@ -247,17 +240,16 @@ async def set_triage_enrichment(
 
 
 async def list_incidents(
-    status: Optional[str] = None,
-    priority_code: Optional[str] = None,
-    assigned_unit_id: Optional[str] = None,
-    created_after: Optional[datetime] = None,
-    created_before: Optional[datetime] = None,
-    chief_complaint_contains: Optional[str] = None,
+    status: str | None = None,
+    priority_code: str | None = None,
+    assigned_unit_id: str | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    chief_complaint_contains: str | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> List[Dict[str, Any]]:
-    """
-    List incidents with optional filters. Excludes purged incidents
+) -> list[dict[str, Any]]:
+    """List incidents with optional filters. Excludes purged incidents
     (pii_purged_at IS NOT NULL). Ordered by created_at DESC (most recent
     first). Returns a flat list of incident dicts — no nested children.
     """
@@ -287,15 +279,13 @@ async def list_incidents(
         if created_before is not None:
             stmt = stmt.where(Incident.created_at <= created_before)
         if chief_complaint_contains is not None:
-            stmt = stmt.where(
-                Incident.chief_complaint.ilike(f"%{chief_complaint_contains}%")
-            )
+            stmt = stmt.where(Incident.chief_complaint.ilike(f"%{chief_complaint_contains}%"))
         stmt = stmt.order_by(Incident.created_at.desc()).limit(limit).offset(offset)
         rows = (await session.scalars(stmt)).all()
     return [_incident_to_dict(r) for r in rows]
 
 
-async def get_incident(incident_id: str) -> Optional[Dict[str, Any]]:
+async def get_incident(incident_id: str) -> dict[str, Any] | None:
     async with get_session() as session:
         incident = await session.scalar(
             select(Incident).where(Incident.incident_id == uuid.UUID(incident_id))
@@ -307,6 +297,7 @@ async def get_incident(incident_id: str) -> Optional[Dict[str, Any]]:
 # Dispatch log (Mode 1 — append-only, immutable)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def append_dispatch_answer(
     incident_id: str,
     question_id: str,
@@ -314,7 +305,7 @@ async def append_dispatch_answer(
     answer: str,
     protocol_version: str,
     is_backtrack: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     async with get_session() as session:
         row = IncidentDispatchLog(
             incident_id=uuid.UUID(incident_id),
@@ -330,7 +321,7 @@ async def append_dispatch_answer(
     return _dispatch_log_to_dict(row)
 
 
-async def get_dispatch_log(incident_id: str) -> List[Dict[str, Any]]:
+async def get_dispatch_log(incident_id: str) -> list[dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -346,13 +337,14 @@ async def get_dispatch_log(incident_id: str) -> List[Dict[str, Any]]:
 # Field log (append-only)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def append_field_log(
     incident_id: str,
     step_id: str,
     action_type: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     recorded_by: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     async with get_session() as session:
         row = IncidentFieldLog(
             incident_id=uuid.UUID(incident_id),
@@ -367,7 +359,7 @@ async def append_field_log(
     return _field_log_to_dict(row)
 
 
-async def get_field_log(incident_id: str) -> List[Dict[str, Any]]:
+async def get_field_log(incident_id: str) -> list[dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -383,13 +375,13 @@ async def get_field_log(incident_id: str) -> List[Dict[str, Any]]:
 # Vitals (with inline-computed scores)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def add_vitals(
     incident_id: str,
     recorded_by: str,
-    vitals: Dict[str, Any],
-) -> Dict[str, Any]:
-    """
-    Computes NEWS2 and GCS total at write time (if the required inputs are
+    vitals: dict[str, Any],
+) -> dict[str, Any]:
+    """Computes NEWS2 and GCS total at write time (if the required inputs are
     present) and stores the computed values alongside the raw vitals — see
     module docstring for why this is not recomputed retroactively.
 
@@ -407,9 +399,7 @@ async def add_vitals(
 
     gcs_total = None
     if all(k in vitals and vitals[k] is not None for k in ("gcs_eye", "gcs_verbal", "gcs_motor")):
-        gcs_total = compute_gcs_total(
-            vitals["gcs_eye"], vitals["gcs_verbal"], vitals["gcs_motor"]
-        )
+        gcs_total = compute_gcs_total(vitals["gcs_eye"], vitals["gcs_verbal"], vitals["gcs_motor"])
 
     new_news2_score = news2_result.score if news2_result else None
     new_news2_risk = news2_result.risk_level if news2_result else None
@@ -502,13 +492,12 @@ def _risk_level_index(level: str) -> int:
 
 
 def _compute_news2_trend(
-    new_score: Optional[int],
-    new_risk: Optional[str],
-    prior_score: Optional[int],
-    prior_risk: Optional[str],
-) -> Dict[str, Any]:
-    """
-    Computes the NEWS2 trend alert dict. Always returns a complete dict
+    new_score: int | None,
+    new_risk: str | None,
+    prior_score: int | None,
+    prior_risk: str | None,
+) -> dict[str, Any]:
+    """Computes the NEWS2 trend alert dict. Always returns a complete dict
     with all keys present so the field UI can rely on its existence.
     """
     if new_score is None or prior_score is None:
@@ -548,11 +537,10 @@ def _compute_news2_trend(
 
 
 def _gcs_severity_band(gcs_total: int) -> str:
-    """
-    Maps a GCS total score to its severity band:
+    """Maps a GCS total score to its severity band:
     - mild (13–15)
     - moderate (9–12)
-    - severe (≤8)
+    - severe (≤8).
     """
     if gcs_total <= 8:
         return "severe"
@@ -562,11 +550,10 @@ def _gcs_severity_band(gcs_total: int) -> str:
 
 
 def _compute_gcs_trend(
-    new_gcs: Optional[int],
-    prior_gcs: Optional[int],
-) -> Dict[str, Any]:
-    """
-    Computes the GCS trend alert dict. Always returns a complete dict
+    new_gcs: int | None,
+    prior_gcs: int | None,
+) -> dict[str, Any]:
+    """Computes the GCS trend alert dict. Always returns a complete dict
     with all keys present so the field UI can rely on its existence.
     GCS is inverted from NEWS2: lower is worse (rapid deterioration
     is a large negative delta).
@@ -609,7 +596,7 @@ def _compute_gcs_trend(
     }
 
 
-async def get_vitals_history(incident_id: str) -> List[Dict[str, Any]]:
+async def get_vitals_history(incident_id: str) -> list[dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -627,6 +614,7 @@ async def get_vitals_history(incident_id: str) -> List[Dict[str, Any]]:
 # IncidentMedicationGiven.administered for the per-row record of that)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def add_medication_given(
     incident_id: str,
     drug_name: str,
@@ -634,7 +622,7 @@ async def add_medication_given(
     route: str,
     given_by: str,
     administered: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     async with get_session() as session:
         row = IncidentMedicationGiven(
             incident_id=uuid.UUID(incident_id),
@@ -650,7 +638,7 @@ async def add_medication_given(
     return _medication_to_dict(row)
 
 
-async def get_medications_given(incident_id: str) -> List[Dict[str, Any]]:
+async def get_medications_given(incident_id: str) -> list[dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -666,13 +654,14 @@ async def get_medications_given(incident_id: str) -> List[Dict[str, Any]]:
 # Guidance lookup (Mode 2 — separate from dispatch log, see docs/GOVERNANCE.md)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def log_guidance_lookup(
     incident_id: str,
     query_text: str,
     result_summary: str,
     dispatcher_id: str,
-    question_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    question_id: str | None = None,
+) -> dict[str, Any]:
     async with get_session() as session:
         row = GuidanceLookupLog(
             incident_id=uuid.UUID(incident_id),
@@ -687,7 +676,7 @@ async def log_guidance_lookup(
     return _guidance_log_to_dict(row)
 
 
-async def get_guidance_lookups(incident_id: str) -> List[Dict[str, Any]]:
+async def get_guidance_lookups(incident_id: str) -> list[dict[str, Any]]:
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -703,14 +692,14 @@ async def get_guidance_lookups(incident_id: str) -> List[Dict[str, Any]]:
 # Incident notes (Improvement 5 — append-only dispatcher annotation)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def append_incident_note(
     incident_id: str,
     note_text: str,
     author_id: str,
     timestamp: datetime,
-) -> Dict[str, Any]:
-    """
-    Appends a timestamped free-text note to Incident.notes. The note
+) -> dict[str, Any]:
+    """Appends a timestamped free-text note to Incident.notes. The note
     is formatted as "[ISO timestamp] author: text" and appended on a
     new line if notes already exist. This is append-only by design —
     overwriting would destroy prior dispatcher notes, which are part of
@@ -744,9 +733,9 @@ async def append_incident_note(
 # Full incident assembly (Phase 1.8 exit criterion — used by Phase 5 handoff)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def get_incident_full(incident_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Single call assembling everything needed for handoff-document
+
+async def get_incident_full(incident_id: str) -> dict[str, Any] | None:
+    """Single call assembling everything needed for handoff-document
     generation: incident root record, full dispatch transcript, full field
     log, vitals history, medications given, and guidance lookups used.
     The four child queries run concurrently via asyncio.gather.
@@ -755,14 +744,18 @@ async def get_incident_full(incident_id: str) -> Optional[Dict[str, Any]]:
     if incident is None:
         return None
 
-    dispatch_log, field_log, vitals_history, medications_given, guidance_lookups = (
-        await asyncio.gather(
-            get_dispatch_log(incident_id),
-            get_field_log(incident_id),
-            get_vitals_history(incident_id),
-            get_medications_given(incident_id),
-            get_guidance_lookups(incident_id),
-        )
+    (
+        dispatch_log,
+        field_log,
+        vitals_history,
+        medications_given,
+        guidance_lookups,
+    ) = await asyncio.gather(
+        get_dispatch_log(incident_id),
+        get_field_log(incident_id),
+        get_vitals_history(incident_id),
+        get_medications_given(incident_id),
+        get_guidance_lookups(incident_id),
     )
 
     return {
@@ -779,9 +772,9 @@ async def get_incident_full(incident_id: str) -> Optional[Dict[str, Any]]:
 # Structured incident timeline (Improvement 3)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def get_incident_timeline(incident_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Returns a single chronologically-ordered list of every event that
+
+async def get_incident_timeline(incident_id: str) -> dict[str, Any] | None:
+    """Returns a single chronologically-ordered list of every event that
     happened during an incident: dispatch answers, field actions, vitals
     records, medications, and guidance lookups, interleaved by timestamp.
     Calls get_incident_full() once and merges the sub-arrays in Python.
@@ -794,47 +787,57 @@ async def get_incident_timeline(incident_id: str) -> Optional[Dict[str, Any]]:
     if full is None:
         return None
 
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
 
     for row in full["dispatch_log"]:
-        events.append({
-            "timestamp": row.get("timestamp"),
-            "event_type": "dispatch_answer",
-            "source": "dispatch",
-            "data": row,
-        })
+        events.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "event_type": "dispatch_answer",
+                "source": "dispatch",
+                "data": row,
+            }
+        )
 
     for row in full["field_log"]:
-        events.append({
-            "timestamp": row.get("timestamp"),
-            "event_type": "field_action",
-            "source": "field",
-            "data": row,
-        })
+        events.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "event_type": "field_action",
+                "source": "field",
+                "data": row,
+            }
+        )
 
     for row in full["vitals_history"]:
-        events.append({
-            "timestamp": row.get("recorded_at"),
-            "event_type": "vitals",
-            "source": "field",
-            "data": row,
-        })
+        events.append(
+            {
+                "timestamp": row.get("recorded_at"),
+                "event_type": "vitals",
+                "source": "field",
+                "data": row,
+            }
+        )
 
     for row in full["medications_given"]:
-        events.append({
-            "timestamp": row.get("given_at"),
-            "event_type": "medication",
-            "source": "field",
-            "data": row,
-        })
+        events.append(
+            {
+                "timestamp": row.get("given_at"),
+                "event_type": "medication",
+                "source": "field",
+                "data": row,
+            }
+        )
 
     for row in full["guidance_lookups"]:
-        events.append({
-            "timestamp": row.get("timestamp"),
-            "event_type": "guidance_lookup",
-            "source": "system",
-            "data": row,
-        })
+        events.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "event_type": "guidance_lookup",
+                "source": "system",
+                "data": row,
+            }
+        )
 
     # Sort by timestamp ascending. Rows with None timestamp sort last.
     # Tie-break by event_type alphabetically for deterministic ordering.
@@ -851,6 +854,7 @@ async def get_incident_timeline(incident_id: str) -> Optional[Dict[str, Any]]:
 # ETA tracking (Improvement 3.1)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def set_dispatch_eta(incident_id: str, eta_minutes: float) -> None:
     async with get_session() as session:
         await session.execute(
@@ -865,12 +869,12 @@ async def set_dispatch_eta(incident_id: str, eta_minutes: float) -> None:
 # Answer correction window (Improvement 4.2)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def get_dispatch_log_entry(log_id: str) -> Optional[Dict[str, Any]]:
+
+async def get_dispatch_log_entry(log_id: str) -> dict[str, Any] | None:
     """Fetch a single dispatch log row by its UUID."""
     async with get_session() as session:
         row = await session.scalar(
-            select(IncidentDispatchLog)
-            .where(IncidentDispatchLog.id == uuid.UUID(log_id))
+            select(IncidentDispatchLog).where(IncidentDispatchLog.id == uuid.UUID(log_id))
         )
     return _dispatch_log_to_dict(row) if row else None
 
@@ -880,8 +884,7 @@ async def correct_dispatch_answer(
     corrected_answer: str,
     new_log_id: uuid.UUID,
 ) -> None:
-    """
-    Marks the original dispatch log row as superseded by pointing
+    """Marks the original dispatch log row as superseded by pointing
     superseded_by at the new (corrected) row's UUID. The original row
     is never deleted — the full correction history is preserved in the
     append-only log.
@@ -899,13 +902,14 @@ async def correct_dispatch_answer(
 # Unit location (Improvement 4.3)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def add_unit_location(
     incident_id: str,
     lat: float,
     lon: float,
     recorded_by: str,
-    timestamp: Optional[datetime] = None,
-) -> Dict[str, Any]:
+    timestamp: datetime | None = None,
+) -> dict[str, Any]:
     async with get_session() as session:
         row = IncidentUnitLocation(
             incident_id=uuid.UUID(incident_id),
@@ -928,7 +932,7 @@ async def add_unit_location(
     }
 
 
-async def get_latest_unit_location(incident_id: str) -> Optional[Dict[str, Any]]:
+async def get_latest_unit_location(incident_id: str) -> dict[str, Any] | None:
     async with get_session() as session:
         row = await session.scalar(
             select(IncidentUnitLocation)
@@ -952,12 +956,12 @@ async def get_latest_unit_location(incident_id: str) -> Optional[Dict[str, Any]]
 # Shift handover report (Improvement 4.1)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def get_shift_handover(
     shift_start: datetime,
     shift_end: datetime,
-) -> Dict[str, Any]:
-    """
-    Assembles a shift handover report covering all incidents within the
+) -> dict[str, Any]:
+    """Assembles a shift handover report covering all incidents within the
     [shift_start, shift_end) window. Returns structured data only — the
     caller is responsible for text rendering via render_shift_handover_text.
     """
@@ -973,10 +977,10 @@ async def get_shift_handover(
             )
         ).all()
 
-    now = datetime.now(timezone.utc)
+    datetime.now(UTC)
     total = len(rows)
-    by_status: Dict[str, int] = {}
-    by_priority: Dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    by_priority: dict[str, int] = {}
 
     active_statuses = {
         IncidentStatus.RECEIVED,
@@ -986,7 +990,7 @@ async def get_shift_handover(
     }
 
     active_at_shift_end = []
-    resolved: List[Dict[str, Any]] = []
+    resolved: list[dict[str, Any]] = []
 
     for row in rows:
         sk = str(row.status)
@@ -1003,21 +1007,19 @@ async def get_shift_handover(
             d2s = None
             s2h = None
             if row.dispatched_at and row.on_scene_at:
-                d2s = round(
-                    (row.on_scene_at - row.dispatched_at).total_seconds() / 60, 1
-                )
+                d2s = round((row.on_scene_at - row.dispatched_at).total_seconds() / 60, 1)
             if row.on_scene_at and row.handoff_complete_at:
-                s2h = round(
-                    (row.handoff_complete_at - row.on_scene_at).total_seconds() / 60, 1
-                )
-            resolved.append({
-                "incident_id": d["incident_id"],
-                "priority_code": d["priority_code"],
-                "chief_complaint": d["chief_complaint"],
-                "assigned_unit_id": d["assigned_unit_id"],
-                "dispatch_to_scene_minutes": d2s,
-                "scene_to_handoff_minutes": s2h,
-            })
+                s2h = round((row.handoff_complete_at - row.on_scene_at).total_seconds() / 60, 1)
+            resolved.append(
+                {
+                    "incident_id": d["incident_id"],
+                    "priority_code": d["priority_code"],
+                    "chief_complaint": d["chief_complaint"],
+                    "assigned_unit_id": d["assigned_unit_id"],
+                    "dispatch_to_scene_minutes": d2s,
+                    "scene_to_handoff_minutes": s2h,
+                }
+            )
 
     # Top 3 resolved by priority severity, then by dispatch_to_scene_minutes
     resolved_sorted = sorted(
@@ -1041,7 +1043,7 @@ async def get_shift_handover(
     }
 
 
-def render_shift_handover_text(handover: Dict[str, Any]) -> str:
+def render_shift_handover_text(handover: dict[str, Any]) -> str:
     """Plain-text rendering of a shift handover report dict."""
     lines = []
     lines.append("=" * 72)
@@ -1068,15 +1070,13 @@ def render_shift_handover_text(handover: Dict[str, Any]) -> str:
         lines.append("  (none)")
     lines.append("")
 
-    lines.append(
-        f"Active at shift end: {handover['active_at_shift_end_count']}"
-    )
+    lines.append(f"Active at shift end: {handover['active_at_shift_end_count']}")
     if handover["active_at_shift_end"]:
         for inc in handover["active_at_shift_end"]:
             overdue_marker = " [OVERDUE]" if inc.get("overdue") else ""
             lines.append(
-                f"  {inc['incident_id']} | {inc.get('priority_code','?')} | "
-                f"{inc['status']} | unit: {inc.get('assigned_unit_id','unassigned')}"
+                f"  {inc['incident_id']} | {inc.get('priority_code', '?')} | "
+                f"{inc['status']} | unit: {inc.get('assigned_unit_id', 'unassigned')}"
                 f"{overdue_marker}"
             )
     else:
@@ -1086,10 +1086,18 @@ def render_shift_handover_text(handover: Dict[str, Any]) -> str:
     lines.append("Top resolved incidents (P1 first, fastest response first):")
     if handover["top_resolved"]:
         for inc in handover["top_resolved"]:
-            d2s = f"{inc['dispatch_to_scene_minutes']}min" if inc.get("dispatch_to_scene_minutes") is not None else "?"
-            s2h = f"{inc['scene_to_handoff_minutes']}min" if inc.get("scene_to_handoff_minutes") is not None else "?"
+            d2s = (
+                f"{inc['dispatch_to_scene_minutes']}min"
+                if inc.get("dispatch_to_scene_minutes") is not None
+                else "?"
+            )
+            s2h = (
+                f"{inc['scene_to_handoff_minutes']}min"
+                if inc.get("scene_to_handoff_minutes") is not None
+                else "?"
+            )
             lines.append(
-                f"  {inc['incident_id']} | {inc.get('priority_code','?')} | "
+                f"  {inc['incident_id']} | {inc.get('priority_code', '?')} | "
                 f"dispatch→scene: {d2s} | scene→handoff: {s2h}"
             )
     else:
@@ -1103,9 +1111,9 @@ def render_shift_handover_text(handover: Dict[str, Any]) -> str:
 # get_incident_retention_days in app/config.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def purge_expired_incidents() -> Dict[str, int]:
-    """
-    Purges PII fields (caller_location_*) from incidents closed longer
+
+async def purge_expired_incidents() -> dict[str, int]:
+    """Purges PII fields (caller_location_*) from incidents closed longer
     than INCIDENT_RETENTION_DAYS ago (resolved per Phase 1.9: 30 days),
     stamping pii_purged_at. Still a no-op if a deployment deliberately
     overrides INCIDENT_RETENTION_DAYS to 0 or below.
@@ -1116,13 +1124,12 @@ async def purge_expired_incidents() -> Dict[str, int]:
     retention_days = get_incident_retention_days()
     if retention_days <= 0:
         logger.info(
-            "purge_expired_incidents: no-op. INCIDENT_RETENTION_DAYS is %d "
-            "(<=0).",
+            "purge_expired_incidents: no-op. INCIDENT_RETENTION_DAYS is %d (<=0).",
             retention_days,
         )
         return {"purged": 0, "skipped_reason": "retention_disabled"}
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -1137,7 +1144,7 @@ async def purge_expired_incidents() -> Dict[str, int]:
             incident.caller_location_lat = None
             incident.caller_location_lon = None
             incident.caller_location_text = None
-            incident.pii_purged_at = datetime.now(timezone.utc)
+            incident.pii_purged_at = datetime.now(UTC)
         await session.commit()
 
     logger.info("purge_expired_incidents: purged %d incidents", len(rows))
@@ -1177,15 +1184,12 @@ def _priority_sort(code: str | None) -> int:
     return _DEFAULT_PRIORITY_SORT
 
 
-async def get_active_incidents(limit: int = 100) -> List[Dict[str, Any]]:
-    """
-    All non-closed incidents, for the dashboard active-incidents view.
+async def get_active_incidents(limit: int = 100) -> list[dict[str, Any]]:
+    """All non-closed incidents, for the dashboard active-incidents view.
     Sorted by priority severity (P1 first) then by created_at ascending
     (older incidents first within the same priority group).
     """
-    non_closed_statuses = [
-        s for s in IncidentStatus if s != IncidentStatus.CLOSED
-    ]
+    non_closed_statuses = [s for s in IncidentStatus if s != IncidentStatus.CLOSED]
     async with get_session() as session:
         rows = (
             await session.scalars(
@@ -1202,21 +1206,15 @@ async def get_active_incidents(limit: int = 100) -> List[Dict[str, Any]]:
     return [_incident_to_dict(r) for r in rows_sorted]
 
 
-async def get_dashboard_stats(window_hours: int = 24) -> Dict[str, Any]:
-    """
-    Counts by status and by priority_code over the last `window_hours`.
+async def get_dashboard_stats(window_hours: int = 24) -> dict[str, Any]:
+    """Counts by status and by priority_code over the last `window_hours`.
     Used by GET /dashboard/stats to give a control-room overview.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     async with get_session() as session:
         # All incidents within the window — one query, aggregate in Python
         # to avoid complex CASE/GROUP BY across DB engine differences.
-        rows = (
-            await session.scalars(
-                select(Incident)
-                .where(Incident.created_at >= cutoff)
-            )
-        ).all()
+        rows = (await session.scalars(select(Incident).where(Incident.created_at >= cutoff))).all()
 
     by_status: dict[str, int] = {}
     by_priority: dict[str, int] = {}
@@ -1228,13 +1226,9 @@ async def get_dashboard_stats(window_hours: int = 24) -> Dict[str, Any]:
         by_priority[priority_key] = by_priority.get(priority_key, 0) + 1
 
     active_count = sum(
-        1 for r in rows
-        if r.status not in (IncidentStatus.CLOSED, IncidentStatus.HANDOFF_COMPLETE)
+        1 for r in rows if r.status not in (IncidentStatus.CLOSED, IncidentStatus.HANDOFF_COMPLETE)
     )
-    critical_count = sum(
-        1 for r in rows
-        if r.priority_code and r.priority_code.startswith("P1_")
-    )
+    critical_count = sum(1 for r in rows if r.priority_code and r.priority_code.startswith("P1_"))
 
     return {
         "window_hours": window_hours,
@@ -1250,7 +1244,8 @@ async def get_dashboard_stats(window_hours: int = 24) -> Dict[str, Any]:
 # Serialisation helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _incident_to_dict(row: Incident) -> Dict[str, Any]:
+
+def _incident_to_dict(row: Incident) -> dict[str, Any]:
     # Compute ETA-derived fields from persisted columns
     eta_minutes = getattr(row, "eta_minutes", None)
     dispatched_at = row.dispatched_at
@@ -1260,7 +1255,7 @@ def _incident_to_dict(row: Incident) -> Dict[str, Any]:
     if dispatched_at is not None and eta_minutes is not None:
         estimated_on_scene_at = dispatched_at + timedelta(minutes=eta_minutes)
         if row.status == IncidentStatus.DISPATCHED:
-            overdue = datetime.now(timezone.utc) > estimated_on_scene_at
+            overdue = datetime.now(UTC) > estimated_on_scene_at
 
     return {
         "incident_id": str(row.incident_id),
@@ -1282,18 +1277,22 @@ def _incident_to_dict(row: Incident) -> Dict[str, Any]:
         "dispatched_at": row.dispatched_at.isoformat() if row.dispatched_at else None,
         "on_scene_at": row.on_scene_at.isoformat() if row.on_scene_at else None,
         "transporting_at": row.transporting_at.isoformat() if row.transporting_at else None,
-        "handoff_complete_at": row.handoff_complete_at.isoformat() if row.handoff_complete_at else None,
+        "handoff_complete_at": row.handoff_complete_at.isoformat()
+        if row.handoff_complete_at
+        else None,
         "closed_at": row.closed_at.isoformat() if row.closed_at else None,
         "pii_purged_at": row.pii_purged_at.isoformat() if row.pii_purged_at else None,
         "notes": row.notes,
         "triage_enrichment": getattr(row, "triage_enrichment", None),
         "eta_minutes": eta_minutes,
-        "estimated_on_scene_at": estimated_on_scene_at.isoformat() if estimated_on_scene_at else None,
+        "estimated_on_scene_at": estimated_on_scene_at.isoformat()
+        if estimated_on_scene_at
+        else None,
         "overdue": overdue,
     }
 
 
-def _dispatch_log_to_dict(row: IncidentDispatchLog) -> Dict[str, Any]:
+def _dispatch_log_to_dict(row: IncidentDispatchLog) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "question_id": row.question_id,
@@ -1306,7 +1305,7 @@ def _dispatch_log_to_dict(row: IncidentDispatchLog) -> Dict[str, Any]:
     }
 
 
-def _field_log_to_dict(row: IncidentFieldLog) -> Dict[str, Any]:
+def _field_log_to_dict(row: IncidentFieldLog) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "step_id": row.step_id,
@@ -1317,7 +1316,7 @@ def _field_log_to_dict(row: IncidentFieldLog) -> Dict[str, Any]:
     }
 
 
-def _vitals_to_dict(row: IncidentVitals) -> Dict[str, Any]:
+def _vitals_to_dict(row: IncidentVitals) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "recorded_at": row.recorded_at.isoformat() if row.recorded_at else None,
@@ -1340,7 +1339,7 @@ def _vitals_to_dict(row: IncidentVitals) -> Dict[str, Any]:
     }
 
 
-def _medication_to_dict(row: IncidentMedicationGiven) -> Dict[str, Any]:
+def _medication_to_dict(row: IncidentMedicationGiven) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "drug_name": row.drug_name,
@@ -1352,7 +1351,7 @@ def _medication_to_dict(row: IncidentMedicationGiven) -> Dict[str, Any]:
     }
 
 
-def _guidance_log_to_dict(row: GuidanceLookupLog) -> Dict[str, Any]:
+def _guidance_log_to_dict(row: GuidanceLookupLog) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "question_id": row.question_id,
@@ -1363,7 +1362,7 @@ def _guidance_log_to_dict(row: GuidanceLookupLog) -> Dict[str, Any]:
     }
 
 
-def _unit_location_to_dict(row: IncidentUnitLocation) -> Dict[str, Any]:
+def _unit_location_to_dict(row: IncidentUnitLocation) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "incident_id": str(row.incident_id),

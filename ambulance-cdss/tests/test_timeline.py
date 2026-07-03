@@ -1,5 +1,4 @@
-"""
-tests/test_timeline.py
+"""tests/test_timeline.py.
 
 Improvement 3 — tests for the structured incident timeline endpoint.
 
@@ -23,9 +22,24 @@ class TestTimelineMergeAndSort:
     def test_merge_two_events_different_timestamps_correct_order(self):
         """Events from different streams with different timestamps are sorted correctly."""
         events = [
-            {"timestamp": "2026-06-01T10:05:00+00:00", "event_type": "vitals", "source": "field", "data": {}},
-            {"timestamp": "2026-06-01T10:00:00+00:00", "event_type": "dispatch_answer", "source": "dispatch", "data": {}},
-            {"timestamp": "2026-06-01T10:10:00+00:00", "event_type": "medication", "source": "field", "data": {}},
+            {
+                "timestamp": "2026-06-01T10:05:00+00:00",
+                "event_type": "vitals",
+                "source": "field",
+                "data": {},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00+00:00",
+                "event_type": "dispatch_answer",
+                "source": "dispatch",
+                "data": {},
+            },
+            {
+                "timestamp": "2026-06-01T10:10:00+00:00",
+                "event_type": "medication",
+                "source": "field",
+                "data": {},
+            },
         ]
 
         events.sort(key=lambda e: (e["timestamp"] is None, e["timestamp"] or "", e["event_type"]))
@@ -38,7 +52,12 @@ class TestTimelineMergeAndSort:
         """Events with None timestamp are sorted to the end, not causing a crash."""
         events = [
             {"timestamp": None, "event_type": "vitals", "source": "field", "data": {}},
-            {"timestamp": "2026-06-01T10:00:00+00:00", "event_type": "dispatch_answer", "source": "dispatch", "data": {}},
+            {
+                "timestamp": "2026-06-01T10:00:00+00:00",
+                "event_type": "dispatch_answer",
+                "source": "dispatch",
+                "data": {},
+            },
         ]
 
         events.sort(key=lambda e: (e["timestamp"] is None, e["timestamp"] or "", e["event_type"]))
@@ -56,9 +75,24 @@ class TestTimelineMergeAndSort:
     def test_tie_break_by_event_type_alphabetically(self):
         """Events with the same timestamp are sorted by event_type alphabetically."""
         events = [
-            {"timestamp": "2026-06-01T10:00:00+00:00", "event_type": "vitals", "source": "field", "data": {}},
-            {"timestamp": "2026-06-01T10:00:00+00:00", "event_type": "dispatch_answer", "source": "dispatch", "data": {}},
-            {"timestamp": "2026-06-01T10:00:00+00:00", "event_type": "medication", "source": "field", "data": {}},
+            {
+                "timestamp": "2026-06-01T10:00:00+00:00",
+                "event_type": "vitals",
+                "source": "field",
+                "data": {},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00+00:00",
+                "event_type": "dispatch_answer",
+                "source": "dispatch",
+                "data": {},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00+00:00",
+                "event_type": "medication",
+                "source": "field",
+                "data": {},
+            },
         ]
 
         events.sort(key=lambda e: (e["timestamp"] is None, e["timestamp"] or "", e["event_type"]))
@@ -90,7 +124,8 @@ class TestTimelineAcceptanceCriteria:
 
     def test_event_types_are_from_specified_set(self):
         """All event_type values match the spec: dispatch_answer, field_action,
-        vitals, medication, guidance_lookup."""
+        vitals, medication, guidance_lookup.
+        """
         source = inspect.getsource(get_incident_timeline)
         assert "dispatch_answer" in source
         assert "field_action" in source

@@ -13,9 +13,7 @@ class TerminologyBoundaryTests(unittest.TestCase):
                 return [{"preferred_name": "Human immunodeficiency virus infection"}]
 
         async def run():
-            expanded, concepts = await expand_query_with_terminology_details(
-                "ART options", "hiv"
-            )
+            expanded, concepts = await expand_query_with_terminology_details("ART options", "hiv")
             return expanded, concepts
 
         with patch("app.terminology.service.TerminologyService", return_value=FakeService()):
@@ -44,7 +42,7 @@ class TerminologyBoundaryTests(unittest.TestCase):
 
         class FakeService:
             async def link_text(self, text, disease=None):
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
 
         async def run():
             return await expand_query_with_terminology("hello", "hiv")

@@ -1,5 +1,4 @@
-"""
-app/protocols/field_registry.py
+"""app/protocols/field_registry.py.
 
 Field protocol registry loader — Phase 4.
 
@@ -29,9 +28,24 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
 
-STOP_WORDS = {"a", "an", "the", "in", "of", "and", "or", "for", "is", "it", "to", "on", "at", "by", "with"}
+STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "in",
+    "of",
+    "and",
+    "or",
+    "for",
+    "is",
+    "it",
+    "to",
+    "on",
+    "at",
+    "by",
+    "with",
+}
 
 from .schema import FieldProtocol, FieldProtocolStep
 
@@ -48,12 +62,10 @@ def _parse_field_protocol(raw: dict, source_path: Path) -> FieldProtocol:
     required_top_level = ["protocol_id", "version", "disease_or_presentation", "steps"]
     missing = [k for k in required_top_level if k not in raw]
     if missing:
-        raise FieldProtocolRejectedError(
-            f"{source_path.name}: missing required fields {missing}"
-        )
+        raise FieldProtocolRejectedError(f"{source_path.name}: missing required fields {missing}")
 
     seen_ids: set[str] = set()
-    steps: List[FieldProtocolStep] = []
+    steps: list[FieldProtocolStep] = []
     for i, sraw in enumerate(raw["steps"]):
         step_id = sraw.get("step_id")
         if not step_id:
@@ -61,9 +73,7 @@ def _parse_field_protocol(raw: dict, source_path: Path) -> FieldProtocol:
                 f"{source_path.name}: step at index {i} missing step_id"
             )
         if step_id in seen_ids:
-            raise FieldProtocolRejectedError(
-                f"{source_path.name}: duplicate step_id {step_id!r}"
-            )
+            raise FieldProtocolRejectedError(f"{source_path.name}: duplicate step_id {step_id!r}")
         seen_ids.add(step_id)
 
         action_type = sraw.get("action_type")
@@ -97,16 +107,14 @@ def _parse_field_protocol(raw: dict, source_path: Path) -> FieldProtocol:
 class FieldProtocolRegistry:
     def __init__(self, protocols_dir: Path = FIELD_PROTOCOLS_DIR):
         self._protocols_dir = protocols_dir
-        self._active: Dict[str, FieldProtocol] = {}
-        self._rejected: List[Dict[str, str]] = []
+        self._active: dict[str, FieldProtocol] = {}
+        self._rejected: list[dict[str, str]] = []
 
     def load_all(self) -> None:
         self._active.clear()
         self._rejected.clear()
         if not self._protocols_dir.exists():
-            logger.warning(
-                "Field protocol directory does not exist: %s", self._protocols_dir
-            )
+            logger.warning("Field protocol directory does not exist: %s", self._protocols_dir)
             return
 
         for path in sorted(self._protocols_dir.glob("*.json")):
@@ -127,10 +135,10 @@ class FieldProtocolRegistry:
                 logger.error("Field protocol file unparseable: %s — %s", path.name, exc)
                 self._rejected.append({"file": path.name, "reason": str(exc)})
 
-    def get(self, protocol_id: str) -> Optional[FieldProtocol]:
+    def get(self, protocol_id: str) -> FieldProtocol | None:
         return self._active.get(protocol_id)
 
-    def find_by_presentation(self, presentation: str) -> Optional[FieldProtocol]:
+    def find_by_presentation(self, presentation: str) -> FieldProtocol | None:
         """Match a presentation string against active field protocols.
 
         Uses keyword-based matching: if all significant words from the
@@ -154,7 +162,7 @@ class FieldProtocolRegistry:
                 return protocol
         return None
 
-    def list_active(self) -> List[Dict[str, object]]:
+    def list_active(self) -> list[dict[str, object]]:
         return [
             {
                 "protocol_id": p.protocol_id,
@@ -165,7 +173,7 @@ class FieldProtocolRegistry:
             for p in self._active.values()
         ]
 
-    def list_rejected(self) -> List[Dict[str, str]]:
+    def list_rejected(self) -> list[dict[str, str]]:
         return list(self._rejected)
 
 

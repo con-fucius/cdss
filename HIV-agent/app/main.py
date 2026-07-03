@@ -1,5 +1,4 @@
-"""
-Main entry point for the document Q&A Assistant.
+"""Main entry point for the document Q&A Assistant.
 Adapted from the Kenya ARV Guidelines notebook (cells 48, 63-65, 68).
 
 DEPRECATED: this CLI is bound to the legacy pydantic-ai/Mistral path and is
@@ -7,16 +6,16 @@ retained only so older local workflows fail clearly. Use app.api via FastAPI
 for the current Groq/Puter runtime.
 """
 
-import os
 import asyncio
+import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import ingest
-import search_agent
 import logs
+import search_agent
 
 
 def _require_mistral_key():
@@ -33,12 +32,13 @@ def _require_mistral_key():
 # Configuration
 REPO_OWNER = "DataTalksClub"
 REPO_NAME = "faq"
-PDF_PATH = "Kenya-ARV-Guidelines-2022-Final-1.pdf"  # Same as app.py; must exist in app dir or repo root
+PDF_PATH = (
+    "Kenya-ARV-Guidelines-2022-Final-1.pdf"  # Same as app.py; must exist in app dir or repo root
+)
 
 
 def initialize_index():
-    """
-    Initialize the vector index by ingesting data from PDF.
+    """Initialize the vector index by ingesting data from PDF.
     From notebook cells 1, 3, 13, 21.
 
     Returns:
@@ -54,8 +54,7 @@ def initialize_index():
 
 
 def initialize_agent(index):
-    """
-    Initialize the search agent with the vector index.
+    """Initialize the search agent with the vector index.
     From notebook cell 47.
 
     Args:
@@ -72,8 +71,7 @@ def initialize_agent(index):
 
 
 async def run_interactive():
-    """
-    Run the interactive Q&A loop.
+    """Run the interactive Q&A loop.
     From notebook cells 63-65, 68.
     """
     # Initialize components
@@ -121,8 +119,7 @@ async def run_interactive():
 
 
 def main():
-    """
-    Main function to run the document assistant.
+    """Main function to run the document assistant.
     Uses asyncio to run the async interactive loop.
     """
     _require_mistral_key()

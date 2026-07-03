@@ -1,5 +1,4 @@
-"""
-Unit tests for shared Pydantic v2 contract schemas.
+"""Unit tests for shared Pydantic v2 contract schemas.
 
 Tests validation, serialization, enum values, and edge cases for:
 - TriageRequest / TriageResponse / DiagnosisRankItem / ExtractedKeyword
@@ -12,18 +11,6 @@ No network calls, no database — pure Pydantic validation tests.
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
-from contracts.triage import (
-    ClinicalCategory,
-    DiagnosisRankItem,
-    ExtractedKeyword,
-    SeverityLevel,
-    TriageLevel,
-    TriageMetadata,
-    TriageRequest,
-    TriageResponse,
-)
 from contracts.facility import (
     FacilityResult,
     FacilitySearchRequest,
@@ -35,7 +22,17 @@ from contracts.incident_capture import (
     IncidentInfo,
     PatientInfo,
 )
-
+from contracts.triage import (
+    ClinicalCategory,
+    DiagnosisRankItem,
+    ExtractedKeyword,
+    SeverityLevel,
+    TriageLevel,
+    TriageMetadata,
+    TriageRequest,
+    TriageResponse,
+)
+from pydantic import ValidationError
 
 # ── TriageRequest ─────────────────────────────────────────────────────────
 
@@ -109,7 +106,15 @@ class TestEnums:
         assert ClinicalCategory.UNKNOWN.value == "UNKNOWN"
 
     def test_all_categories_present(self):
-        expected = {"RESPIRATORY", "CARDIOVASCULAR", "NEUROLOGICAL", "TRAUMA", "OBSTETRIC", "PAEDIATRIC", "UNKNOWN"}
+        expected = {
+            "RESPIRATORY",
+            "CARDIOVASCULAR",
+            "NEUROLOGICAL",
+            "TRAUMA",
+            "OBSTETRIC",
+            "PAEDIATRIC",
+            "UNKNOWN",
+        }
         actual = {c.value for c in ClinicalCategory}
         assert actual == expected
 
@@ -246,8 +251,12 @@ class TestFacilitySearchRequest:
 
     def test_full_request(self):
         req = FacilitySearchRequest(
-            lat=-1.2921, lon=36.8219, radius_km=25.0, level_min=4,
-            required_services=["icu", "surgery"], max_results=5,
+            lat=-1.2921,
+            lon=36.8219,
+            radius_km=25.0,
+            level_min=4,
+            required_services=["icu", "surgery"],
+            max_results=5,
         )
         assert req.required_services == ["icu", "surgery"]
         assert req.max_results == 5
@@ -277,8 +286,13 @@ class TestFacilitySearchRequest:
 class TestFacilityResult:
     def test_minimal_facility(self):
         f = FacilityResult(
-            facility_id="F001", name="Test Hospital", level=4,
-            lat=-1.29, lon=36.82, distance_km=5.2, eta_minutes=5.2,
+            facility_id="F001",
+            name="Test Hospital",
+            level=4,
+            lat=-1.29,
+            lon=36.82,
+            distance_km=5.2,
+            eta_minutes=5.2,
         )
         assert f.phone is None
         assert f.services == []
@@ -286,8 +300,13 @@ class TestFacilityResult:
 
     def test_facility_serialization(self):
         f = FacilityResult(
-            facility_id="F001", name="Nairobi Hospital", level=5,
-            lat=-1.29, lon=36.82, distance_km=2.5, eta_minutes=2.5,
+            facility_id="F001",
+            name="Nairobi Hospital",
+            level=5,
+            lat=-1.29,
+            lon=36.82,
+            distance_km=2.5,
+            eta_minutes=2.5,
             services=["icu", "surgery", "cardiac"],
             phone="+254202845000",
             capacity_status="available",
@@ -308,11 +327,18 @@ class TestFacilitySearchResponse:
 
     def test_response_with_facilities(self):
         f = FacilityResult(
-            facility_id="F001", name="Test", level=4, lat=0, lon=0,
-            distance_km=1.0, eta_minutes=1.0,
+            facility_id="F001",
+            name="Test",
+            level=4,
+            lat=0,
+            lon=0,
+            distance_km=1.0,
+            eta_minutes=1.0,
         )
         resp = FacilitySearchResponse(
-            facilities=[f], total_found=1, data_as_of="2024-02-01",
+            facilities=[f],
+            total_found=1,
+            data_as_of="2024-02-01",
             geocoded_location="-1.2921,36.8219",
         )
         assert resp.total_found == 1
@@ -388,6 +414,6 @@ class TestCapturePayload:
             "alert": 15,
         }
         # These mappings are used in ambulance-cdss's from-capture endpoint
-        for consciousness, expected_gcs in mappings.items():
+        for consciousness, _expected_gcs in mappings.items():
             p = PatientInfo(consciousness=consciousness)
             assert p.consciousness == consciousness

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""
-Quick script to check if environment variables are being loaded correctly
-"""
+"""Quick script to check if environment variables are being loaded correctly."""
+
 import os
 from pathlib import Path
+
 from api.config import settings
 
 print("=" * 60)
@@ -21,26 +21,26 @@ print()
 
 # Check from environment
 env_key = os.getenv("OPENAI_API_KEY")
-print(f"From os.getenv('OPENAI_API_KEY'):")
+print("From os.getenv('OPENAI_API_KEY'):")
 if env_key:
     print(f"  ✅ Found (length: {len(env_key)})")
     print(f"  Starts with: {env_key[:10]}...")
 else:
-    print(f"  ❌ Not set in environment")
+    print("  ❌ Not set in environment")
 
 print()
 
 # Check from settings
 settings_key = settings.OPENAI_API_KEY
-print(f"From settings.OPENAI_API_KEY:")
+print("From settings.OPENAI_API_KEY:")
 if settings_key:
     print(f"  ✅ Found (length: {len(settings_key)})")
     print(f"  Starts with: {settings_key[:10]}...")
     if len(settings_key) < 20:
-        print(f"  ⚠️  WARNING: Key seems too short (should be ~50+ characters)")
+        print("  ⚠️  WARNING: Key seems too short (should be ~50+ characters)")
 else:
-    print(f"  ❌ Not set or empty")
-    print(f"  ⚠️  This is why you're getting 401 errors!")
+    print("  ❌ Not set or empty")
+    print("  ⚠️  This is why you're getting 401 errors!")
 
 print()
 
@@ -56,15 +56,15 @@ if env_file.exists():
                     if value:
                         print(f"✅ Found in .env file (length: {len(value)})")
                         if value.startswith('"') and value.endswith('"'):
-                            print(f"  ⚠️  Key is wrapped in quotes - this might be the issue!")
-                            print(f"  Remove quotes from .env file")
+                            print("  ⚠️  Key is wrapped in quotes - this might be the issue!")
+                            print("  Remove quotes from .env file")
                         if len(value) < 20:
-                            print(f"  ⚠️  WARNING: Key seems too short")
+                            print("  ⚠️  WARNING: Key seems too short")
                     else:
-                        print(f"❌ OPENAI_API_KEY is empty in .env file")
+                        print("❌ OPENAI_API_KEY is empty in .env file")
                 break
         else:
-            print(f"❌ OPENAI_API_KEY not found in .env file")
+            print("❌ OPENAI_API_KEY not found in .env file")
 
 print()
 print("=" * 60)
@@ -72,6 +72,6 @@ print("Troubleshooting:")
 print("=" * 60)
 print("1. Make sure .env file is in the project root")
 print("2. Format should be: OPENAI_API_KEY=sk-... (no quotes)")
-print("3. If key has special characters, wrap in quotes: OPENAI_API_KEY=\"sk-...\"")
+print('3. If key has special characters, wrap in quotes: OPENAI_API_KEY="sk-..."')
 print("4. Restart the API after changing .env file")
 print("5. Check for trailing spaces or newlines in the key")

@@ -1,5 +1,4 @@
-"""
-app/protocols/runner.py
+"""app/protocols/runner.py.
 
 Locked-mode protocol runner (Mode 1).
 
@@ -30,14 +29,12 @@ which permit out-of-order/skipped steps.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Union
 
 from .schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
 
 
 class OutOfScriptAnswerError(ValueError):
-    """
-    Raised when a submitted answer does not match any branch_map entry
+    """Raised when a submitted answer does not match any branch_map entry
     for the current question. This must propagate to the caller as a
     visible, loud error — never be caught and silently defaulted.
     """
@@ -56,9 +53,9 @@ class OutOfScriptAnswerError(ValueError):
 class RunnerStepResult:
     """Discriminated result: exactly one of next_question / terminal_outcome is set."""
 
-    next_question: Optional[ProtocolQuestion] = None
-    terminal_outcome: Optional[TerminalOutcome] = None
-    terminal_outcome_id: Optional[str] = None
+    next_question: ProtocolQuestion | None = None
+    terminal_outcome: TerminalOutcome | None = None
+    terminal_outcome_id: str | None = None
 
 
 def get_entry_question(protocol: DispatchProtocol) -> ProtocolQuestion:
@@ -70,8 +67,7 @@ def submit_answer(
     current_question_id: str,
     answer: str,
 ) -> RunnerStepResult:
-    """
-    Advance the locked script by one step.
+    """Advance the locked script by one step.
 
     Raises OutOfScriptAnswerError if `answer` is not a key in the current
     question's branch_map. Raises KeyError if current_question_id is not
@@ -117,11 +113,10 @@ def submit_answer(
 
 
 def can_backtrack() -> bool:
-    """
-    Backtracking policy — resolved per docs/GOVERNANCE.md: disallowed on
+    """Backtracking policy — resolved per docs/GOVERNANCE.md: disallowed on
     locked (Mode 1) dispatch scripts. (Field protocols are unaffected —
     they were never governance-locked and already permit out-of-order
-    step marking; see app/protocols/field_runner.py.)
+    step marking; see app/protocols/field_runner.py.).
 
     Returns False. If this policy is ever revisited, update this function
     and, if backtracking is permitted, ensure every backtrack re-answer is

@@ -1,25 +1,29 @@
 import os
 import time
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import asyncio
+import contextlib
 import queue
-import streamlit as st
 import threading
+
 import logs
+import streamlit as st
 
 # Deprecated: this Streamlit interface is retained only for historical reference.
 # The operational frontend is in ../frontend and should be used for current work.
 # It still references the old Mistral-bound PoC path and must not be used as
 # the current clinical runtime.
 
+
 # Load CSS and JS
 def load_css():
     css_file = os.path.join(os.path.dirname(__file__), "custom_styles.css")
     try:
-        with open(css_file, "r") as f:
+        with open(css_file) as f:
             css_content = f.read()
         st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
@@ -59,12 +63,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 @st.cache_resource(show_spinner=False)
 def _get_async_loop():
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     return loop
+
 
 # API Key check
 if not os.environ.get("MISTRAL_API_KEY"):
@@ -187,6 +193,7 @@ def stream_response(prompt: str):
             chunk_queue.put(error_msg)
         finally:
             chunk_queue.put(_STREAM_END)
+
     loop = _get_async_loop()
     try:
         future = asyncio.run_coroutine_threadsafe(run_async(), loop)
@@ -214,10 +221,8 @@ def stream_response(prompt: str):
     # Log and store result
     st.session_state._last_response = result_holder.get("full_text", "")
     if result_holder.get("messages"):
-        try:
+        with contextlib.suppress(BaseException):
             logs.log_interaction_to_file(agent, result_holder["messages"])
-        except:
-            pass
 
 
 def format_timestamp():
@@ -297,7 +302,7 @@ if st.session_state.pending_prompt:
             response_placeholder = st.empty()
             status_placeholder.markdown(
                 '<div class="kq-thinking" aria-hidden="true">'
-                '<span></span><span></span><span></span></div>',
+                "<span></span><span></span><span></span></div>",
                 unsafe_allow_html=True,
             )
             for chunk in stream_response(prompt_text):
@@ -312,9 +317,7 @@ if st.session_state.pending_prompt:
         st.session_state.messages.append({"role": "assistant", "content": response})
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        st.session_state.messages.append(
-            {"role": "assistant", "content": f"Error: {str(e)}"}
-        )
+        st.session_state.messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
 
     st.rerun()
 
@@ -323,9 +326,7 @@ if st.session_state.current_page == "Quick chat":
     cols = st.columns([10, 1])
     with cols[0]:
         st.title("Kini")
-        st.caption(
-            "Evidence-based answers from Kenya National HIV Treatment Guidelines"
-        )
+        st.caption("Evidence-based answers from Kenya National HIV Treatment Guidelines")
     with cols[1]:
         st.write("")
         if st.button("Clear"):
@@ -470,20 +471,22 @@ elif st.session_state.current_page == "Query builder":
 
 # About Page
 elif st.session_state.current_page == "About":
-
-    st.markdown("""
+    st.markdown(
+        """
     <div class="kq-about-title">Kini</div>
-    
+
     Kini is an evidence-based clinical decision support tapping on the official Kenya National HIV Prevention and Treatment Guidelines.
     Kini provides healthcare professionals guideline-based information to support patient service delivery.
-    
+
     **Coverage:**
     - ART Regimens & Eligibility
     - Dosing & Special Populations
     - TB/HIV Co-infection
     - PMTCT & Pregnancy
     - Monitoring & Follow-up
-    
+
     **Version:** 0.0.1
-    
-    """, unsafe_allow_html=True)
+
+    """,
+        unsafe_allow_html=True,
+    )

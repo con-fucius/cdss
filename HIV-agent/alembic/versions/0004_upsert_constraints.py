@@ -16,7 +16,6 @@ Changes:
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
 
 revision = "0004_upsert_constraints"
 down_revision = "0003_evidence_graph_fields"

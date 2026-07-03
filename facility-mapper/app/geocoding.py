@@ -1,5 +1,4 @@
-"""
-facility-mapper/app/geocoding.py
+"""facility-mapper/app/geocoding.py.
 
 Nominatim geocoding abstraction with in-process TTL cache.
 
@@ -17,7 +16,6 @@ Design constraints:
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple
 
 import httpx
 from cachetools import TTLCache
@@ -35,9 +33,8 @@ _geocode_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)
 _NOMINATIM_VIEWBOX = "29.0,-5.0,42.0,5.0"
 
 
-async def geocode(location_text: str) -> Optional[Tuple[float, float]]:
-    """
-    Geocode a free-text location string to (lat, lon).
+async def geocode(location_text: str) -> tuple[float, float] | None:
+    """Geocode a free-text location string to (lat, lon).
 
     Uses Nominatim with a bounding box hint for the Kenya/Uganda/DRC
     region. Returns None on any failure — never raises. Cached
@@ -92,9 +89,7 @@ async def geocode(location_text: str) -> Optional[Tuple[float, float]]:
         logger.warning("Geocoding timed out for: %s", normalised)
         return None
     except httpx.HTTPStatusError as exc:
-        logger.warning(
-            "Geocoding HTTP error for %s: %s", normalised, exc.response.status_code
-        )
+        logger.warning("Geocoding HTTP error for %s: %s", normalised, exc.response.status_code)
         return None
     except Exception as exc:
         logger.warning("Geocoding failed for %s: %s", normalised, exc)

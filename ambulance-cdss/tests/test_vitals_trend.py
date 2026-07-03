@@ -1,5 +1,4 @@
-"""
-tests/test_vitals_trend.py
+"""tests/test_vitals_trend.py.
 
 Improvement 4 — tests for NEWS2 trend alerting and GCS trend alerting on
 vitals write.
@@ -35,8 +34,10 @@ class TestComputeNews2Trend:
     def test_prior_3_new_6_deteriorating(self):
         """Delta of 3 is exactly >= 3 boundary -> rapid_deterioration."""
         result = _compute_news2_trend(
-            new_score=6, new_risk="medium",
-            prior_score=3, prior_risk="low",
+            new_score=6,
+            new_risk="medium",
+            prior_score=3,
+            prior_risk="low",
         )
         assert result["trend"] == "rapid_deterioration"
         assert result["delta"] == 3
@@ -45,8 +46,10 @@ class TestComputeNews2Trend:
     def test_prior_5_new_7_crossed_risk_boundary(self):
         """Medium -> high risk level crossing."""
         result = _compute_news2_trend(
-            new_score=7, new_risk="high",
-            prior_score=5, prior_risk="medium",
+            new_score=7,
+            new_risk="high",
+            prior_score=5,
+            prior_risk="medium",
         )
         assert result["trend"] == "deteriorating"
         assert result["delta"] == 2
@@ -55,8 +58,10 @@ class TestComputeNews2Trend:
     def test_prior_7_new_4_improving(self):
         """Score decreased -> improving."""
         result = _compute_news2_trend(
-            new_score=4, new_risk="low",
-            prior_score=7, prior_risk="high",
+            new_score=4,
+            new_risk="low",
+            prior_score=7,
+            prior_risk="high",
         )
         assert result["trend"] == "improving"
         assert result["delta"] == -3
@@ -65,8 +70,10 @@ class TestComputeNews2Trend:
     def test_no_prior_vitals(self):
         """No prior score -> no_prior_data."""
         result = _compute_news2_trend(
-            new_score=5, new_risk="medium",
-            prior_score=None, prior_risk=None,
+            new_score=5,
+            new_risk="medium",
+            prior_score=None,
+            prior_risk=None,
         )
         assert result["trend"] == "no_prior_data"
         assert result["delta"] is None
@@ -77,8 +84,10 @@ class TestComputeNews2Trend:
     def test_prior_score_none_no_crash(self):
         """Prior score is None (incomplete NEWS2) -> no_prior_data, no crash."""
         result = _compute_news2_trend(
-            new_score=5, new_risk="medium",
-            prior_score=None, prior_risk=None,
+            new_score=5,
+            new_risk="medium",
+            prior_score=None,
+            prior_risk=None,
         )
         assert result["trend"] == "no_prior_data"
         assert result["delta"] is None
@@ -87,8 +96,10 @@ class TestComputeNews2Trend:
     def test_new_score_none_no_crash(self):
         """New score is None -> no_prior_data."""
         result = _compute_news2_trend(
-            new_score=None, new_risk=None,
-            prior_score=5, prior_risk="medium",
+            new_score=None,
+            new_risk=None,
+            prior_score=5,
+            prior_risk="medium",
         )
         assert result["trend"] == "no_prior_data"
         assert result["delta"] is None
@@ -96,8 +107,10 @@ class TestComputeNews2Trend:
     def test_both_none(self):
         """Both scores None -> no_prior_data."""
         result = _compute_news2_trend(
-            new_score=None, new_risk=None,
-            prior_score=None, prior_risk=None,
+            new_score=None,
+            new_risk=None,
+            prior_score=None,
+            prior_risk=None,
         )
         assert result["trend"] == "no_prior_data"
         assert result["delta"] is None
@@ -106,8 +119,10 @@ class TestComputeNews2Trend:
     def test_equal_scores_stable(self):
         """Same score -> stable."""
         result = _compute_news2_trend(
-            new_score=3, new_risk="low",
-            prior_score=3, prior_risk="low",
+            new_score=3,
+            new_risk="low",
+            prior_score=3,
+            prior_risk="low",
         )
         assert result["trend"] == "stable"
         assert result["delta"] == 0
@@ -116,8 +131,10 @@ class TestComputeNews2Trend:
     def test_delta_2_is_deteriorating_not_rapid(self):
         """Delta of 2 is >= 1 but < 3 -> deteriorating, not rapid."""
         result = _compute_news2_trend(
-            new_score=5, new_risk="medium",
-            prior_score=3, prior_risk="low",
+            new_score=5,
+            new_risk="medium",
+            prior_score=3,
+            prior_risk="low",
         )
         assert result["trend"] == "deteriorating"
         assert result["delta"] == 2
@@ -125,8 +142,10 @@ class TestComputeNews2Trend:
     def test_delta_1_is_deteriorating(self):
         """Delta of 1 -> deteriorating."""
         result = _compute_news2_trend(
-            new_score=4, new_risk="low",
-            prior_score=3, prior_risk="low",
+            new_score=4,
+            new_risk="low",
+            prior_score=3,
+            prior_risk="low",
         )
         assert result["trend"] == "deteriorating"
         assert result["delta"] == 1
@@ -134,8 +153,10 @@ class TestComputeNews2Trend:
     def test_delta_negative_1_is_improving(self):
         """Delta of -1 -> improving."""
         result = _compute_news2_trend(
-            new_score=2, new_risk="low",
-            prior_score=3, prior_risk="low",
+            new_score=2,
+            new_risk="low",
+            prior_score=3,
+            prior_risk="low",
         )
         assert result["trend"] == "improving"
         assert result["delta"] == -1
@@ -143,8 +164,10 @@ class TestComputeNews2Trend:
     def test_no_risk_level_info_no_boundary_crossing(self):
         """If risk levels are not provided, crossed_risk_boundary is False."""
         result = _compute_news2_trend(
-            new_score=8, new_risk=None,
-            prior_score=6, prior_risk=None,
+            new_score=8,
+            new_risk=None,
+            prior_score=6,
+            prior_risk=None,
         )
         assert result["trend"] == "deteriorating"
         assert result["delta"] == 2
@@ -153,24 +176,30 @@ class TestComputeNews2Trend:
     def test_low_to_medium_crossing(self):
         """Low -> Medium risk level crossing."""
         result = _compute_news2_trend(
-            new_score=6, new_risk="medium",
-            prior_score=4, prior_risk="low",
+            new_score=6,
+            new_risk="medium",
+            prior_score=4,
+            prior_risk="low",
         )
         assert result["crossed_risk_boundary"] is True
 
     def test_medium_to_low_no_crossing(self):
         """Medium -> Low is a decrease, not a crossing upward."""
         result = _compute_news2_trend(
-            new_score=3, new_risk="low",
-            prior_score=6, prior_risk="medium",
+            new_score=3,
+            new_risk="low",
+            prior_score=6,
+            prior_risk="medium",
         )
         assert result["crossed_risk_boundary"] is False
 
     def test_trend_alert_dict_has_all_required_keys(self):
         """The trend_alert dict always has all keys the field UI expects."""
         result = _compute_news2_trend(
-            new_score=5, new_risk="medium",
-            prior_score=3, prior_risk="low",
+            new_score=5,
+            new_risk="medium",
+            prior_score=3,
+            prior_risk="low",
         )
         required_keys = {"trend", "delta", "prior_news2", "new_news2", "crossed_risk_boundary"}
         assert required_keys.issubset(result.keys())
@@ -206,6 +235,7 @@ class TestRiskLevelIndex:
 
 # ── GCS severity band helper ──────────────────────────────────────────────
 
+
 class TestGcsSeverityBand:
     def test_mild_band(self):
         assert _gcs_severity_band(13) == "mild"
@@ -225,6 +255,7 @@ class TestGcsSeverityBand:
 
 
 # ── GCS trend computation ────────────────────────────────────────────────
+
 
 class TestComputeGcsTrend:
     def test_gcs_15_to_9_rapid_deterioration(self):
@@ -327,13 +358,15 @@ class TestComputeGcsTrend:
 
 # ── NEWS2 missing fields (Improvement 3.3) ────────────────────────────────
 
+
 class TestNews2MissingFields:
     def test_scoring_error_has_missing_fields(self):
         """ScoringError must carry a missing_fields list."""
         from app.scoring.scorers import ScoringError, compute_news2
+
         try:
             compute_news2({"respiratory_rate": 20})  # missing most fields
-            assert False, "Expected ScoringError"
+            raise AssertionError("Expected ScoringError")
         except ScoringError as exc:
             assert len(exc.missing_fields) > 0
             assert isinstance(exc.missing_fields, list)
@@ -341,6 +374,7 @@ class TestNews2MissingFields:
     def test_scoring_error_missing_consciousness(self):
         """Missing consciousness field is captured in missing_fields."""
         from app.scoring.scorers import ScoringError, compute_news2
+
         vitals = {
             "respiratory_rate": 20,
             "spo2": 98,
@@ -351,13 +385,14 @@ class TestNews2MissingFields:
         }
         try:
             compute_news2(vitals)
-            assert False, "Expected ScoringError"
+            raise AssertionError("Expected ScoringError")
         except ScoringError as exc:
             assert "consciousness" in exc.missing_fields
 
     def test_scoring_error_missing_temperature(self):
         """Missing temperature field is captured in missing_fields."""
         from app.scoring.scorers import ScoringError, compute_news2
+
         vitals = {
             "respiratory_rate": 20,
             "spo2": 98,
@@ -368,34 +403,42 @@ class TestNews2MissingFields:
         }
         try:
             compute_news2(vitals)
-            assert False, "Expected ScoringError"
+            raise AssertionError("Expected ScoringError")
         except ScoringError as exc:
             assert "temperature" in exc.missing_fields
 
     def test_add_vitals_imports_scoring_error(self):
         """add_vitals must import ScoringError specifically."""
         import inspect
+
         from app.repositories import add_vitals
+
         source = inspect.getsource(add_vitals)
         assert "ScoringError" in source
 
     def test_add_vitals_catches_scoring_error(self):
         """add_vitals catches ScoringError specifically (not broad ValueError)."""
         import inspect
+
         from app.repositories import add_vitals
+
         source = inspect.getsource(add_vitals)
         assert "except ScoringError" in source
 
     def test_add_vitals_returns_missing_fields_in_response(self):
         """add_vitals must include news2_missing_fields in the returned dict."""
         import inspect
+
         from app.repositories import add_vitals
+
         source = inspect.getsource(add_vitals)
         assert "news2_missing_fields" in source
 
     def test_add_vitals_defaults_missing_fields_to_empty(self):
         """When NEWS2 computes successfully, missing_fields defaults to []."""
         import inspect
+
         from app.repositories import add_vitals
+
         source = inspect.getsource(add_vitals)
         assert "news2_missing_fields" in source and "= []" in source

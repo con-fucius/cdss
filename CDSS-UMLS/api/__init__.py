@@ -1,2 +1,1 @@
-"""UMLS CDSS API Package"""
-
+"""UMLS CDSS API Package."""

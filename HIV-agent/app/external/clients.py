@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -37,9 +37,7 @@ _OPENFDA_BASE_URL = os.getenv(
     "CDSS_OPENFDA_BASE_URL",
     "https://api.fda.gov/drug/label.json",
 )
-_EXTERNAL_TIMEOUT_SECONDS = float(
-    os.getenv("CDSS_EXTERNAL_ENDPOINT_TIMEOUT_SECONDS", "4")
-)
+_EXTERNAL_TIMEOUT_SECONDS = float(os.getenv("CDSS_EXTERNAL_ENDPOINT_TIMEOUT_SECONDS", "4"))
 
 
 def _safe_detail(exc: BaseException) -> str:
@@ -67,13 +65,13 @@ class RxNormClient:
 
     async def get_interactions(
         self,
-        drug_names: List[str],
-    ) -> Optional[List[Dict[str, Any]]]:
+        drug_names: list[str],
+    ) -> list[dict[str, Any]] | None:
         medications = [str(name).strip() for name in drug_names if str(name).strip()]
         if len(medications) < 2:
             return []
 
-        rxcuis_by_name: Dict[str, List[str]] = {}
+        rxcuis_by_name: dict[str, list[str]] = {}
         for medication in medications:
             rxcuis = await self._resolve_rxcuis(medication)
             if rxcuis:
@@ -82,7 +80,7 @@ class RxNormClient:
         unresolved_medications = [
             medication for medication in medications if medication not in rxcuis_by_name
         ]
-        interactions: List[Dict[str, Any]] = []
+        interactions: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str]] = set()
         for drug_a, cuis_a in rxcuis_by_name.items():
             for drug_b, cuis_b in rxcuis_by_name.items():
@@ -121,8 +119,8 @@ class RxNormClient:
             interactions.append(item)
         return interactions
 
-    async def _resolve_rxcuis(self, medication: str) -> List[str]:
-        async def _fetch() -> List[str]:
+    async def _resolve_rxcuis(self, medication: str) -> list[str]:
+        async def _fetch() -> list[str]:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(
                     f"{self.base_url}/rxcui.json",
@@ -146,11 +144,11 @@ class RxNormClient:
     async def _interactions_for_pair(
         self,
         drug_a: str,
-        cuis_a: List[str],
+        cuis_a: list[str],
         drug_b: str,
-        cuis_b: List[str],
-    ) -> List[Dict[str, Any]]:
-        interactions: List[Dict[str, Any]] = []
+        cuis_b: list[str],
+    ) -> list[dict[str, Any]]:
+        interactions: list[dict[str, Any]] = []
         for cui_a in cuis_a:
             for cui_b in cuis_b:
                 pair = await self._rxnorm_interaction_for_cuis(cui_a, cui_b)
@@ -164,8 +162,8 @@ class RxNormClient:
         self,
         cui_a: str,
         cui_b: str,
-    ) -> List[Dict[str, Any]]:
-        async def _fetch() -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(
                     f"{self.base_url}/interaction.json",
@@ -174,7 +172,7 @@ class RxNormClient:
             response.raise_for_status()
             payload = response.json()
             interaction_groups = payload.get("interactionTypeGroup", [])
-            interactions: List[Dict[str, Any]] = []
+            interactions: list[dict[str, Any]] = []
             for group in interaction_groups:
                 for interaction_type in group.get("interactionType", []):
                     for interaction in interaction_type.get("interaction", []):
@@ -203,10 +201,10 @@ class RxNormClient:
 
     async def _openfda_interactions(
         self,
-        medications: List[str],
-    ) -> Optional[List[Dict[str, Any]]]:
+        medications: list[str],
+    ) -> list[dict[str, Any]] | None:
         searched = []
-        interactions: List[Dict[str, Any]] = []
+        interactions: list[dict[str, Any]] = []
         seen: set[str] = set()
         for medication in medications:
             label = await self._openfda_label(medication)
@@ -239,9 +237,11 @@ class RxNormClient:
             return None
         return interactions
 
-    async def _openfda_label(self, medication: str) -> Optional[Dict[str, Any]]:
-        async def _fetch() -> Optional[Dict[str, Any]]:
-            query = quote(f'openfda.generic_name:"{medication}" OR openfda.brand_name:"{medication}"')
+    async def _openfda_label(self, medication: str) -> dict[str, Any] | None:
+        async def _fetch() -> dict[str, Any] | None:
+            query = quote(
+                f'openfda.generic_name:"{medication}" OR openfda.brand_name:"{medication}"'
+            )
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(
                     self.openfda_url,

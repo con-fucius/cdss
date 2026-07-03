@@ -1,5 +1,4 @@
-"""
-app/db.py
+"""app/db.py.
 
 Async Postgres session management.
 
@@ -12,8 +11,8 @@ lifecycle themselves.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -26,8 +25,8 @@ from .config import get_database_url, get_db_pool_max, get_db_pool_min, is_datab
 
 logger = logging.getLogger(__name__)
 
-_engine: Optional[AsyncEngine] = None
-_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_sessionmaker: async_sessionmaker[AsyncSession] | None = None
 _ready: bool = False
 
 
@@ -55,9 +54,7 @@ async def init_engine() -> None:
         )
         return
     _engine = _build_engine()
-    _sessionmaker = async_sessionmaker(
-        _engine, class_=AsyncSession, expire_on_commit=False
-    )
+    _sessionmaker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     _ready = True
     logger.info("Database engine initialised")
 

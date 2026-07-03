@@ -54,3 +54,11 @@ Thumbs.db
 _tmp_*
 *.tmp
 *.bak
+
+# ── Caches (HIV-agent) ──────────────────────────────────────────────
+.runtime/
+.uv-cache/
+
+# ── Misc ────────────────────────────────────────────────────────────
+server_log.txt
+issues.txt
