@@ -1,0 +1,49 @@
+Implementation Directive
+
+Context
+You are implementing a bounded set of tech-debt-closing changes to an existing CDSS codebase at 'D:\Projects\CDSS\HIV-agent'. The system is mid-maturity: working LanceDB retrieval, PageIndex, evidence graph, UMLS terminology service, memory system, FastAPI backend, React frontend. Most "new" capability already exists as dead code or shadow-mode features — your job is mostly activation, wiring, and correctness fixes, not new architecture.
+
+Non-negotiable rules
+1. Read before writing. For every file listed in a phase, 'view' the current content immediately before editing. Do not edit based on earlier context — files change between phases.
+2. No new frameworks, libraries, or services unless explicitly named in a task (e.g. RxNorm client in Phase 5). If you think you need one, stop and ask.
+3. No new abstractions beyond what's specified. Do not introduce base classes, plugin systems, generic "managers," config layers, or interfaces "for future flexibility." If a task says "one function," write one function.
+4. Feature flags default to 'false'/off wherever specified. Verify the default produces zero behavior change before touching the enabled path.
+5. Every external/network call must: have a bounded timeout, never raise into 'chat_stream', degrade gracefully (return 'None'/empty, log a warning), and follow the existing patterns in 'retry.py' ('async_retry', 'with_timeout'). Copy the pattern used by '_query_evidence_context' or '_shadow_umls_telemetry' — don't invent a new error-handling style.
+6. Preserve existing behavior for the unaffected path. Every phase has a "diseases/queries without X behave identically" checklist item. Treat this as a hard requirement — write or run a quick before/after comparison, don't assume.
+7. One phase at a time, in order. Do not start Phase N+1 until Phase N's acceptance checklist is fully checked. Do not reorder for convenience.
+8. No silent scope expansion. If implementing a task reveals a related "obvious improvement" (e.g. "while I'm here, let me also refactor X"), do not do it. Note it separately and ask.
+9. Match existing code style exactly: naming conventions, docstring format, logging style ('logger.warning("...: %s", exc)'), async patterns, type hints. Look at the nearest analogous function in the same file before writing new code.
+10. Windows/PowerShell environment. Any commands, scripts, or paths you produce must work in PowerShell, not bash, unless the existing script is already '.sh'/bash-based (don't convert existing scripts' shells).
+
+Anti-patterns to actively avoid
+- Under-engineering: don't skip the dedup/fallback/timeout logic specified just to "get it working" — these are safety-relevant (clinical context).
+- Over-engineering: don't add config options, env vars, or parameters not specified. Don't make things "pluggable" or "extensible" beyond the literal task.
+- Dead-code accumulation: if a task says replace/extract logic from function A into function B, A must actually call B afterward — no duplicated logic left behind.
+- False degradation states: per Phase 5.2 — never let an "external service unavailable" case produce output that looks like "checked, nothing found." These are different facts and must be represented differently.
+- Silent fallback that hides bugs: graceful degradation must log at 'warning' level with enough detail to debug. Don't swallow exceptions silently.
+- Frontend storage rules: no 'localStorage'/'sessionStorage' in any new artifact-style code; for the existing 'useChat.js', do not touch the storage migration shims unless a phase explicitly says to.
+
+Per-phase execution protocol
+For each numbered item (e.g. "1.1", "2.1"):
+1. State which files you're about to view and why.
+2. View them.
+3. Propose the specific diff/change before applying it if the change touches more than ~30 lines or alters a function signature used elsewhere (grep for callers first).
+4. Apply the change.
+5. Walk through the acceptance checklist for that item explicitly — for each box, state how it's satisfied (test added, manual trace through code, existing test still passing, etc.). Do not check a box without justification.
+6. Stop. Report status. Wait for confirmation before the next item.
+
+Phase order (strict)
+1. 1.1 — Per-stage retrieval latency instrumentation ('search_tools.py', 'logs.py'). Add 'embed_ms'/'vector_search_ms'/'rerank_ms' to '_search_guideline_table' and 'log_retrieval'. This is pure additive instrumentation — must not change return values or control flow, only add timing capture and logging fields.
+2. Phase 1 (1.1 renumbered → 1.2, 1.3 in this directive = prior "1.1, 1.2") — Multi-disease retrieval resolution, then structured KB lookup. *(Note: resolve numbering collision — latency instrumentation above is "Step 0"; multi-disease resolution and KB lookup are Steps 1 and 2.)*
+3. Phase 2 — Terminology query expansion (2.1 extract, 2.2 wire in).
+4. Phase 3 — Frontend surfacing: evidence/concept panel, then autocomplete.
+5. Phase 4 — Memory auto-distillation on session clear.
+6. Phase 5 — External endpoint client pattern, then RxNorm/openFDA drug interaction check.
+
+Before declaring any phase done
+- Run existing relevant tests ('tests/', 'test_*.py' at repo root and in 'CDSS-UMLS') — do not just eyeball.
+- Confirm no new top-level dependencies were added to 'requirements*.txt'/'pyproject.toml'/'package.json' unless the phase explicitly calls for one (Phase 5 RxNorm client uses 'httpx', already a dependency — no new package expected even there).
+- Confirm flags default to off and grep for any place the new env var needs documenting ('.env.example', 'SETUP.md') — update docs if those files exist and document other 'CDSS_*' flags.
+
+If blocked or uncertain
+Stop and ask. Do not guess at table schemas, env var names, or existing function signatures — view the file. Do not assume a table (e.g. '{disease}_kb_tables') exists — check 'table_names()' / the LanceDB directory tree first.

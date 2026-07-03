@@ -1,0 +1,56 @@
+# ── Secrets / environment ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+postgres.env
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environments ──────────────────────────────────────────────
+.venv/
+venv/
+app/venv/
+
+# ── Node / frontend ──────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Runtime databases ────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite3
+
+# ── Logs ──────────────────────────────────────────────────────────────
+*.log
+*.out
+*.err
+logs.txt
+
+# ── OS / IDE ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Jupyter ──────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Temporary / generated ────────────────────────────────────────────
+_tmp_*
+*.tmp
+*.bak

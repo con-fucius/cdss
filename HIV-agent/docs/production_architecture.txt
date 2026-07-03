@@ -1,0 +1,56 @@
+PRODUCTION DEPLOYMENT ARCHITECTURE
+
+1. Redis Session Store Implementation
+=====================================
+Replace the in-memory `_session_history` dict with Redis for stateful session management across multiple workers.
+
+Schema:
+- Key: `cdss:session:{session_id}:history` -> List of JSON-serialized messages.
+- Key: `cdss:session:{session_id}:context` -> JSON-serialized PatientContext.
+
+TTL Policy:
+- Set EXPIRE to 24 hours on all session keys upon every interaction.
+- Old sessions will be evicted automatically by Redis.
+
+Serialization:
+- Use `pydantic-ai` `messages_to_json()` and `messages_from_json()` or custom serializers to serialize the `deque` of messages into strings to push into Redis Lists.
+
+2. CORS Lockdown
+================
+In `app/api.py`, replace `allow_origins=["*"]` with an environment-driven config:
+
+```python
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "https://cdss.health.go.ke").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-User-Role"],
+)
+```
+
+3. Rate Limiting
+================
+Implement `slowapi` (based on limits) for per-session/IP rate limiting to prevent abuse of the LLM endpoints.
+
+```python
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.post("/chat/stream")
+@limiter.limit("20/minute")
+async def chat_stream(request: Request, body: ChatRequest):
+    ...
+```
+
+4. Authentication & AuthZ Path
+==============================
+- JWT Tokens issued by external Identity Provider (e.g., Keycloak or Auth0).
+- Payload contains `{"role": "CLINICIAN"}` or `{"role": "ADMIN"}`.
+- Fastapi dependency parses `Authorization: Bearer <token>`, validates signature against JWKS, and injects role into request context.

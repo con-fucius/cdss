@@ -1,0 +1,148 @@
+{
+  "protocol_id": "cardiac_arrest_unresponsive_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "not breathing",
+    "unresponsive",
+    "cardiac arrest",
+    "collapsed",
+    "no pulse",
+    "kupumua pumua",
+    "kuzimia"
+  ],
+  "entry_question_id": "q1_conscious",
+  "questions": {
+    "q1_conscious": {
+      "text": "Is the patient conscious? Can they respond to you in any way \u00e2\u20ac\u201d talking, moving, or making sounds?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q_alt_conscious_path",
+        "no": "q2_breathing"
+      }
+    },
+    "q_alt_conscious_path": {
+      "text": "Patient is conscious. This protocol is for unresponsive patients only \u00e2\u20ac\u201d this patient needs a different protocol.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_conscious_redirect"
+      }
+    },
+    "q2_breathing": {
+      "text": "Is the patient breathing normally? Look and listen for at least 5-10 seconds.",
+      "answer_type": "select",
+      "options": [
+        "normal",
+        "abnormal_or_gasping",
+        "not_breathing",
+        "unsure"
+      ],
+      "branch_map": {
+        "normal": "q_alt_breathing_normal",
+        "abnormal_or_gasping": "q3_pulse_check",
+        "not_breathing": "q3_pulse_check",
+        "unsure": "q3_pulse_check"
+      }
+    },
+    "q_alt_breathing_normal": {
+      "text": "Patient is unresponsive but breathing normally. This is not cardiac arrest \u00e2\u20ac\u201d this patient needs the unresponsive-breathing protocol.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_breathing_redirect"
+      }
+    },
+    "q3_pulse_check": {
+      "text": "If you are trained to check a pulse, is there a definite pulse? If you are not trained or unsure, answer 'unsure' \u00e2\u20ac\u201d do not delay for this.",
+      "answer_type": "select",
+      "options": [
+        "definite_pulse",
+        "no_pulse",
+        "unsure"
+      ],
+      "branch_map": {
+        "definite_pulse": "q_alt_has_pulse",
+        "no_pulse": "q4_cpr_capability",
+        "unsure": "q4_cpr_capability"
+      }
+    },
+    "q_alt_has_pulse": {
+      "text": "Patient has a definite pulse but abnormal breathing. This is not cardiac arrest \u00e2\u20ac\u201d this patient needs the respiratory distress protocol.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_pulse_redirect"
+      }
+    },
+    "q4_cpr_capability": {
+      "text": "Is there someone at the scene able and willing to start CPR right now, before the ambulance arrives?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Compression-only CPR (no rescue breaths) is acceptable and recommended for untrained bystanders guided by phone. Do not delay compressions to teach rescue breathing.",
+      "branch_map": {
+        "yes": "outcome_cardiac_arrest_cpr_instructions",
+        "no": "outcome_cardiac_arrest_no_cpr"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_cardiac_arrest_cpr_instructions": {
+      "priority_code": "P1_CARDIAC_ARREST",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Place the patient flat on their back on a firm surface.",
+        "Place the heel of one hand in the centre of the chest, between the nipples.",
+        "Push hard and fast, at least 5cm deep, at a rate of 100-120 compressions per minute.",
+        "Allow the chest to fully recoil between compressions.",
+        "Continue compressions without stopping until the ambulance crew arrives and takes over.",
+        "If an AED is available and someone else can fetch it, send them now \u00e2\u20ac\u201d do not stop compressions to fetch it yourself."
+      ]
+    },
+    "outcome_cardiac_arrest_no_cpr": {
+      "priority_code": "P1_CARDIAC_ARREST",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "I will guide you through starting CPR yourself if you are able.",
+        "Place the patient flat on their back on a firm surface.",
+        "Place the heel of one hand in the centre of the chest, between the nipples.",
+        "Push hard and fast, at least 5cm deep, at a rate of 100-120 compressions per minute.",
+        "I will count with you to help keep the right pace."
+      ]
+    },
+    "outcome_conscious_redirect": {
+      "priority_code": "ROUTE_REASSESS",
+      "recommended_unit_type": "PENDING_REASSESSMENT",
+      "pre_arrival_instructions": [
+        "This patient is conscious \u00e2\u20ac\u201d the cardiac arrest protocol does not apply.",
+        "Select the appropriate protocol for the patient's chief complaint.",
+        "If the patient has breathing difficulty, use the respiratory distress protocol.",
+        "If the patient has trauma, use the appropriate trauma protocol."
+      ]
+    },
+    "outcome_breathing_redirect": {
+      "priority_code": "P2_UNCONSCIOUS_BREATHING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "The patient is unconscious but breathing \u00e2\u20ac\u201d this is not cardiac arrest.",
+        "Carefully roll the patient onto their side in the recovery position.",
+        "Tilt the head back to keep the airway open.",
+        "Monitor breathing closely \u00e2\u20ac\u201d if they stop breathing, start CPR immediately."
+      ]
+    },
+    "outcome_pulse_redirect": {
+      "priority_code": "P2_RESPIRATORY_DISTRESS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "The patient has a pulse but is not breathing normally \u00e2\u20ac\u201d this is respiratory distress, not cardiac arrest.",
+        "Help the patient find a comfortable position, usually sitting upright.",
+        "If oxygen is available, apply it now.",
+        "Monitor closely \u00e2\u20ac\u201d if the patient stops breathing or loses consciousness, start CPR."
+      ]
+    }
+  }
+}

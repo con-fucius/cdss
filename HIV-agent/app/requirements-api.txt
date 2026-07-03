@@ -1,0 +1,7 @@
+# Additional requirements for FastAPI backend
+# Install alongside existing requirements.txt
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+# DEPRECATED: Do not install from this file. The root pyproject.toml is the
+# single dependency manifest for API dependencies. This file remains only as a
+# visible compatibility marker for older setup instructions.

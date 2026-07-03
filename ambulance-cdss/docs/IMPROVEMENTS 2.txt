@@ -1,0 +1,239 @@
+---
+1. Protocol reachability validation at load time
+
+What exists vs. the gap: 
+'_validate_branch_integrity' confirms every 'branch_map' target resolves to a real question or terminal outcome. 
+What it does NOT check: whether every terminal outcome and every question is actually reachable from 'entry_question_id'. 
+A question or outcome that can never be reached — because no branch points at it — is dead code in the protocol. 
+Dead questions mean the author wrote guidance nobody will ever see. An unreachable terminal outcome means a priority code that can never fire. Neither is caught today. 
+A protocol with a disconnected graph loads as "approved and active" despite the author defect.
+
+Why: 
+Once real approvals are in place and protocols are used in production, an unreachable outcome could mean a clinical pathway that looks authored but is silently inert. 
+This is a governance defect that should be caught at load time, not discovered during a real call.
+
+How: 
+It's a graph traversal (BFS from 'entry_question_id') using only the data structures already loaded by '_parse_protocol'. 
+No new models, no new tables, no new dependencies. One function added to 'registry.py', called at the end of '_parse_protocol' alongside the existing '_validate_branch_integrity'.
+
+---
+Checklist
+'app/protocols/registry.py'
+- [ ] Add '_validate_protocol_reachability(protocol: DispatchProtocol, source_path: Path) -> None'
+- [ ] BFS from 'protocol.entry_question_id' across 'branch_map' targets: collect every reachable question ID and every reachable terminal outcome key
+- [ ] After BFS: compute 'unreachable_questions = set(protocol.questions.keys()) - reachable_questions'; compute 'unreachable_outcomes = set(protocol.terminal_outcomes.keys()) - reachable_outcomes'
+- [ ] If either set is non-empty: raise 'ProtocolRejectedError' listing the unreachable IDs — same rejection posture as '_validate_branch_integrity'
+- [ ] Call '_validate_protocol_reachability(protocol, source_path)' at the end of '_parse_protocol', after '_validate_branch_integrity'
+- [ ] Function is pure Python, synchronous, zero I/O — same constraints as '_validate_branch_integrity'
+
+'tests/test_protocol_registry.py'
+- [ ] Test: a protocol with a question unreachable from 'entry_question_id' is rejected with an error message naming the unreachable question
+- [ ] Test: a protocol with a terminal outcome unreachable from any branch is rejected
+- [ ] Test: the three existing protocols (once PLACEHOLDER replaced) pass reachability validation — OR confirm they correctly fail today because PLACEHOLDER governance rejection fires first (reachability never reached)
+- [ ] Test: the valid fixture protocol used in 'test_broken_file_does_not_remove_valid_protocols' passes reachability validation
+
+Acceptance criteria
+- [ ] A protocol file with a question that no branch points to is rejected at load with "unreachable question" in the rejection reason
+- [ ] A protocol file with a terminal outcome that no branch points to is rejected at load with "unreachable outcome" in the rejection reason
+- [ ] No existing valid protocol is newly rejected by this check
+- [ ] No new files, no new tables, no new dependencies
+
+---
+2. Incident close-out enforcement
+
+What exists vs. the gap: 
+'IncidentStatus' has 'HANDOFF_COMPLETE' and 'CLOSED' but nothing enforces that an incident must pass through 'HANDOFF_COMPLETE' before 'CLOSED', or that 'CLOSED' is a terminal state (once closed, it should not transition to 'ON_SCENE' or 'DISPATCHED'). The 'POST /incidents/{id}/status' endpoint accepts any valid 'IncidentStatus' value and sets it regardless of the current state. 
+A dispatcher could accidentally close an incident before handoff, or reopen a closed incident. Neither is prevented or even warned.
+
+Why: 
+The retention purge ('purge_expired_incidents') uses 'closed_at' as its PII-purge trigger. 
+An incorrectly-set 'closed_at' (e.g. set then reset to a different status) means either premature PII purge or indefinite PII retention. 
+This is a data integrity and governance issue, not just a UX issue.
+
+How: 
+A transition table (dict mapping 'current_status -> allowed_next_statuses') is 10 lines. Checking it in 'update_incident_status' in 'repositories.py' is 5 lines. No new tables, no state machine library, no new models.
+
+---
+Checklist
+'app/repositories.py'
+- [ ] Define '_VALID_TRANSITIONS: Dict[IncidentStatus, set[IncidentStatus]]' mapping each status to the set of statuses it is permitted to transition to:
+  - 'RECEIVED' → '{DISPATCHED, CLOSED}' (allow direct close if call cancelled)
+  - 'DISPATCHED' → '{ON_SCENE, CLOSED}'
+  - 'ON_SCENE' → '{TRANSPORTING, CLOSED}'
+  - 'TRANSPORTING' → '{HANDOFF_COMPLETE, CLOSED}'
+  - 'HANDOFF_COMPLETE' → '{CLOSED}'
+  - 'CLOSED' → '{}' (terminal — no transitions permitted)
+- [ ] In 'update_incident_status': before executing the UPDATE, fetch the current status of the incident and check 'new_status in _VALID_TRANSITIONS[current_status]'
+- [ ] If the transition is not valid: raise a new 'InvalidStatusTransitionError(ValueError)' with 'current_status', 'requested_status', and 'allowed_statuses' fields — same pattern as 'OutOfScriptAnswerError' in 'runner.py' (structured error, not just a string)
+- [ ] 'InvalidStatusTransitionError' lives in 'repositories.py' alongside the function that raises it
+
+'app/main.py' — 'update_incident_status' endpoint
+- [ ] Catch 'InvalidStatusTransitionError' from 'repo.update_incident_status' and return HTTP 422 with a structured body: '{"error": "invalid_status_transition", "current": ..., "requested": ..., "allowed": [...]}'
+- [ ] The 422 body must be machine-readable (same pattern as 'out_of_script_answer' in 'submit_incident_answer') so a future dashboard can show the dispatcher which transitions are currently available
+
+'tests/test_status_transitions.py' (new file)
+- [ ] Test: 'RECEIVED -> DISPATCHED' is valid
+- [ ] Test: 'RECEIVED -> CLOSED' is valid (cancelled call)
+- [ ] Test: 'CLOSED -> DISPATCHED' raises 'InvalidStatusTransitionError'
+- [ ] Test: 'CLOSED -> RECEIVED' raises 'InvalidStatusTransitionError'
+- [ ] Test: 'HANDOFF_COMPLETE -> RECEIVED' raises 'InvalidStatusTransitionError'
+- [ ] Test: 'DISPATCHED -> ON_SCENE' is valid
+- [ ] Test: '_VALID_TRANSITIONS' covers every value of 'IncidentStatus' as a key — no status is accidentally left out of the map
+
+Acceptance criteria
+- [ ] 'POST /incidents/{id}/status' with 'closed -> dispatched' returns HTTP 422 with 'error: "invalid_status_transition"' and the list of currently-allowed transitions
+- [ ] An incident whose status is 'CLOSED' cannot be modified via this endpoint, period
+- [ ] The 'allowed' list in the 422 body is always accurate — directly derived from '_VALID_TRANSITIONS', not hardcoded strings
+- [ ] No new table, no state machine library, no new model
+
+---
+3. Weighted chief-complaint protocol selection with confidence score
+
+What exists vs. the gap: 
+'find_by_chief_complaint' returns the protocol whose longest matching trigger wins, single match. 
+The caller (create incident endpoint) gets 'protocol_matched: True/False' but never knows how confident the match is, or whether multiple protocols had partial matches. 
+For ambiguous presentations (e.g. "not breathing, bleeding from head") both the cardiac/respiratory protocol and the trauma protocol might partially match. 
+The dispatcher gets no signal that this is an ambiguous case requiring manual verification.
+
+Why: 
+Wrong protocol selection at call creation is the highest-consequence error in this system. 
+Knowing the selection was ambiguous — and surfacing that to the dispatcher — directly reduces the risk of a mismatched protocol running for several questions before anyone notices.
+
+How: 
+'find_by_chief_complaint' already does the work; extending it to return a confidence score (number of triggers matched / total triggers in the winning protocol, normalised 0–1) and the list of other partial matches is additive. 
+Return type changes from 'Optional[DispatchProtocol]' to a new 'ProtocolMatchResult' dataclass. 
+The endpoint already returns 'protocol_matched: True/False'; the confidence score and alternatives are added alongside it.
+
+---
+Checklist
+'app/protocols/registry.py'
+- [ ] Add '@dataclass ProtocolMatchResult': 'protocol: DispatchProtocol', 'matched_triggers: List[str]', 'confidence: float' (0.0–1.0, calculated as 'len(matched_triggers) / len(protocol.chief_complaint_trigger)' — what fraction of the protocol's own trigger set matched the complaint), 'alternatives: List[ProtocolMatchResult]' (other protocols that had at least one trigger match, sorted by confidence descending)
+- [ ] Rename 'find_by_chief_complaint' to 'match_by_chief_complaint(chief_complaint: str) -> Optional[ProtocolMatchResult]' — returns 'None' only when zero protocols had any trigger match
+- [ ] Keep the longest-trigger-wins selection logic for choosing the primary; add tracking of all other protocols with ≥1 trigger match as 'alternatives'
+- [ ] 'confidence' is always between 0.0 and 1.0 inclusive. If 'len(protocol.chief_complaint_trigger) == 0' (should never happen — registry rejects it — but defensive): return 0.0
+- [ ] 'alternatives' excludes the winning protocol itself; is empty if no other protocol matched
+
+'app/main.py' — 'create_incident'
+- [ ] Call 'registry.match_by_chief_complaint' instead of 'find_by_chief_complaint'
+- [ ] Pass 'match.protocol' where 'protocol' was used before — no other logic changes
+- [ ] Add 'confidence', 'matched_triggers', and 'alternatives' (list of '{protocol_id, confidence, matched_triggers}') to the 'protocol_matched: True' response
+- [ ] Add '"requires_manual_verification": True' to the response when 'confidence < 1.0' OR when 'alternatives' is non-empty — this is the actionable signal for the dispatcher UI, not just raw numbers
+
+'tests/test_protocol_matching.py' (new file)
+- [ ] Test: single protocol, all triggers match → confidence 1.0
+- [ ] Test: single protocol, one of two triggers matches → confidence 0.5
+- [ ] Test: two protocols both match → winner is the one with the longer matching trigger; loser appears in 'alternatives'
+- [ ] Test: no protocol matches → returns 'None'
+- [ ] Test: 'requires_manual_verification' is 'True' when confidence < 1.0
+- [ ] Test: 'requires_manual_verification' is 'True' when 'alternatives' is non-empty even if confidence is 1.0
+
+Acceptance criteria
+- [ ] 'POST /incidents' response includes 'confidence' (float), 'matched_triggers' (list), 'alternatives' (list), 'requires_manual_verification' (bool) when 'protocol_matched: True'
+- [ ] A complaint that matches all of the winning protocol's triggers returns 'confidence: 1.0' and 'requires_manual_verification: False'
+- [ ] A complaint that triggers two protocols returns 'requires_manual_verification: True' and the losing protocol appears in 'alternatives'
+- [ ] No new table, no NLP library, no fuzzy-matching dependency — pure string logic
+
+---
+4. GCS trend alerting (parallel to NEWS2 trend, 4 in the previous set)
+
+What exists vs. the gap: 
+NEWS2 trending was added to 'add_vitals' — it computes '_compute_news2_trend' after every vitals write and returns 'trend_alert' on the response. 
+GCS is also computed and stored at write time ('gcs_total' on 'IncidentVitals') but receives no trending. 
+A dropping GCS is clinically as significant as a rising NEWS2 — it is the primary indicator of neurological deterioration — and it uses the same data and the same write path. 
+The asymmetry between NEWS2 trend (surfaced, actionable) and GCS trend (computed, stored, silently ignored) is a gap.
+
+Why: 
+GCS dropping from 15 to 9 (a 6-point fall crossing the severe TBI threshold at ≤8) gets no clinical signal from this system right now. 
+The data is in 'incident_vitals.gcs_total'. The write path is already the right place. The field UI already has the trend alert banner.
+
+How: 
+'_compute_news2_trend' is already a standalone function. 
+A parallel '_compute_gcs_trend' follows the exact same pattern: fetch the prior row's 'gcs_total', compute delta, classify, return a dict with the same keys as 'trend_alert' but prefixed for GCS. 
+The response from 'add_vitals' gains one new key ('gcs_trend_alert'). The field UI already has 'renderTrendAlert' — a second call with the GCS result reuses it.
+
+---
+Checklist
+'app/repositories.py'
+- [ ] Add '_compute_gcs_trend(new_gcs: Optional[int], prior_gcs: Optional[int]) -> Dict[str, Any]' — parallel to '_compute_news2_trend', same return shape: '{trend, delta, prior_gcs, new_gcs, crossed_severity_threshold}'
+- [ ] 'trend' values: '"rapid_deterioration"' (delta ≤ -3), '"deteriorating"' (delta -1 or -2), '"stable"' (delta 0), '"improving"' (delta > 0), '"no_prior_data"' (either value is None) — note GCS is inverted from NEWS2: lower is worse
+- [ ] 'crossed_severity_threshold': True if the new score crosses 8→7 (severe TBI boundary) from above, or 12→11 (moderate TBI boundary) — use '_gcs_severity_band' helper returning '"mild"' (13–15), '"moderate"' (9–12), '"severe"' (≤8)
+- [ ] In 'add_vitals': after the NEWS2 prior-row query, also query for 'prior_row.gcs_total' (can reuse the same 'prior_row' already fetched — it has both fields on the same 'IncidentVitals' row)
+- [ ] Compute 'gcs_trend_alert = _compute_gcs_trend(gcs_total, prior_row.gcs_total if prior_row else None)'
+- [ ] Add 'gcs_trend_alert' to the returned dict alongside the existing 'trend_alert' key — do not rename 'trend_alert' (it's 'news2_trend' semantically, but renaming would break the field UI)
+
+Field UI ('field-ui/app.js')
+- [ ] In the vitals form submit handler, after 'renderTrendAlert(data.trend_alert)', add 'renderGcsTrendAlert(data.gcs_trend_alert)'
+- [ ] Add 'renderGcsTrendAlert(alert)': same pattern as 'renderTrendAlert', operating on a second DOM element 'id="gcs-trend-alert"' — shows on 'rapid_deterioration' or 'crossed_severity_threshold', hides otherwise
+- [ ] The GCS alert uses the 'warning-banner' class for 'deteriorating' and 'error-banner' for 'rapid_deterioration' — same colour logic as NEWS2 but independently rendered
+
+'field-ui/index.html'
+- [ ] Add '<div id="gcs-trend-alert" class="error-banner hidden"></div>' directly after '<div id="vitals-trend-alert">'
+
+'tests/test_vitals_trend.py' — extend existing file
+- [ ] Test: prior GCS 15, new GCS 9 → 'trend = "rapid_deterioration"' (delta -6), 'crossed_severity_threshold = True' (mild → moderate)
+- [ ] Test: prior GCS 9, new GCS 7 → 'crossed_severity_threshold = True' (moderate → severe)
+- [ ] Test: prior GCS 7, new GCS 12 → 'trend = "improving"', 'crossed_severity_threshold = False'
+- [ ] Test: no prior GCS → 'trend = "no_prior_data"', no crash
+- [ ] Test: same GCS as prior → 'trend = "stable"'
+- [ ] Test: 'gcs_trend_alert' dict always has all required keys (parallel to existing 'trend_alert_dict_has_all_required_keys' test)
+
+Acceptance criteria
+- [ ] 'POST /incidents/{id}/vitals' response includes 'gcs_trend_alert' key in addition to 'trend_alert'
+- [ ] A GCS drop from 15 to 8 produces 'trend = "rapid_deterioration"' and 'crossed_severity_threshold = True'
+- [ ] The GCS alert banner appears in the field UI independently of the NEWS2 alert banner — both can be visible simultaneously
+- [ ] No new table, no new model — the 'prior_row' fetch already in 'add_vitals' provides 'gcs_total' at no additional cost
+
+---
+5. Incident notes/free-text annotation endpoint
+
+What exists vs. the gap: 
+'incident_field_log' is used for everything the field unit produces — checklist steps, vitals (before the dedicated endpoint existed), medications (before their endpoint), and manual 'manual_entry' log rows (from 'field-log-form'). 
+The dispatcher side has no equivalent: once a locked script reaches a terminal outcome, the dispatcher cannot add a free-text note to the incident record. 
+There is no 'notes' field on 'Incident', no annotations table, and the 'GET /incidents' list endpoint already exposes 'incident.notes' (from the model) — but nothing writes to it. 
+More critically: field log entries are write-only from the current endpoints — there is no structured 'note' retrieval outside 'get_incident_full'. 
+A supervisor reviewing an active incident has to call '/full' and parse the entire assembled record to find a specific note.
+
+Why: 
+dispatcher-side annotation is operationally necessary. 
+During a live call, a dispatcher receives radio updates from the field unit that are not captured by any structured endpoint — they go nowhere if the dispatcher has no way to append a note to the incident. 
+These notes are part of the legally complete incident record, same as field log entries.
+
+How: 
+'Incident.notes' is already a 'Text' column in the model and migration (it's mapped in 'models.py' and '_incident_to_dict' already returns it). 
+It just needs a 'PATCH /incidents/{id}/notes' endpoint that appends text to the existing 'notes' value with a timestamp prefix (so multiple appends build a chronological log, not overwrite each other). 
+No new table. One field, one endpoint, one repository function.
+
+---
+Checklist
+'app/repositories.py'
+- [ ] Add 'append_incident_note(incident_id: str, note_text: str, author_id: str, timestamp: datetime) -> Dict[str, Any]' — appends a formatted line to 'Incident.notes' rather than overwriting: format '"[{timestamp_iso}] {author_id}: {note_text}"'. If 'Incident.notes' is currently 'None', the appended line becomes the initial value. If non-None, appends '"\n" + new_line'
+- [ ] Return '_incident_to_dict(incident)' after the update so the caller gets the full updated incident — no second SELECT needed (use 'RETURNING' or re-fetch within the same session)
+- [ ] 'note_text' stripped of leading/trailing whitespace before appending; if empty after strip: raise 'ValueError("Note text cannot be empty")'
+- [ ] 'author_id' stripped; if empty after strip: raise 'ValueError("Author ID cannot be empty")'
+
+'app/main.py'
+- [ ] New Pydantic model 'AppendNoteRequest(BaseModel)': 'note_text: str = Field(min_length=1)', 'author_id: str = Field(min_length=1)'
+- [ ] 'PATCH /incidents/{incident_id}/notes': 404 if incident not found; calls 'repo.append_incident_note'; catches 'ValueError' from the repository and returns 422; returns the updated incident dict
+- [ ] Do NOT add 'PUT /incidents/{id}/notes' — overwrite semantics would destroy prior dispatcher notes. Append-only is the correct model here for the same reason 'incident_dispatch_log' is append-only
+
+'tests/test_incident_notes.py' (new file)
+- [ ] Test: 'append_incident_note' with empty 'note_text' raises 'ValueError'
+- [ ] Test: 'append_incident_note' with empty 'author_id' raises 'ValueError'
+- [ ] Test: two sequential appends produce a notes field with both lines separated by '"\n"' with correct prefixes
+- [ ] Test: 'note_text' with leading/trailing whitespace is stripped before appending
+- [ ] Test: the endpoint routing is 'PATCH', not 'PUT' or 'POST' — verify via 'app.routes'
+
+Acceptance criteria
+- [ ] 'PATCH /incidents/{id}/notes' with '{"note_text": "Radio update: patient responding", "author_id": "disp-1"}' adds a timestamped line to 'incident.notes'
+- [ ] A second 'PATCH' appends a new line rather than overwriting the first note
+- [ ] 'GET /incidents/{id}' response includes the full accumulated 'notes' field
+- [ ] 'GET /incidents' list response includes 'notes' field (it already does via '_incident_to_dict' — confirm it, do not add a separate field)
+- [ ] No new table, no new model, no 'PUT' endpoint
+
+---
+Every item above is grounded in a real defect or gap found in the actual code, not a feature wish:
+- 1 — the registry validates that branch targets exist but not that they're reachable. A protocol that silently hides unreachable outcomes is an undetected authoring error.
+- 2 — 'update_incident_status' accepts 'CLOSED -> DISPATCHED' today. The retention policy uses 'closed_at' as a trigger. These two facts together are a PII governance risk.
+- 3 — 'find_by_chief_complaint' returns a binary match/no-match with no confidence signal. The 'create_incident' response has no way to tell the dispatcher they should verify the protocol selection manually.
+- 4 — GCS is computed and stored at every vitals write but never trended. The trend alert infrastructure exists (NEWS2), the data exists, the field UI banner exists. The gap is one function not yet written.
+- 5 — 'Incident.notes' is a mapped, persisted column in the model with no write endpoint. Dispatcher-side annotation during a live call goes nowhere. The '_incident_to_dict' serialiser already returns it.

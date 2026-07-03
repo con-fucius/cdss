@@ -1,0 +1,369 @@
+{
+  "protocol_id": "trauma_moi_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "fall",
+    "fell down",
+    "assault",
+    "stabbing",
+    "burn",
+    "on fire",
+    "industrial accident",
+    "workplace injury",
+    "hit with object",
+    "shot",
+    "gunshot",
+    "machete",
+    "ngumi",
+    "alianguka",
+    "alijichoma"
+  ],
+  "entry_question_id": "q1_type_of_injury",
+  "questions": {
+    "q1_type_of_injury": {
+      "text": "What type of injury is this?",
+      "answer_type": "select",
+      "options": [
+        "fall",
+        "assault_or_penetrating",
+        "burn",
+        "industrial_or_workplace",
+        "other"
+      ],
+      "branch_map": {
+        "fall": "q2_fall_height",
+        "assault_or_penetrating": "q3_penetrating_severity",
+        "burn": "q6_burn_extent",
+        "industrial_or_workplace": "q8_industrial_type",
+        "other": "q9_general_conscious"
+      }
+    },
+    "q2_fall_height": {
+      "text": "How far did the patient fall? Approximately how many metres or storeys?",
+      "answer_type": "select",
+      "options": [
+        "less_than_1m",
+        "1_to_3m",
+        "more_than_3m",
+        "unknown"
+      ],
+      "allow_guidance_lookup": true,
+      "guidance_note": "Falls from more than 1 metre or more than 1 storey in adults, or any fall in children or elderly patients with head-first landing, should be treated as high-mechanism trauma with potential spinal injury.",
+      "branch_map": {
+        "less_than_1m": "q9_general_conscious",
+        "1_to_3m": "q4_fall_landing",
+        "more_than_3m": "q5_fall_head_landing",
+        "unknown": "q5_fall_head_landing"
+      }
+    },
+    "q4_fall_landing": {
+      "text": "How did the patient land \u00e2\u20ac\u201d on their feet, back, side, or head?",
+      "answer_type": "select",
+      "options": [
+        "feet",
+        "back",
+        "side",
+        "head"
+      ],
+      "branch_map": {
+        "feet": "q9_general_conscious",
+        "back": "q9_general_conscious",
+        "side": "q9_general_conscious",
+        "head": "outcome_p1_fall_head_first"
+      }
+    },
+    "q5_fall_head_first": {
+      "text": "A fall from this height landing head-first is very serious. Is the patient unconscious, moving their limbs, or complaining of neck or back pain?",
+      "answer_type": "select",
+      "options": [
+        "unconscious",
+        "limb_pain",
+        "neck_back_pain",
+        "seems_ok"
+      ],
+      "branch_map": {
+        "unconscious": "outcome_p1_fall_severe",
+        "limb_pain": "outcome_p1_fall_severe",
+        "neck_back_pain": "outcome_p1_fall_severe",
+        "seems_ok": "outcome_p2_fall_high_mechanism"
+      }
+    },
+    "q3_penetrating_severity": {
+      "text": "Is this a stab wound, gunshot, or other penetrating injury? And where is the wound located \u00e2\u20ac\u201d chest, abdomen, limb, or elsewhere?",
+      "answer_type": "select",
+      "options": [
+        "stab_chest",
+        "stab_abdomen",
+        "stab_limb",
+        "gunshot",
+        "other"
+      ],
+      "branch_map": {
+        "stab_chest": "outcome_p1_penetrating_torso",
+        "stab_abdomen": "outcome_p1_penetrating_torso",
+        "stab_limb": "q7_limb_bleeding",
+        "gunshot": "q9_general_conscious",
+        "other": "q9_general_conscious"
+      }
+    },
+    "q7_limb_bleeding": {
+      "text": "Is there active bleeding from the wound? Is it spurting, heavy, or soaking through dressings?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p1_limb_bleeding",
+        "no": "outcome_p2_penetrating_limb"
+      }
+    },
+    "q6_burn_extent": {
+      "text": "How extensive is the burn? Estimate the area affected \u00e2\u20ac\u201d for example, is it smaller than the palm of the patient's hand, about the size of a dinner plate, or covering a large area of the body?",
+      "answer_type": "select",
+      "options": [
+        "small_less_than_hand",
+        "medium_plate_size",
+        "large_body_area"
+      ],
+      "branch_map": {
+        "small_less_than_hand": "q7_burn_location",
+        "medium_plate_size": "outcome_p2_burn_moderate",
+        "large_body_area": "outcome_p1_burn_severe"
+      }
+    },
+    "q7_burn_location": {
+      "text": "Where is the burn located? Is it on the face, hands, feet, genitals, or over a joint?",
+      "answer_type": "select",
+      "options": [
+        "face",
+        "hands",
+        "feet",
+        "genitals",
+        "joint",
+        "elsewhere"
+      ],
+      "branch_map": {
+        "face": "outcome_p1_burn_critical_location",
+        "hands": "outcome_p1_burn_critical_location",
+        "feet": "outcome_p1_burn_critical_location",
+        "genitals": "outcome_p1_burn_critical_location",
+        "joint": "outcome_p1_burn_critical_location",
+        "elsewhere": "outcome_p2_burn_minor"
+      }
+    },
+    "q8_industrial_type": {
+      "text": "What type of workplace incident is this?",
+      "answer_type": "select",
+      "options": [
+        "crush",
+        "electrical",
+        "chemical",
+        "machine",
+        "collapse",
+        "other"
+      ],
+      "branch_map": {
+        "crush": "outcome_p1_crush_injury",
+        "electrical": "outcome_p1_electrical",
+        "chemical": "outcome_p2_chemical_exposure",
+        "machine": "q9_general_conscious",
+        "collapse": "q9_general_conscious",
+        "other": "q9_general_conscious"
+      }
+    },
+    "q9_general_conscious": {
+      "text": "Is the patient conscious and able to respond?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q10_general_bleeding",
+        "no": "outcome_p1_trauma_unconscious"
+      }
+    },
+    "q10_general_bleeding": {
+      "text": "Is there any significant bleeding?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Direct pressure is the first-line measure for all external bleeding. Do not remove dressings to check \u00e2\u20ac\u201d add more material on top if blood soaks through.",
+      "branch_map": {
+        "yes": "outcome_p1_trauma_bleeding",
+        "no": "outcome_p2_trauma_moderate"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_p1_fall_head_first": {
+      "priority_code": "P1_TRAUMA_SPINAL",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not move the patient's neck or back.",
+        "Keep the patient as still as possible.",
+        "If you are trained, stabilise the head in the position found.",
+        "If there is immediate danger \u00e2\u20ac\u201d fire, traffic \u00e2\u20ac\u201d carefully slide the patient to safety without twisting their neck."
+      ]
+    },
+    "outcome_p1_fall_severe": {
+      "priority_code": "P1_TRAUMA_HIGH_MECHANISM",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not move the patient's neck or back unless there is immediate danger.",
+        "Keep the patient still and reassure them help is on the way.",
+        "If the patient is unconscious, check their breathing.",
+        "If they are not breathing, tell me immediately."
+      ]
+    },
+    "outcome_p2_fall_high_mechanism": {
+      "priority_code": "P2_TRAUMA_HIGH_MECHANISM",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not move the patient unless there is immediate danger.",
+        "Keep the patient still and comfortable.",
+        "If anything changes \u00e2\u20ac\u201d pain, difficulty breathing, loss of consciousness \u00e2\u20ac\u201d tell me immediately."
+      ]
+    },
+    "outcome_p1_penetrating_torso": {
+      "priority_code": "P1_TRAUMA_PENETRATING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a penetrating injury to the chest or abdomen \u00e2\u20ac\u201d help is on the way.",
+        "Do not remove any objects from the wound.",
+        "If there is bleeding, apply firm direct pressure around the object.",
+        "If the patient is conscious, help them lie on their back.",
+        "If there is a wound in the chest and you hear a sucking sound when they breathe, cover the wound with your hand on three sides, leaving one side open."
+      ]
+    },
+    "outcome_p1_limb_bleeding": {
+      "priority_code": "P1_TRAUMA_SEVERE_BLEEDING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Apply firm, continuous direct pressure to the wound.",
+        "Do not lift the pressure to check the wound.",
+        "If blood soaks through, add more material on top.",
+        "Elevate the limb above the level of the heart if possible while maintaining pressure."
+      ]
+    },
+    "outcome_p2_penetrating_limb": {
+      "priority_code": "P2_TRAUMA_PENETRATING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not remove the object if it is still embedded in the wound.",
+        "Apply a clean dressing around the wound.",
+        "Keep the limb still and elevated if possible.",
+        "Watch for bleeding and tell me if it starts."
+      ]
+    },
+    "outcome_p2_burn_moderate": {
+      "priority_code": "P2_BURNS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Cool the burn with cool (not cold) running water for at least 10 minutes if possible.",
+        "Remove clothing and jewellery near the burn before swelling starts, unless it is stuck to the skin.",
+        "Cover the burn loosely with a clean plastic wrap or cling film \u00e2\u20ac\u201d this protects the wound and reduces pain.",
+        "Do not apply creams, oils, or toothpaste to the burn.",
+        "Keep the patient warm \u00e2\u20ac\u201d cover uninjured areas with a blanket."
+      ]
+    },
+    "outcome_p1_burn_severe": {
+      "priority_code": "P1_BURNS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a serious burn \u00e2\u20ac\u201d help is on the way.",
+        "Remove the patient from the source of the burn if it is safe to do so.",
+        "Cool the burn with cool running water for at least 10 minutes if possible.",
+        "Do not remove clothing that is stuck to the skin.",
+        "Cover the burn loosely with cling film or a clean sheet.",
+        "Keep the patient warm \u00e2\u20ac\u201d cover uninjured areas.",
+        "If the patient becomes unconscious, tell me immediately."
+      ]
+    },
+    "outcome_p1_burn_critical_location": {
+      "priority_code": "P1_BURNS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "A burn to the face, hands, feet, or genitals requires specialist care \u00e2\u20ac\u201d help is on the way.",
+        "Cool the burn with cool running water for at least 10 minutes if possible.",
+        "For face burns: do not apply ice. Keep the face exposed and cool.",
+        "Do not remove clothing stuck to the skin.",
+        "Cover the burn loosely with cling film."
+      ]
+    },
+    "outcome_p1_crush_injury": {
+      "priority_code": "P1_TRAUMA_CRUSH",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "A crush injury is serious \u00e2\u20ac\u201d help is on the way.",
+        "Do NOT try to lift the object off the patient until the ambulance crew arrives, unless there is immediate life-threatening danger.",
+        "Keep the patient as calm and still as possible.",
+        "If the patient is conscious, reassure them.",
+        "Cover any visible wounds with a clean dressing."
+      ]
+    },
+    "outcome_p1_electrical": {
+      "priority_code": "P1_TRAUMA_ELECTRICAL",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do NOT touch the patient while they are in contact with the electrical source.",
+        "Switch off the power at the source if you can do so safely.",
+        "Once the power is off and it is safe, check if the patient is breathing.",
+        "If not breathing, start CPR.",
+        "Electrical burns may be small on the skin but very serious inside \u00e2\u20ac\u201d do not underestimate this injury."
+      ]
+    },
+    "outcome_p2_chemical_exposure": {
+      "priority_code": "P2_CHEMICAL",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Remove contaminated clothing if it can be removed easily \u00e2\u20ac\u201d do not pull clothing over the face.",
+        "Flush the affected area with large amounts of clean water for at least 15-20 minutes.",
+        "Do not try to neutralise the chemical.",
+        "If the chemical was splashed in the eyes, flush the eyes with clean water for 15-20 minutes.",
+        "Do not apply any creams or ointments."
+      ]
+    },
+    "outcome_p1_trauma_unconscious": {
+      "priority_code": "P1_TRAUMA_UNCONSCIOUS",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "The patient is unconscious following trauma \u00e2\u20ac\u201d help is on the way.",
+        "Check if the patient is breathing.",
+        "If not breathing, open the airway and check again.",
+        "If still not breathing, start CPR.",
+        "Do not move the patient's neck or back unless there is immediate danger."
+      ]
+    },
+    "outcome_p1_trauma_bleeding": {
+      "priority_code": "P1_TRAUMA_SEVERE_BLEEDING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Apply firm, continuous direct pressure to any bleeding wounds.",
+        "Do not lift pressure to check the wound.",
+        "If blood soaks through, add more material on top.",
+        "If the patient is conscious, keep them calm and still."
+      ]
+    },
+    "outcome_p2_trauma_moderate": {
+      "priority_code": "P2_TRAUMA",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "An ambulance is on the way.",
+        "Keep the patient still and comfortable.",
+        "Apply a clean dressing to any wounds.",
+        "If anything changes \u00e2\u20ac\u201d increased pain, new bleeding, difficulty breathing, or loss of consciousness \u00e2\u20ac\u201d tell me immediately."
+      ]
+    }
+  }
+}

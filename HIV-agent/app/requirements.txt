@@ -1,0 +1,19 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+pydantic-ai==0.0.14
+lancedb>=0.17.0
+fastembed>=0.2.0
+rerankers>=0.10.0
+docling>=1.0.0
+pymupdf4llm>=0.0.10
+pdfplumber>=0.11.0
+pypdf>=4.1.0
+structlog>=24.2.0
+tiktoken>=0.6.0
+semantic-text-splitter>=0.17.0
+python-multipart>=0.0.9
+pandas>=2.2.0
+# DEPRECATED: Do not install from this file. The root pyproject.toml is the
+# single dependency manifest for the FastAPI/frontend runtime. This file remains
+# only to prevent silent breakage in older local workflows.

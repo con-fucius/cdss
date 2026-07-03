@@ -1,0 +1,250 @@
+{
+  "protocol_id": "paediatric_respiratory_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "child can't breathe",
+    "baby not breathing well",
+    "child wheezing",
+    "child chest infection",
+    "child pneumonia",
+    "infant breathing fast",
+    "mtoto anashindwa kupumua",
+    "mtoto anapumua kwa shida"
+  ],
+  "entry_question_id": "q1_age",
+  "questions": {
+    "q1_age": {
+      "text": "How old is the child?",
+      "answer_type": "select",
+      "options": [
+        "under_1_year",
+        "1_to_5_years",
+        "over_5_years"
+      ],
+      "branch_map": {
+        "under_1_year": "q_under1_conscious",
+        "1_to_5_years": "q1to5_conscious",
+        "over_5_years": "q_over5_conscious"
+      }
+    },
+    "q_under1_conscious": {
+      "text": "Is the baby responsive? Are they making purposeful movements, crying, or responding to your voice or touch?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q_under1_breathing",
+        "no": "q_under1_not_responsive_breathing"
+      }
+    },
+    "q_under1_not_responsive_breathing": {
+      "text": "Is the baby breathing \u00e2\u20ac\u201d can you see chest movement or hear breath sounds?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q_under1_severe_distress",
+        "no": "outcome_p1_paediatric_resuscitation"
+      }
+    },
+    "q_under1_breathing": {
+      "text": "How would you describe the baby's breathing?",
+      "answer_type": "select",
+      "options": [
+        "normal",
+        "fast_shallow",
+        "grunting",
+        "nasal_flaring",
+        "chest_indrawing",
+        "blue_around_mouth"
+      ],
+      "branch_map": {
+        "normal": "outcome_p2_infant_feeding_monitor",
+        "fast_shallow": "q_under1_severe_distress",
+        "grunting": "q_under1_severe_distress",
+        "nasal_flaring": "q_under1_severe_distress",
+        "chest_indrawing": "q_under1_severe_distress",
+        "blue_around_mouth": "q_under1_severe_distress"
+      }
+    },
+    "q_under1_severe_distress": {
+      "text": "Is the baby also: not feeding or drinking, very sleepy or difficult to wake, or has blue discolouration of the lips or tongue?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Danger signs in infants under 1 year: inability to feed, lethargy, cyanosis, severe chest indrawing, or grunting are all indicators of severe pneumonia or sepsis \u00e2\u20ac\u201d both are leading causes of infant mortality in Kenya.",
+      "branch_map": {
+        "yes": "outcome_p1_paediatric_severe",
+        "no": "outcome_p2_paediatric_moderate"
+      }
+    },
+    "q1to5_conscious": {
+      "text": "Is the child responsive? Can they speak, cry, or make purposeful movements?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q1to5_breathing",
+        "no": "q1to5_not_responsive_breathing"
+      }
+    },
+    "q1to5_not_responsive_breathing": {
+      "text": "Is the child breathing \u00e2\u20ac\u201d can you see chest movement or hear breath sounds?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q1to5_severe_distress",
+        "no": "outcome_p1_paediatric_resuscitation"
+      }
+    },
+    "q1to5_breathing": {
+      "text": "How would you describe the child's breathing?",
+      "answer_type": "select",
+      "options": [
+        "normal",
+        "fast",
+        "wheeze",
+        "stridor",
+        "chest_indrawing",
+        "blue_around_mouth"
+      ],
+      "branch_map": {
+        "normal": "outcome_p2_child_mild",
+        "fast": "q1to5_severe_distress",
+        "wheeze": "q1to5_severe_distress",
+        "stridor": "outcome_p1_paediatric_stridor",
+        "chest_indrawing": "q1to5_severe_distress",
+        "blue_around_mouth": "q1to5_severe_distress"
+      }
+    },
+    "q1to5_severe_distress": {
+      "text": "Does the child also have: refusal to drink, very high fever, extreme sleepiness, or inability to walk or stand (in a child who normally can)?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p1_paediatric_severe",
+        "no": "outcome_p2_paediatric_moderate"
+      }
+    },
+    "q_over5_conscious": {
+      "text": "Is the child responsive and able to speak in full sentences?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q_over5_breathing",
+        "no": "outcome_p1_paediatric_resuscitation"
+      }
+    },
+    "q_over5_breathing": {
+      "text": "How would you describe the child's breathing?",
+      "answer_type": "select",
+      "options": [
+        "normal",
+        "fast",
+        "wheeze",
+        "stridor",
+        "difficulty_breathing"
+      ],
+      "branch_map": {
+        "normal": "outcome_p2_child_mild",
+        "fast": "q_over5_moderate",
+        "wheeze": "q_over5_moderate",
+        "stridor": "outcome_p1_paediatric_stridor",
+        "difficulty_breathing": "q_over5_moderate"
+      }
+    },
+    "q_over5_moderate": {
+      "text": "Is the child able to speak in full sentences, or only a few words at a time?",
+      "answer_type": "select",
+      "options": [
+        "full_sentences",
+        "few_words",
+        "cannot_speak"
+      ],
+      "branch_map": {
+        "full_sentences": "outcome_p2_child_moderate",
+        "few_words": "outcome_p1_paediatric_severe",
+        "cannot_speak": "outcome_p1_paediatric_severe"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_p1_paediatric_resuscitation": {
+      "priority_code": "P1_PAEDIATRIC_AIRWAY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a critical emergency \u00e2\u20ac\u201d help is on the way.",
+        "If the child is not breathing, place them on a firm flat surface.",
+        "For a baby: tilt the head back very gently, only to a neutral position.",
+        "For a child over 1 year: tilt the head back gently to open the airway.",
+        "If the child is not breathing and you are able, start rescue breaths \u00e2\u20ac\u201d cover their mouth and nose for a baby, or mouth-to-mouth for a child.",
+        "If rescue breaths do not work after 1 minute, start chest compressions: 2 fingers in the centre of the chest for a baby, one or two hands for a child."
+      ]
+    },
+    "outcome_p1_paediatric_severe": {
+      "priority_code": "P1_PAEDIATRIC_RESPIRATORY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a serious breathing problem \u00e2\u20ac\u201d help is on the way.",
+        "Keep the child as upright as possible \u00e2\u20ac\u201d sitting on your lap or propped up.",
+        "If oxygen is available, apply it now.",
+        "Do not give the child anything to drink if they are struggling to breathe.",
+        "If the child becomes less responsive or their lips turn blue, tell me immediately."
+      ]
+    },
+    "outcome_p1_paediatric_stridor": {
+      "priority_code": "P1_PAEDIATRIC_AIRWAY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Stridor is a sign of a blocked airway \u00e2\u20ac\u201d this is serious, help is on the way.",
+        "Keep the child calm and sitting upright.",
+        "If the child has a fever, try to cool them gently \u00e2\u20ac\u201d remove excess clothing.",
+        "If steam is available (a hot shower running in the bathroom), you can sit with the child in the steamy room to help ease the airway.",
+        "If the child becomes unable to make sound or their lips turn blue, tell me immediately."
+      ]
+    },
+    "outcome_p2_paediatric_moderate": {
+      "priority_code": "P2_PAEDIATRIC_RESPIRATORY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "The child has a moderate breathing problem \u00e2\u20ac\u201d help is on the way.",
+        "Keep the child calm and comfortable, sitting upright if possible.",
+        "If oxygen is available, apply it now.",
+        "Encourage the child to sip small amounts of water if they are willing.",
+        "If the child becomes more breathless, their lips turn blue, or they become very sleepy, tell me immediately."
+      ]
+    },
+    "outcome_p2_child_moderate": {
+      "priority_code": "P2_PAEDIATRIC_RESPIRATORY",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "An ambulance is on the way.",
+        "Keep the child calm and comfortable.",
+        "If the child has a fever, give paracetamol or ibuprofen in the correct dose for their age if available.",
+        "Make sure the child drinks small sips of water regularly.",
+        "If the breathing gets worse, the child becomes very sleepy, or their lips turn blue, tell me immediately."
+      ]
+    },
+    "outcome_p2_child_mild": {
+      "priority_code": "P2_PAEDIATRIC_RESPIRATORY",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "An ambulance is on the way.",
+        "Keep the child calm and comfortable.",
+        "If the child has a fever, give paracetamol or ibuprofen in the correct dose for their age if available.",
+        "Encourage the child to drink fluids.",
+        "If anything changes \u00e2\u20ac\u201d the child becomes more breathless, sleepy, or their lips turn blue \u00e2\u20ac\u201d tell me immediately."
+      ]
+    },
+    "outcome_p2_infant_feeding_monitor": {
+      "priority_code": "P2_PAEDIATRIC",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "An ambulance is on the way.",
+        "Keep the baby warm and close to you.",
+        "If the baby is willing to feed, offer small amounts of breast milk or formula.",
+        "Watch the baby closely \u00e2\u20ac\u201d if they stop feeding, become very sleepy, develop a fever, or their breathing changes, tell me immediately."
+      ]
+    }
+  }
+}

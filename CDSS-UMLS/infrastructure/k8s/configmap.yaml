@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: umls-cdss-config
+data:
+  redis-url: "redis://redis-service:6379/0"
+  log-level: "INFO"
+  cors-origins: "http://localhost:3000,http://localhost:8000"
+  embedding-model: "sentence-transformers/all-MiniLM-L6-v2"
+  vector-dimension: "384"
+  top-k-results: "5"
+

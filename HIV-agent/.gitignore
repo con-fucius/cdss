@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.uv-cache/
+.runtime/
+.venv/
+venv/
+app/.venv/
+app/venv/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Secrets and local runtime state
+.env
+app/.env
+*.env
+
+# Generated clinical indexes and runtime data
+lancedb/
+lancedb_write_probe/
+.pageindex-smoke-lancedb/
+.lancedb_config/
+cdss_lance_probe_*/
+app/data/
+!app/data/
+app/data/*
+!app/data/concepts/
+!app/data/concepts/*.json
+*.lance/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Prebuilt release retrieval index.
+# This is intentionally committed for reviewer reproducibility so clone +
+# Docker Compose can run without multi-hour ingestion.
+!app/lancedb/
+!app/lancedb/**
+
+# Logs
+*.log
+*.out
+*.err
+
+# Local editor/OS/runtime debris
+.DS_Store
+server_log.txt
+backend.*.log
+frontend/*.log
+frontend/_tmp_*

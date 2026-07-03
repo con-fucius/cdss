@@ -1,0 +1,695 @@
+/* Ambulance CDSS Field Console
+   Responsive design: mobile-first (375px viewport) with large touch
+   targets and one-screen-at-a-time navigation for paramedics in the
+   field. Desktop preserves the tab-based layout for workstation use.
+
+   No icons, no decorative motion — this runs on a field device in a
+   moving vehicle; clarity and large touch targets matter more than
+   visual flourish. */
+
+:root {
+  --bg: #0c0f12;
+  --bg-panel: #14181d;
+  --bg-card: #1a1f26;
+  --border: #2a313a;
+  --text: #e8edf2;
+  --text-dim: #8b96a3;
+  --accent: #2f7de1;
+  --accent-hover: #4a8eea;
+  --danger: #d3402f;
+  --danger-bg: #2a1714;
+  --warning: #d98920;
+  --warning-bg: #2a2114;
+  --success: #2fa86a;
+  --success-bg: #15281e;
+  --guidance: #9b6fd6;
+  --guidance-bg: #221a2c;
+  --radius: 6px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --touch-min: 48px; /* WCAG 2.2 AAA touch target minimum */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.hidden { display: none !important; }
+
+/* ── Offline detection banner ──────────────────────────────── */
+
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--warning);
+  color: #1a1400;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.offline-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.offline-banner__text { flex: 1; }
+
+.offline-banner__queue {
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+body.offline .app-header {
+  margin-top: 48px;
+}
+
+/* ── Triage context card ───────────────────────────────────── */
+
+.triage-context-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.triage-context-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.triage-context-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.triage-context-sublabel {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.triage-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.triage-context-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.triage-context-field-label {
+  color: var(--text-dim);
+  min-width: 70px;
+}
+
+.triage-context-value {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.triage-level-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.triage-level-p1 { background: var(--danger); color: #fff; }
+.triage-level-p2 { background: var(--warning); color: #1a1400; }
+.triage-level-p3 { background: var(--accent); color: #fff; }
+.triage-level-p4 { background: var(--success); color: #fff; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header__title { font-weight: 700; font-size: 14px; }
+
+.app-header__status {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.app-header__status.ok { color: var(--success); border-color: var(--success); }
+.app-header__status.degraded { color: var(--warning); border-color: var(--warning); }
+.app-header__status.error { color: var(--danger); border-color: var(--danger); }
+
+/* ── Layout ─────────────────────────────────────────────────── */
+
+.app-main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px 16px 80px;
+}
+
+.screen h1 { font-size: 20px; margin: 0 0 16px; }
+
+/* ── Forms ──────────────────────────────────────────────────── */
+
+form { display: flex; flex-direction: column; gap: 12px; }
+
+label { font-size: 14px; font-weight: 600; color: var(--text-dim); }
+.required { color: var(--danger); }
+
+input[type="text"], input[type="number"], select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 16px; /* prevent iOS zoom on focus */
+  font-family: var(--font);
+  width: 100%;
+  min-height: var(--touch-min);
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.field-row { display: flex; gap: 12px; align-items: flex-end; }
+.field-row > * { flex: 1; }
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.field-grid > div { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Buttons — large touch targets ─────────────────────────── */
+
+button {
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 20px;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  min-height: var(--touch-min);
+}
+
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); }
+
+.btn-tertiary {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  margin-top: 24px;
+}
+
+/* ── Banners ────────────────────────────────────────────────── */
+
+.error-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: #f4a89e;
+  font-size: 14px;
+}
+
+.warning-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  color: #f0c98a;
+  font-size: 14px;
+}
+
+.success-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+  color: #9adfb8;
+  font-size: 14px;
+}
+
+.info-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--guidance-bg);
+  border: 1px solid var(--guidance);
+  color: #c9b0e8;
+  font-size: 14px;
+}
+
+.incident-banner {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+  margin-bottom: 6px;
+}
+
+.dispatch-summary {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dispatch-summary__priority {
+  font-weight: 700;
+  margin-right: 10px;
+}
+
+/* ── Mobile navigation (one-screen-at-a-time) ──────────────── */
+
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.mobile-nav__btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  min-height: var(--touch-min);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.mobile-nav__btn--active {
+  color: var(--accent);
+  background: rgba(47, 125, 225, 0.1);
+}
+
+.mobile-nav__btn:active {
+  background: rgba(47, 125, 225, 0.15);
+}
+
+/* ── Mobile screen flow ────────────────────────────────────── */
+
+.screen-flow {
+  display: none;
+}
+
+/* ── Desktop tabs ───────────────────────────────────────────── */
+
+.tab-bar {
+  display: none;
+}
+
+.tab-panel { display: none; }
+.tab-panel--active { display: block; }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.card h2 {
+  font-size: 15px;
+  margin: 0 0 14px;
+  font-weight: 700;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.card-header h2 { margin: 0; }
+
+.progress-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+}
+
+/* ── Checklist steps ────────────────────────────────────────── */
+
+.step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--bg-card);
+}
+
+.step-item.status-done { border-color: var(--success); }
+.step-item.status-skipped { opacity: 0.6; }
+.step-item.status-not_applicable { opacity: 0.5; }
+.step-item.status-queued { border-color: var(--warning); background: var(--warning-bg); }
+
+.step-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.step-item__title { font-weight: 700; font-size: 15px; }
+
+.step-item__status {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+}
+.step-item.status-done .step-item__status { color: var(--success); }
+.step-item.status-skipped .step-item__status { color: var(--warning); }
+.step-item.status-queued .step-item__status { color: var(--warning); }
+
+.step-item__description {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.step-item__guideline-ref {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-bottom: 10px;
+}
+
+.step-item__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.step-action-btn {
+  font-size: 14px;
+  padding: 12px 16px;
+  min-height: var(--touch-min);
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-weight: 600;
+  cursor: pointer;
+}
+.step-action-btn:hover { border-color: var(--accent); }
+.step-action-btn.action-done:hover { border-color: var(--success); color: var(--success); }
+.step-action-btn.action-skip:hover { border-color: var(--warning); color: var(--warning); }
+.step-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.step-action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Record lists (vitals / medications / field log history) ── */
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.record-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.record-item__meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-family: ui-monospace, monospace;
+}
+
+.record-item__body { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+
+.record-item__field { white-space: nowrap; }
+.record-item__field strong { color: var(--text-dim); font-weight: 600; }
+
+.record-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 10px 0;
+}
+
+.score-flag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+.score-flag.flag-normal { background: var(--success-bg); color: var(--success); }
+.score-flag.flag-elevated { background: var(--warning-bg); color: var(--warning); }
+.score-flag.flag-critical { background: var(--danger-bg); color: #f4a89e; }
+
+/* ── JSON view (incident summary tab) ──────────────────────── */
+
+.json-view {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* ── Keyboard focus styles ─────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE BREAKPOINT (max-width: 768px)
+   One-screen-at-a-time flow with bottom navigation bar.
+   Large touch targets. No tab bar.
+   ══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 10px 14px;
+  }
+
+  .app-header__title { font-size: 13px; }
+  .app-header__status { font-size: 10px; padding: 2px 6px; }
+
+  .app-main {
+    padding: 12px 12px 80px;
+  }
+
+  .screen h1 { font-size: 18px; margin-bottom: 12px; }
+
+  /* Show mobile bottom nav */
+  .mobile-nav { display: flex; }
+
+  /* Hide desktop tabs */
+  .tab-bar { display: none; }
+
+  /* On mobile, all tab-panels are displayed as a vertical scroll
+     instead of tab switching. The mobile-nav buttons scroll to
+     the relevant section. */
+  .tab-panel { display: block !important; margin-bottom: 24px; }
+
+  /* Screen flow cards get full width */
+  .card { padding: 16px; margin-bottom: 14px; }
+
+  /* Vitals form: single column on mobile */
+  .field-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* Make all inputs taller for touch */
+  input[type="text"], input[type="number"], select {
+    padding: 14px 12px;
+    font-size: 16px;
+    min-height: 52px;
+  }
+
+  /* Buttons: full-width, tall */
+  .btn-primary, .btn-secondary, .btn-tertiary {
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
+  }
+
+  /* Step action buttons: stack on mobile */
+  .step-item__actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .step-action-btn {
+    width: 100%;
+    text-align: center;
+    min-height: 52px;
+  }
+
+  /* Field row: stack on mobile */
+  .field-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Incident banner: smaller text */
+  .incident-banner { font-size: 11px; }
+  .dispatch-summary { font-size: 13px; padding: 10px 12px; }
+
+  /* Record items: stack meta and body */
+  .record-item__body {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Vitals prefill banner */
+  .info-banner { font-size: 13px; }
+
+  /* Checklist complete banner */
+  .success-banner { font-size: 13px; }
+
+  /* Step list: tighter spacing */
+  .step-list { gap: 8px; }
+  .step-item { padding: 12px 14px; }
+
+  /* Triage context card: tighter */
+  .triage-context-card { padding: 12px 14px; }
+
+  /* Protocol select card */
+  #field-protocol-select { min-height: 52px; }
+  #select-protocol-btn { min-height: 52px; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TABLET BREAKPOINT (769px - 1024px)
+   ══════════════════════════════════════════════════════════════ */
+
+@media (min-width: 769px) {
+  .mobile-nav { display: none; }
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 14px;
+    border-radius: 0;
+    white-space: nowrap;
+    min-height: var(--touch-min);
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn--active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* On desktop, tab panels use tab switching */
+  .tab-panel { display: none; }
+  .tab-panel--active { display: block; }
+
+  .field-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LARGE DESKTOP (1025px+)
+   ══════════════════════════════════════════════════════════════ */
+
+@media (min-width: 1025px) {
+  .app-main {
+    padding: 28px 20px 60px;
+  }
+}

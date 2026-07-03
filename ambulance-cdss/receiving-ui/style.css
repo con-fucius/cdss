@@ -1,0 +1,490 @@
+/* Ambulance CDSS — Receiving Hospital Handoff Page
+   Clinical-grade, print-friendly layout for ER doctors.
+   High contrast, no decorative elements, optimized for both
+   screen reading and A4/Letter printing. */
+
+:root {
+  --bg: #ffffff;
+  --bg-panel: #f8f9fa;
+  --border: #dee2e6;
+  --text: #1a1a1a;
+  --text-dim: #495057;
+  --text-light: #6c757d;
+  --accent: #0d6efd;
+  --danger: #dc3545;
+  --danger-bg: #f8d7da;
+  --warning: #fd7e14;
+  --warning-bg: #fff3cd;
+  --success: #198754;
+  --success-bg: #d1e7dd;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+}
+
+@media print {
+  :root {
+    --bg: #fff;
+    --bg-panel: #fff;
+    --border: #ccc;
+  }
+  body { font-size: 11pt; }
+  .btn-print, .handoff-header__right { display: none !important; }
+  .handoff-page { padding: 0; max-width: 100%; }
+  .handoff-header { border-bottom: 2px solid #000; padding-bottom: 8px; }
+  .priority-banner { border: 2px solid var(--danger); }
+  .handoff-section { page-break-inside: avoid; }
+  .vitals-timeline, .medications, .field-actions { page-break-inside: avoid; }
+  .vitals-table tr { page-break-inside: avoid; }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden { display: none !important; }
+
+/* ── Loading / Error ───────────────────────────────────────────── */
+
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--text-dim);
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-container {
+  max-width: 600px;
+  margin: 80px auto;
+  text-align: center;
+  padding: 40px;
+}
+
+.error-container h1 {
+  font-size: 22px;
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+.error-container p {
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.error-hint {
+  font-size: 13px;
+  color: var(--text-light);
+  font-style: italic;
+}
+
+/* ── Handoff Page Layout ────────────────────────────────────────── */
+
+.handoff-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.handoff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--text);
+}
+
+.handoff-header__title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text);
+}
+
+.handoff-header__subtitle {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.btn-print {
+  padding: 8px 16px;
+  background: var(--text);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.btn-print:hover {
+  background: #333;
+}
+
+/* ── Priority Banner ────────────────────────────────────────────── */
+
+.priority-banner {
+  padding: 16px 20px;
+  border: 2px solid var(--danger);
+  border-radius: 6px;
+  background: var(--danger-bg);
+  margin-bottom: 24px;
+}
+
+.priority-banner.priority-p2 {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.priority-banner.priority-p3,
+.priority-banner.priority-p4 {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.priority-banner__code {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.priority-banner__meta {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-separator {
+  color: var(--text-light);
+}
+
+/* ── Sections ───────────────────────────────────────────────────── */
+
+.handoff-section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chief-complaint {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.facility-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.facility-detail {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.protocol-info {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+/* ── Dispatch Q&A ───────────────────────────────────────────────── */
+
+.dispatch-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qa-item {
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.qa-item__question {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.qa-item__answer {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.qa-item.backtrack {
+  border-left: 3px solid var(--warning);
+}
+
+/* ── Triage Data ────────────────────────────────────────────────── */
+
+.triage-data {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.triage-field {
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.triage-field__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.triage-field__value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ── Clinical Alerts ────────────────────────────────────────────── */
+
+.clinical-alerts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 600px) {
+  .clinical-alerts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.alert-card {
+  padding: 14px 16px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.alert-card.critical {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.alert-card.elevated {
+  background: var(--warning-bg);
+  border-color: var(--warning);
+}
+
+.alert-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.alert-value {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--mono);
+}
+
+.alert-detail {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* ── Vitals Timeline ────────────────────────────────────────────── */
+
+.vitals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.vitals-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.vitals-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.vitals-table tr:last-child td {
+  border-bottom: none;
+}
+
+.vitals-table .score-critical {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.vitals-table .score-elevated {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.empty-data {
+  color: var(--text-light);
+  font-style: italic;
+  font-size: 13px;
+  padding: 10px 0;
+}
+
+/* ── Medications ────────────────────────────────────────────────── */
+
+.medication-group {
+  margin-bottom: 12px;
+}
+
+.medication-group__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.medication-item {
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.medication-item__name {
+  font-weight: 600;
+}
+
+.medication-item__detail {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.medication-item.not-administered {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+/* ── Field Actions ──────────────────────────────────────────────── */
+
+.action-item {
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.action-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.action-item__type {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.action-item__time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-light);
+}
+
+.action-item__detail {
+  color: var(--text);
+}
+
+.action-item.confirmation {
+  border-left: 3px solid var(--success);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.handoff-footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.handoff-footer p {
+  margin-bottom: 4px;
+}
+
+.footer-note {
+  font-style: italic;
+}
+
+.generated-at {
+  font-family: var(--mono);
+  font-size: 11px;
+}

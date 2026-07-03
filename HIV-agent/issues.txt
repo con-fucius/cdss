@@ -1,0 +1,217 @@
+---
+Backend Issues
+
+1. 'search_tools.py' — 'pd' imported at the bottom of the file
+'import pandas as pd' is at the very last line. It's used throughout 'search_guidelines()' ('pd.concat', '.empty', '.iloc'). This will raise 'NameError: name 'pd' is not defined' at runtime on the first call. Move it to the top of the file.
+
+2. 'search_tools.py' — 'search_guidelines()' passes a BGE-instructed string directly to LanceDB hybrid search
+'query_with_instruction = f"Represent this sentence for searching relevant passages: {search_query}"' is passed as the 'query' string to 'table.search(query_with_instruction, query_type="hybrid")'. LanceDB's hybrid search tokenizes this string for BM25 and uses it for vector search. The instruction prefix will pollute the BM25 component — "represent", "sentence", "searching", "relevant", "passages" will appear as search terms and degrade keyword recall. The instruction prefix must only be used when computing the embedding, not as the raw query string. Use 'fastembed' to embed the query with the instruction prefix, then pass the resulting vector to 'table.search(vector, query_type="hybrid").query_str(raw_query)' for the FTS component separately, or use the text embedding model through LanceDB's embedding function registry so it applies the prefix internally.
+
+3. 'search_tools.py' — Cross-encoder score threshold is broken
+'if top_scores[i] < 0.0: continue' — cross-encoder logit scores can be meaningfully negative. BGE-reranker-base outputs raw logits which are commonly in ranges like -5 to +5. A threshold of '0.0' will filter out valid high-confidence results and let through others. The threshold must be calibrated empirically or normalized. At minimum the condition should be removed until calibrated, or normalized to sigmoid first.
+
+4. 'search_tools.py' — 'lookup_kb()' is declared 'async' but uses synchronous LanceDB calls
+'await ctx.deps.index.lookup_kb(...)' in 'search_agent.py' matches the 'async def lookup_kb()' in 'search_tools.py', but internally the method calls synchronous LanceDB APIs ('table.search().where().to_pandas()'). This is fine — sync inside async is acceptable without blocking because LanceDB is local — but calling 'await' on a coroutine that immediately does synchronous I/O without 'asyncio.to_thread()' will block the event loop. For local dev this is tolerable but it needs 'asyncio.to_thread()' wrapping on the sync LanceDB calls before production.
+
+5. 'search_tools.py' — '_generate_hyde_hypothesis()' hits the Mistral cloud API hardcoded
+The URL is 'https://api.mistral.ai/v1/chat/completions'. The agent uses '"mistral:mistral-small-latest"' which is a local Mistral config. HyDE makes a cloud API call even in local dev. This will either fail without a key or incur cost. HyDE should use the same model/endpoint as the agent, not a hardcoded cloud URL. Wire it to the configured base URL or disable HyDE until the model config is unified.
+
+6. 'search_tools.py' — 'SearchIndex' is a singleton but 'search_guidelines()' is async while 'get_section()' is sync
+The lifespan initializes '_search_index = SearchIndex()'. 'api.py' then 'await's '_search_index.search_guidelines()'. This works. But 'get_section()' is sync and called from an async context in both 'api.py' ('get_guideline_section') and 'search_agent.py' ('get_section' tool). Sync calls inside async route handlers block the event loop. Wrap in 'asyncio.to_thread()' or make 'get_section()' async.
+
+7. 'ingest.py' — async log call inside sync context
+'''python
+loop = asyncio.get_event_loop()
+if loop.is_running():
+    loop.create_task(log_init(...))
+'''
+'loop.create_task()' only works if called from within a running event loop. 'index_disease()' is synchronous and typically called from a script or CLI, not inside an async context. 'get_event_loop()' in Python 3.10+ raises 'DeprecationWarning' and in Python 3.12+ will error outside async context. Use 'asyncio.run(log_init(...))' for sync callers, or make 'index_disease()' async.
+
+8. 'ingest.py' — 'create_index()' call signature is wrong for LanceDB 0.14+
+'table.create_index(metric="cosine", num_partitions=32, num_sub_vectors=16)' — in LanceDB 0.14+ the IVF-PQ index API changed. The correct call is 'table.create_index("vector", metric="cosine", ...)' specifying the column name first, or using 'table.create_index(config=IvfPq(...))'. Calling without a column name will raise an error or silently fail depending on version.
+
+9. 'logs.py' — 'AUDIT_DB_PATH' is a relative path that breaks depending on working directory
+'Path("app/data/audit.db")' — this resolves relative to wherever the process is started. If started from 'D:\Projects\CDSS\HIV-agent\' it works. If started from 'app/' it creates 'app/data/audit.db' inside 'app/'. The 'admin/audit' endpoint uses 'Path("app/data/audit.db")' directly — a different path than 'AUDIT_DB_PATH'. These two path references will not resolve to the same file unless the working directory is consistent. Use 'Path(__file__).parent.parent / "data" / "audit.db"' in 'logs.py' and import 'AUDIT_DB_PATH' in 'api.py' rather than redefining the path inline.
+
+10. 'api.py' — 'admin/audit' endpoint uses a hardcoded path inconsistent with 'logs.py'
+'db_path = Path("app/data/audit.db")' in the endpoint, while 'logs.py' defines 'AUDIT_DB_PATH = Path("app/data/audit.db")'. Even if these happen to match today, they're defined in two places. Import 'AUDIT_DB_PATH' from 'logs.py' in 'api.py' and use it everywhere.
+
+11. 'api.py' — 'post_feedback()' imports 'sqlite3' and 'AUDIT_DB_PATH' inline inside the function
+'''python
+import sqlite3
+from .logs import AUDIT_DB_PATH
+'''
+These are mid-function imports. Move to module-level imports.
+
+12. 'api.py' — HITL marker parsing in the SSE stream is fragile and broken for multi-chunk markers
+The HITL marker detection buffers the stream in 'hitl_buffer' but clears it after any marker is found. If '[HITL:CLARIFICATION]' arrives split across two chunks (e.g., chunk 1 = '"[HITL:CLARI"', chunk 2 = '"FICATION] some question"'), the detection will fail. Additionally 'hitl_buffer += chunk' grows without bound if no HITL marker ever fires. The buffer must have a cap (e.g., last 200 chars) to avoid memory leak on long responses.
+
+13. 'api.py' — HITL question text extraction is wrong
+'''python
+question = hitl_buffer[end_idx:].strip() if len(hitl_buffer) > end_idx else "Please clarify your request."
+'''
+'hitl_buffer' contains the entire accumulated response up to that point, not just the text after the marker. The question text will be the entire response so far minus the marker, not the intended short clarification question from the agent.
+
+14. 'api.py' — 'get_available_diseases()' reads from LanceDB but returns disease IDs stripped of '_guidelines' suffix
+The '/chat/stream' endpoint passes 'available = get_available_diseases()' to 'SearchDeps'. The agent system prompt is built from 'build_system_prompt(available_diseases)' which looks up 'DISEASE_CONFIG.get(d.lower(), {})'. If a disease is in LanceDB but not in 'DISEASE_CONFIG' it silently produces an empty string in the system prompt. If a disease is in 'DISEASE_CONFIG' but not yet indexed, it correctly appears in '/diseases' as 'not_indexed' but is excluded from 'available'. These two sources of truth (LanceDB tables vs 'DISEASE_CONFIG') need to be explicitly reconciled, not silently mismatched.
+
+15. 'api.py' — 'check_llm_reachability()' only checks Mistral cloud
+Checks 'https://api.mistral.ai/v1/models' — irrelevant if using local Mistral via Ollama or another local endpoint. The offline mode flag will be 'True' perpetually in local dev if the Mistral cloud key is absent, forcing all responses through kb_only mode even when the local model is running.
+
+16. 'api.py' — 'log_query()' is called with 'patient_context=request.context.dict()' but 'PatientContext' doesn't match the panel structure
+'PatientContext' model has 'patient_type', 'condition', 'comorbidity', 'filters'. But the frontend 'PatientContextPanel' sends 'active_conditions', 'clinical_params', 'medications'. These schemas are completely misaligned. The backend will receive None or defaults for all fields because the frontend sends a different shape.
+
+17. 'search_agent.py' — 'clinical_agent.system_prompt' is set via attribute assignment which doesn't exist in pydantic-ai
+'''python
+clinical_agent.system_prompt = build_system_prompt(available_diseases)
+'''
+In pydantic-ai, 'system_prompt' is not a mutable attribute on 'Agent'. The system prompt must be registered with '@clinical_agent.system_prompt' decorator or passed at 'Agent()' construction. This assignment silently does nothing — the agent has no system prompt. The entire BASE_PROMPT, citations format, HITL instructions, and disease context are never seen by the model.
+
+18. 'search_agent.py' — 'init_agent()' is defined but never called
+'api.py' never calls 'init_agent()'. The system prompt is never built. Even if the attribute assignment worked, it isn't being called from the lifespan. The 'clinical_agent' object is used directly from the import without any initialization.
+
+19. 'search_agent.py' — 'lookup_kb' tool calls 'ctx.deps.index.lookup_kb()' with 'await' but 'search_tools.lookup_kb' uses a 'return' inside a 'for' loop that short-circuits without a fuzzy fallback
+The fuzzy fallback is noted as "PoC" and never implemented. If no exact match exists in the first row, it returns 'None' immediately. The agent tool then returns 'None' and falls back to 'search_guidelines'. This is functional but the agent has no way to know whether 'None' means "not in KB" versus "KB not indexed". The return type needs a richer signal.
+
+20. 'config.py' — TB guideline URL is wrong
+'"source_url": "https://nltp.co.ke/wp-content/uploads/2025/10/Kenya-TB-Guidelines-2025.pdf"' — this file does not exist. The correct document is the 2021 Integrated TB/Leprosy/Lung Disease Guideline. The URL returns a 404 which means the update checker will log false positives and the 'check_guideline_updates()' cron will erroneously flag this as unavailable.
+
+21. 'config.py' — Malaria source URL is a guess
+'"source_url": "https://health.go.ke/wp-content/uploads/2016/04/National-Guidelines..."' — this was flagged as unconfirmed. If the PDF doesn't exist at this URL, ingestion will silently fail or the update checker will fire false alerts. Malaria must either have a confirmed URL or be excluded from 'DISEASE_CONFIG' until confirmed.
+
+22. 'config.py' — CVD and Diabetes source URLs are placeholder guesses
+'"source_url": "https://health.go.ke/wp-content/uploads/2024/02/Kenya-CVD-Guidelines-2024.pdf"' and '"source_url": "https://health.go.ke/wp-content/uploads/2024/01/Kenya-DM-Guidelines-2024.pdf"' — these are constructed guesses, not confirmed URLs. The MOH portal serves these from port 8000, not 'health.go.ke' main domain. These will 404.
+
+23. 'chunkers/hierarchical.py' — tables have 'section_title = "Table"' hardcoded
+Every table chunk gets 'section_title="Table"' regardless of what the table actually contains. The table extraction from Docling provides a surrounding caption or context title. This means all table citations will read '[Guidelines, Table, p.X]' with no distinguishing information.
+
+24. 'chunkers/hierarchical.py' — 'current_section_text' is set to only the current section header text, not the accumulated full section
+'''python
+current_section_text = text
+current_section_id = str(uuid.uuid4())
+'''
+When Docling gives you a section, 'item["text"]' is typically the section heading text, not the full section body. The 'parent_text' stored in each chunk will be just the heading, not the full parent section the agent needs for context. The full section body must be accumulated across all subsection items until the next section starts.
+
+25. 'chunkers/hierarchical.py' — no 'section_number' is extracted or stored
+'IndexedChunk.section_number' defaults to '""' and is never populated. Citations will be '[Guidelines, §, p.47]' with an empty section number. Docling provides section numbers in its output — these need to be extracted and stored.
+
+---
+
+ Frontend Issues
+
+26. 'App.jsx' — 'localStorage' used throughout despite architecture decision to use 'sessionStorage'
+'STORAGE_KEYS' uses 'localStorage' for messages, reactions, feedback, pinned messages, conversations, and settings. The decision from the design was to use 'sessionStorage' (ephemeral, lost on tab close) for local dev. More critically: patient context is being persisted to 'localStorage' via 'STORAGE_KEYS.messages' (messages contain patient context injected text). This violates the client-side-only, non-stored patient context requirement.
+
+27. 'App.jsx' — 'PatientContextPanel' is rendered inside '<main>' but outside every page component
+'''jsx
+<main className="main-content">
+  {currentPage === 'Quick Chat' && <ChatPage ... />}
+  <PatientContextPanel ... />   {/* Always rendered, regardless of page */}
+  {currentPage === 'Smart Query Builder' && <QueryBuilderPage ... />}
+'''
+The panel always renders, even on the Audit Log, Knowledge Base, and Guidelines Browser pages where it's contextually irrelevant and will overlap layout. It should only render on Quick Chat and Query Builder pages.
+
+28. 'App.jsx' — 'ChatPage' does not receive 'patientContext' as a prop that it actually uses in the request
+'ChatPage' receives 'patientContext' as a prop, stores it as 'const context = patientContext', and sends it to '/chat/stream'. But the 'PatientContext' Pydantic model on the backend has 'patient_type', 'condition', 'comorbidity', 'filters' — not the 'active_conditions', 'clinical_params', 'medications' structure that the frontend panel produces. The backend will receive and log the wrong shape, the context will never be used in the agent, and the patient context chips shown in the header are purely cosmetic.
+
+29. 'App.jsx' — SSE stream parsing is broken for multi-line or concatenated chunks
+'''javascript
+const lines = chunk.split('data: ');
+for (const line of lines) {
+  if (line.trim()) {
+    const data = JSON.parse(line);
+'''
+SSE events must be split on '\n\n' (double newline), not on the '"data: "' prefix. If two events arrive in the same read, splitting on '"data: "' produces malformed JSON at the start of the second fragment (includes the trailing '\n\n' from the first). This is why 'catch { /* ignore parse errors */ }' is silently swallowing real errors. Use a proper SSE parser: accumulate into a buffer, split on '\n\n', extract the 'data:' field from each event, parse individually.
+
+30. 'App.jsx' — 'hitl' state is set but never populated from the SSE stream
+The 'hitl' state variable exists. 'HITLComponent' renders when 'hitl' is not null. But in 'handleSend()', nowhere in the SSE parsing loop is 'setHitl()' called. The HITL prompt event type ('data.type === 'hitl_prompt'') is never handled. The HITL panel will never appear even when the backend emits a 'hitl_prompt' event.
+
+31. 'App.jsx' — Agent action log is hardcoded strings, not wired to real tool calls
+The 'agentActions' array is populated with hardcoded strings: '"Processing your query..."', '"Searching guidelines..."', '"Retrieving relevant sections..."', '"Synthesizing response..."'. These fire unconditionally regardless of what tools the agent actually invokes. The backend emits no 'tool_call' SSE event type. Real tool calls are never surfaced. This was flagged as a known issue from the start — it still hasn't been addressed.
+
+32. 'App.jsx' — 'SourcesDisplay' 'onCiteClick' does 'console.log' only
+'''jsx
+<SourcesDisplay
+  sources={msg.sources}
+  onCiteClick={(idx, source) => console.log('Source clicked:', idx, source)}
+/>
+'''
+Clicking a source does nothing visible. The source panel click is supposed to highlight the inline citation in the message content. This connection is not implemented.
+
+33. 'App.jsx' — Inline citation rendering in 'MarkdownContent' is broken
+'''javascript
+const sourceRegex = /\[(\d+)\]/g;
+processedContent = processedContent.replace(match[0], '<a href="cite-${match[1]}" class="cite-ref">[${match[1]}]</a>');
+'''
+'ReactMarkdown' renders markdown to React elements — inserting raw HTML '<a>' tags into the markdown string will not be rendered as HTML by ReactMarkdown without 'rehype-raw'. The citation links will appear as literal '<a href="cite-1">[1]</a>' text in the rendered output. Either add 'rehype-raw' plugin or handle citation replacement via a custom ReactMarkdown component for text nodes.
+
+34. 'App.jsx' — 'low_confidence' signal from sources is checked incorrectly
+'''javascript
+} else if (data.type === 'sources') {
+  ...
+  if (data.low_confidence) {
+    toast.addToast('Low confidence retrieval - please verify', 'warning');
+  }
+'''
+The backend puts 'low_confidence' inside each individual source object: '{"source": "...", "low_confidence": true}'. The frontend checks 'data.low_confidence' which is at the event level, not the source item level. This will never be true. It should check 'data.sources.some(s => s.low_confidence)'.
+
+35. 'App.jsx' — 'isInitialized' only gates the skeleton loader, not the input
+'isInitialized' is set to 'true' when '/health' returns 'status: 'ok''. But the input is gated on 'sessionStatus === 'disconnected'' only. If LanceDB is not initialized (no disease indexed yet), 'status' is ''degraded'', 'isInitialized' remains 'false', but the input remains enabled and the user can send messages that will return 503. The input should be disabled when '!isInitialized'.
+
+36. 'App.jsx' — 'userRole' is fetched from '/health' response but '/health' only returns 'role' based on the request header, not the actual user's role
+'fetch('/health')' sends no 'X-User-Role' header. The backend reads the header and defaults to 'CLINICIAN'. So 'data.role' is always 'CLINICIAN' unless the request includes the header. The Audit Log nav item will never appear. This is a chicken-and-egg problem: the role system isn't wired to anything real. Until there's real auth, the role must come from an env var surfaced at '/health' without requiring the header from the same request.
+
+37. 'App.jsx' — 'QueryBuilderPage' has 'filter' field label mismatch with backend
+The backend '/context-options' returns 'filters' but 'QueryBuilderPage' reads 'config.filters':
+'''javascript
+{config.filters && config.filters.length > 0 && (
+'''
+The API response key is '"filters"' (from 'cfg["filter_options"]') — verify this matches. Looking at the API: '"filters": cfg["filter_options"]'. So 'config.filters' should work. But 'config.patient_types' in the builder maps to '"patient_types"' from the API: '"patient_types": cfg["population_options"]'. This is correct. However 'config.conditions' is never used in 'QueryBuilderPage' at all — the 'condition' selector is missing from the Query Builder despite being in the API response.
+
+38. 'App.jsx' — 'GuidelinesBrowserPage' defaults to 'diseases[0]?.id || 'hiv'' before diseases are fetched
+'diseases' prop is 'availableDiseases' which starts as '[]'. 'diseases[0]?.id' is 'undefined', so 'selectedDisease' initializes to ''hiv''. The TOC fetch fires for ''hiv'' immediately, before the diseases array is populated. If HIV isn't indexed, this 404s on load. Initialize to 'null' and fetch TOC only when a disease is explicitly selected.
+
+39. 'App.jsx' — 'handleSend' is used in 'useEffect' without being in the dependency array
+'''javascript
+useEffect(() => {
+  if (initialQuery) {
+    handleSend(initialQuery);
+  }
+}, [initialQuery]);
+'''
+'handleSend' is not memoized with 'useCallback' and is not in the dependency array. This is a stale closure — 'handleSend' captured at effect registration time may reference stale 'messages' state. Wrap 'handleSend' in 'useCallback' with appropriate dependencies.
+
+40. 'App.jsx' — 'HITL_QUESTIONS' constant is defined but completely unused
+The object exists at the top of the file but is referenced nowhere. It's a leftover from the old random HITL implementation. Remove it.
+
+41. 'App.jsx' — 'DEFAULT_CONTEXT_OPTIONS' constant is defined but completely unused
+Same — defined, never referenced. The context options are now fetched dynamically from the API. Remove the dead constant.
+
+42. 'App.jsx' — 'react-router-dom' is in 'package.json' but not used
+'react-router-dom ^7.13.1' is installed but there is no '<Router>', '<Route>', or any routing import in 'App.jsx'. Navigation is all state-based. Remove unused dependency.
+
+43. 'App.jsx' — '@tanstack/react-query' is in 'package.json' but not used
+Installed but not imported or used anywhere. Remove.
+
+44. 'App.jsx' — 'axios' is in 'package.json' but not used
+All fetches use native 'fetch()'. Remove.
+
+45. 'App.jsx' — 'lucide-react' is in 'package.json' but not used
+Not imported or used. Remove.
+
+46. 'App.jsx' — 'handleClear' in 'ChatPage' calls '/sessions/{sessionId}/clear' but 'sessionId' here is the prop passed from 'App'
+This is correct. But 'handleNewConversation' does NOT call the clear endpoint — it only clears local state. The server-side session history accumulates. A new conversation client-side still carries the old history server-side until a new session ID is generated. 'handleNewConversation' must either call '/sessions/{sessionId}/clear' or generate a new session ID (which 'handleNewSession' in 'App' does, but is never called from inside 'ChatPage').
+
+47. 'App.jsx' — 'ChatPage' 'handleSend' passes 'context' from 'patientContext' prop directly, but this is the entire context object including 'active_conditions' and 'clinical_params' arrays
+The backend 'ChatRequest.context' expects a 'PatientContext' model with 'patient_type: str', 'condition: str', 'comorbidity: str', 'filters: List[str]'. Sending 'active_conditions: list' and 'clinical_params: dict' will cause Pydantic validation to either reject the request or silently coerce to defaults. The backend model and frontend payload are misaligned.
+
+---
+Cross-Cutting / Alignment Issues
+
+48. 'search_agent.py' system prompt is never actually delivered to the model — covered in issue 17, repeated here as a cross-cutting impact: every single feature dependent on the system prompt (citations, HITL markers, disease routing instructions, safety rules, response length calibration) is non-functional. This is the most critical single issue in the codebase.
+
+49. Sources flow is partially wired but broken end-to-end
+Backend extracts sources from 'result.new_messages()' by inspecting 'ToolReturnPart.content'. But 'search_guidelines()' in 'search_agent.py' returns 'List[Dict]' with key '"source"'. The API extraction code checks 'if isinstance(part.content, list): for item in part.content: if 'source' in item'. This logic is correct in structure, but 'part.content' in pydantic-ai is the raw return value of the tool function. The actual structure depends on pydantic-ai version — in some versions it's a string serialization of the return value, not the Python object. This needs a confirmed test to verify 'part.content' is actually the 'List[Dict]' or a string representation of it.
+
+50. The 'lancedb' directory has only an empty 'documents.lance' table
+Nothing has been indexed. All search calls return empty results. The entire system serves no clinical content. This is the prerequisite for everything else — until 'ingest.py' is run successfully against at least the HIV PDF, no end-to-end test is possible.

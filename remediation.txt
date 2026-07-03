@@ -1,0 +1,82 @@
+Next 15 items in strict execution order.
+
+---
+Phase 1 — Postgres Migration & Infrastructure
+
+- Start the Postgres container — run 'docker run -d --name cdss-postgres -e POSTGRES_USER=cdss_user -e POSTGRES_PASSWORD=cdss_pass -e POSTGRES_DB=cdss_dev -p 5432:5432 -v cdss-pgdata:/var/lib/postgresql/data postgres:16'; verify with 'docker exec -it cdss-postgres psql -U cdss_user -d cdss_dev -c "SELECT version();"' — if the named volume already exists from a prior attempt, run 'docker volume rm cdss-pgdata' first
+
+- Add 'DATABASE_URL' to 'app/.env' — set 'DATABASE_URL=postgresql+asyncpg://cdss_user:cdss_pass@localhost:5432/cdss_dev'; also set 'CDSS_PATIENT_SALT' to the output of 'python -c "import secrets; print(secrets.token_hex(32))"' and 'CDSS_ENV=development'; rotate the 'MISTRAL_API_KEY' that was exposed in plaintext if it has not been done already
+
+- Install Postgres dependencies — run 'uv add asyncpg psycopg2-binary alembic'; confirm 'import asyncpg' succeeds inside the venv; confirm 'alembic --version' runs from the project root
+
+- Run Alembic migrations — from the project root run 'uv run alembic upgrade head'; confirm all four revisions apply cleanly ('0001' through '0004'); if 0001 fails because tables already exist from a prior partial run, inspect 'alembic_version' in the database and set it manually with 'uv run alembic stamp head' then re-run
+
+- Verify schema — connect with 'docker exec -it cdss-postgres psql -U cdss_user -d cdss_dev' and run '\dt' to confirm all tables exist; run '\d evidence_nodes' and confirm 'uq_evidence_nodes_disease_ref' appears under "Indexes"; run '\d evidence_edges' and confirm 'uq_evidence_edges_triple' appears; run '\d embedding_cache' and confirm 'idx_embedding_cache_created_at' appears
+
+ Phase 1 — Content Indexing
+
+- Run ingestion for HIV — from inside 'app/' run 'uv run python -m app.ingest --disease hiv'; watch for chunk count in stdout; it must be nonzero; if 'IngestionManager' raises 'RuntimeError: 0 chunks', the extractor chain failed — check Docling import and run 'uv run python -c "from app.extractors.docling_ext import DoclingExtractor; print('ok')"' to isolate the fault
+
+- Run ingestion for all remaining diseases — run 'uv run python -m app.ingest --disease diabetes cvd tb malaria mental_health'; confirm each produces a nonzero chunk count in the summary table printed at exit; any disease reporting '0' needs individual diagnosis before proceeding
+
+- Verify LanceDB tables — run 'uv run python -c "import lancedb; db = lancedb.connect('app/lancedb'); print(db.table_names())"' from the project root; you should see six '*_guidelines' tables plus 'pageindex_chunks' if PageIndex ran; if 'pageindex_chunks' is absent it will be built in item 9
+
+- Build PageIndex for all six diseases — run 'uv run python -c "import asyncio; from app.indexers.pageindex import PageIndexBuilder; from app.ingest import DISEASE_PDF_MAP; from pathlib import Path; b = PageIndexBuilder(); [asyncio.run(b.index_pdf(d, str(Path('app/docs') / p))) for d, p in DISEASE_PDF_MAP.items()]"'; confirm 'pageindex_chunks' table appears in LanceDB with row count matching roughly total pages across all six PDFs
+
+ Phase 1 — End-to-End Smoke Test
+
+- Start the backend — run 'uv run uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload' from the project root; confirm startup log shows 'SearchIndex initialised', 'Embedding model warmed up', 'Reranker loaded', and 'Database migrations applied' (or 'skipped' if already up to date); confirm no import errors
+
+- Hit '/health' — run 'curl -s http://localhost:8000/health | python -m json.tool'; confirm 'status' is 'ok' or 'degraded' (not 'error'); confirm 'components.lancedb' is 'ok'; confirm 'components.tables' does not say 'missing'; if 'llm_api' is 'error', check provider credentials in '.env'
+
+- Hit '/diseases' — run 'curl -s http://localhost:8000/diseases | python -m json.tool'; confirm all six diseases appear with '"status": "indexed"'; any showing '"not_indexed"' means ingestion for that disease failed or the table name in 'DISEASE_CONFIG' does not match what LanceDB wrote
+
+- Send one chat query per disease — for each disease send 'curl -s -X POST http://localhost:8000/chat/stream -H "Content-Type: application/json" -d '{"session_id":"smoke-test","message":"What is the first-line treatment?","context":{"active_conditions":["DISEASE_KEY"]}}' --no-buffer'; confirm each returns 'chunk', 'done', and 'sources' SSE events with nonzero content; confirm 'sources' contains at least one entry with a real 'source' string; HIV is highest priority — get it working first before the others
+
+- Verify audit log writes — after the chat queries above, run 'docker exec -it cdss-postgres psql -U cdss_user -d cdss_dev -c "SELECT event_type, session_id, disease FROM audit_logs ORDER BY id DESC LIMIT 10;"' and confirm rows exist for 'QUERY_LOG' and 'RESPONSE_LOG'; if the table is empty, 'get_audit_storage_backend()' is returning 'sqlite' rather than 'postgres' — check 'CDSS_AUDIT_DB_PATH' is not set in '.env'
+
+- Seed the HIV evidence graph and verify — run 'curl -s -X POST http://localhost:8000/evidence/seed/hiv -H "X-User-Role: ADMIN" | python -m json.tool'; confirm response shows '{"nodes": 5, "edges": 4}' (or matching counts from 'hiv.json'); then run 'curl -s -X GET http://localhost:8000/evidence/stats -H "X-User-Role: ADMIN" | python -m json.tool' and confirm nonzero node and edge counts; seed remaining five diseases the same way; after all six are seeded, send a chat query about HIV first-line treatment and confirm the SSE stream includes an 'activity' event with '"message": "Evidence graph"' and '"detail": "Attached"'
+
+
+
+
+Next after that:
+
+---
+Phase 1 — Session & Memory Verification
+
+- Verify multi-turn session history — send two sequential chat queries to the same 'session_id' via curl; on the second query, reference something from the first (e.g. first asks about HIV first-line ART, second asks "what monitoring does that regimen require?"); confirm the second response demonstrates awareness of the first; then run 'docker exec -it cdss-postgres psql -U cdss_user -d cdss_dev -c "SELECT role, LEFT(content, 60) FROM session_history WHERE session_id='smoke-test' ORDER BY created_at;"' and confirm both user and assistant turns are persisted; if the table is empty, 'get_session_storage_backend()' is returning 'memory' — check 'CDSS_SESSION_STORAGE_BACKEND=postgres' is set in '.env'
+
+- Verify session clear — run 'curl -s -X DELETE http://localhost:8000/sessions/smoke-test/clear'; confirm '{"status": "cleared"}'; run the Postgres query above again and confirm the rows are gone; send another query on the same session ID and confirm the response has no awareness of the prior exchange
+
+- Verify memory distillation endpoint — send five or six turns of a clinically rich HIV session (ART initiation, CD4 count mention, monitoring question, drug interaction question); then run 'curl -s -X POST http://localhost:8000/memory/distill-session -H "X-User-Role: ADMIN" -H "Content-Type: application/json" -d '{"session_id":"smoke-test","patient_context":{"condition":"HIV"}}' | python -m json.tool'; confirm the response contains a 'pending' array with at least one extracted fact; if the array is empty, confirm the cheap distillation model ('llama-3.1-8b-instant' for Groq) is reachable and that 'get_session_messages' is returning rows from Postgres
+
+- Approve a pending memory and verify long-term promotion — take a 'memory_id' from the distillation response above; run 'curl -s -X POST http://localhost:8000/memory/pending/{memory_id}/approve -H "X-User-Role: ADMIN"'; confirm the response returns an 'approved_by' field; run 'docker exec -it cdss-postgres psql -U cdss_user -d cdss_dev -c "SELECT fact_type, LEFT(fact_text, 80), approved_by FROM long_term_memory LIMIT 5;"' and confirm the row exists; confirm the corresponding row is gone from 'pending_memory'
+
+- Verify memory surfaces in a subsequent session — start a new session with the same patient context hash (same 'condition' + 'CDSS_PATIENT_SALT'); send a query; inspect the SSE 'activity' events — there should be no explicit memory surface event yet since memory retrieval into the prompt is not yet wired into 'run_stream()'; this confirms the gap and sets up the next item
+
+ Phase 1 — Wire Memory Retrieval into Chat
+
+- Add long-term memory retrieval to 'run_stream()' — in 'api.py', immediately after 'history = await _read_session_history(...)' and before 'context_block' is built, add a call to 'list_long_term_memory(patient_ref_hash)' from 'repositories.py'; if results are returned, format them as a '[PRIOR_CLINICAL_CONTEXT]' block and prepend it to 'context_block'; guard behind 'if get_session_storage_backend() == "postgres"' and a try/except so memory failure never crashes a chat response; emit an 'activity' SSE event '"Prior clinical memory"' with detail showing fact count when memory is found
+
+- Verify memory injection end-to-end — repeat the new session from item 5 above; this time confirm the 'activity' event '"Prior clinical memory"' appears in the SSE stream; confirm the LLM response references the approved memory fact (e.g. if the approved fact was an active ART regimen, the response should acknowledge it when asked about monitoring); this is the first true cross-session clinical memory working end-to-end
+
+ Phase 2 — PageIndex Integration in Agent
+
+- Register 'query_structured_guideline' as a fourth agent tool in 'search_agent.py' — add a tool that accepts 'query: str' and 'disease: str', calls '_search_index.query_pageindex(query, disease=disease, top_k=3)' via 'ctx.deps.index', and returns results formatted as a list of dicts with 'text', 'page', 'section_path', 'score', and 'source'; include in the tool docstring exactly when to use it vs 'search_guidelines': use when the query asks for a specific dosing table, numbered algorithm step, weight-based chart, or monitoring schedule; use 'search_guidelines' for broad or exploratory queries
+
+- Wire the tool into the Groq/Puter provider path — in '_run_openai_compatible_chat', add a pre-LLM step: run '_search_index.query_pageindex(query, disease=disease_target, top_k=2)' directly; if any result has 'score > 0.65', prepend those results as a '[STRUCTURED_CONTEXT]' block above the '[GUIDELINE_CONTEXT]' block in the user message; this gives the LLM page-level navigation results alongside chunk retrieval without requiring the pydantic-ai agent path; emit an 'activity' event '"PageIndex"' with detail '"Attached"' when results are used
+
+- Test PageIndex on five structured queries per disease — for each disease, send one dosing query, one algorithm step query, one monitoring schedule query, one contraindication query, and one weight-based threshold query; confirm the SSE stream shows '"PageIndex": "Attached"' on queries that should trigger it and not on broad exploratory queries; confirm 'score' values in the pageindex results are above 0.5 for relevant matches; if all scores are below 0.3, the PageIndex table was built without LLM summaries (offline mode during ingestion) — rebuild with credentials active
+
+ Phase 3 — Hardening & Observability
+
+- Verify observability metrics endpoint — run 'curl -s http://localhost:8000/metrics'; confirm the response contains 'cdss_requests_total', 'cdss_request_duration_seconds_sum', and 'cdss_rate_limit_hits_total' counters; send 10 chat queries then re-hit '/metrics' and confirm counters incremented correctly; if the endpoint returns an empty response, check 'MetricsMiddleware' is registered before the route handlers in 'app.add_middleware' call order
+
+- Verify rate limiting fires — send 20 rapid sequential 'POST /chat/stream' requests from the same session; confirm some return '429' or an error SSE event after the configured threshold; check 'CDSS_RATE_LIMIT_*' env vars are documented in 'SETUP.md'; if no 429 is returned, read 'observability.py' and confirm 'RateLimitMiddleware' checks the '/chat/stream' path specifically and that the per-session key is being set correctly
+
+- Run the full test suite and fix any failures — from the project root run 'uv run python -m pytest test_api.py test_evidence.py test_memory.py test_observability.py test_pageindex.py test_retry.py test_phase7.py -v'; all 23 tests must pass; any failures after the Phase 0 rewrites are regressions introduced by file changes — fix them before proceeding; pay particular attention to tests that mock 'get_session_storage_backend' since that function now lives in 'config.py' not 'api.py'
+
+- Fix any import path regressions from Phase 0 rewrites — run 'uv run python -c "from app.api import app; from app.search_agent import build_agent; from app.memory import distill_session_candidates; from app.evidence import seed_evidence_graph; from app.indexers.pageindex import PageIndexBuilder; print('all imports ok')"' from the project root; any 'ImportError' or 'ModuleNotFoundError' here is a Phase 0 regression; the most likely candidates are 'from .retry import async_retry, with_timeout' in 'api.py' if 'with_timeout' was not present in the original 'retry.py' (it is — confirmed), and 'from .search_agent import build_system_prompt' in '_run_openai_compatible_chat' if 'build_system_prompt' was removed — it was not
+
+- Run the frontend build and confirm no broken API contract — from 'frontend/' run 'pnpm build'; confirm it exits zero; then start both backend and frontend, open the UI, select HIV, send a query, and confirm the SSE stream renders correctly in the browser: chunk text appears, sources panel populates, activity log shows the pipeline steps, and no console errors appear referencing missing event types or malformed JSON; this is the first full stack verification since Phase 0 rewrites

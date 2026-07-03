@@ -1,0 +1,79 @@
+# compose.yaml — Ambulance CDSS ecosystem
+# Three services + Postgres, all running together.
+#
+# Startup sequence:
+# 1. postgres starts first (health check: pg_isready)
+# 2. ambulance-cdss and facility-mapper depend on postgres (service_healthy)
+# 3. triage-ranker starts independently (no DB dependency)
+#
+# After first run:
+# - Load facility data: docker compose exec facility-mapper python -m scripts.load_facilities --source /data/facilities.csv --source-name KMHFL_2024_02
+# - Reload protocols: curl -X POST http://localhost:8000/admin/reload-protocols -H "X-Admin-Key: dev-key"
+# - Reload clinical rules: curl -X POST http://localhost:8100/admin/rules/reload -H "X-Admin-Key: dev-key"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    env_file:
+      - ./postgres.env
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ambulance-cdss:
+    build: ./ambulance-cdss
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./ambulance-cdss/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  facility-mapper:
+    build: ./facility-mapper
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./facility-mapper/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  triage-ranker:
+    build: ./triage-ranker
+    ports:
+      - "8100:8100"
+    env_file:
+      - ./triage-ranker/.env
+    volumes:
+      - triage-ranker-cache:/app/cache
+      - ./triage-ranker/app/rules:/app/rules:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  triage-ranker-cache:

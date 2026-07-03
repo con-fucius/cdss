@@ -1,0 +1,148 @@
+{
+  "protocol_id": "major_trauma_mva_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "car accident",
+    "road traffic accident",
+    "rta",
+    "mva",
+    "collision",
+    "vehicle crash",
+    "hit by car",
+    "motorbike accident",
+    "boda boda accident",
+    "accident ya gari",
+    "gari imegonga"
+  ],
+  "entry_question_id": "q1_conscious",
+  "questions": {
+    "q1_conscious": {
+      "text": "Is the patient conscious and able to respond to you?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q2_breathing_normally",
+        "no": "q_alt_unconscious"
+      }
+    },
+    "q_alt_unconscious": {
+      "text": "Patient is unconscious following trauma. Check breathing now.",
+      "answer_type": "select",
+      "options": [
+        "breathing_normally",
+        "not_breathing_or_abnormal"
+      ],
+      "branch_map": {
+        "breathing_normally": "q3_severe_bleeding",
+        "not_breathing_or_abnormal": "q_alt_route_cardiac_arrest"
+      }
+    },
+    "q_alt_route_cardiac_arrest": {
+      "text": "Unconscious and not breathing normally following trauma \u00e2\u20ac\u201d this is a resuscitation situation. The cardiac arrest protocol applies.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_trauma_cardiac_arrest_redirect"
+      }
+    },
+    "q2_breathing_normally": {
+      "text": "Is the patient breathing normally, with no obvious difficulty?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q3_severe_bleeding",
+        "no": "outcome_trauma_airway_breathing_compromise"
+      }
+    },
+    "q3_severe_bleeding": {
+      "text": "Is there severe, heavy, or spurting bleeding from any wound?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Direct pressure is the first-line measure. A tourniquet is only appropriate for a trained bystander managing catastrophic limb bleeding not controlled by direct pressure \u00e2\u20ac\u201d do not instruct an untrained caller to apply one.",
+      "branch_map": {
+        "yes": "q4_bleeding_bystander_capable",
+        "no": "q5_mechanism_severity"
+      }
+    },
+    "q4_bleeding_bystander_capable": {
+      "text": "Is there someone able to apply firm direct pressure to the bleeding right now?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_trauma_severe_bleeding_with_pressure",
+        "no": "outcome_trauma_severe_bleeding_no_bystander"
+      }
+    },
+    "q5_mechanism_severity": {
+      "text": "Does the patient have any of: inability to move a limb, suspected spinal injury, person trapped or pinned, fall from height, or was ejected from the vehicle?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_trauma_high_mechanism_no_active_bleeding",
+        "no": "outcome_trauma_minor"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_trauma_airway_breathing_compromise": {
+      "priority_code": "P1_TRAUMA_AIRWAY_COMPROMISE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not move the patient's neck or back unless there is immediate danger at the scene (such as fire or oncoming traffic).",
+        "If the patient is struggling to breathe and you are trained to do so, help maintain an open airway without moving the neck.",
+        "Watch closely. If the patient stops breathing or becomes unconscious, tell me immediately \u00e2\u20ac\u201d the instructions change."
+      ]
+    },
+    "outcome_trauma_severe_bleeding_with_pressure": {
+      "priority_code": "P1_TRAUMA_SEVERE_BLEEDING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Apply firm, continuous direct pressure to the wound using a clean cloth or dressing.",
+        "Do not lift the pressure to check the wound \u00e2\u20ac\u201d keep pressing firmly without stopping.",
+        "If blood soaks through, add more material on top rather than removing what is already there.",
+        "Do not move the patient's neck or back unless there is immediate danger at the scene."
+      ]
+    },
+    "outcome_trauma_severe_bleeding_no_bystander": {
+      "priority_code": "P1_TRAUMA_SEVERE_BLEEDING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "If you are able to safely approach the patient, apply firm direct pressure to the bleeding using any clean cloth available.",
+        "If you cannot safely reach the patient, stay on the line and tell me what you can see.",
+        "Do not move the patient's neck or back unless there is immediate danger at the scene."
+      ]
+    },
+    "outcome_trauma_high_mechanism_no_active_bleeding": {
+      "priority_code": "P2_TRAUMA_HIGH_MECHANISM",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Do not move the patient unless there is immediate danger at the scene, such as fire, oncoming traffic, or a structure at risk of collapse.",
+        "Keep the patient as still as possible and reassure them help is on the way.",
+        "Watch for any change in breathing or consciousness and tell me immediately if anything changes."
+      ]
+    },
+    "outcome_trauma_minor": {
+      "priority_code": "P3_TRAUMA_MINOR",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Based on what you've told me, this does not appear to be immediately life-threatening, but an ambulance is still on the way to assess the patient properly.",
+        "Keep the patient still and comfortable.",
+        "If anything changes \u00e2\u20ac\u201d worsening pain, new bleeding, difficulty breathing, or loss of consciousness \u00e2\u20ac\u201d call back immediately."
+      ]
+    },
+    "outcome_trauma_cardiac_arrest_redirect": {
+      "priority_code": "P1_CARDIAC_ARREST",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "The patient is unconscious and not breathing after trauma \u00e2\u20ac\u201d this is a cardiac arrest.",
+        "Start CPR immediately if you are able.",
+        "Place the patient on their back on a firm surface.",
+        "Place the heel of one hand in the centre of the chest and push hard and fast at 100-120 compressions per minute.",
+        "Continue without stopping until the ambulance crew arrives."
+      ]
+    }
+  }
+}

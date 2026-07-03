@@ -1,0 +1,125 @@
+{
+  "protocol_id": "choking_airway_obstruction_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "choking",
+    "can't breathe",
+    "object stuck",
+    "airway obstruction",
+    "swallowed something",
+    "kimefulia",
+    "kitu kimekwama"
+  ],
+  "entry_question_id": "q1_conscious",
+  "questions": {
+    "q1_conscious": {
+      "text": "Is the patient conscious and able to respond to you?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q2_can_cough_or_speak",
+        "no": "q_alt_unconscious"
+      }
+    },
+    "q_alt_unconscious": {
+      "text": "Patient is unconscious with a suspected airway obstruction. This is a resuscitation situation \u00e2\u20ac\u201d the unresponsive protocol applies.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_unconscious_redirect"
+      }
+    },
+    "q2_can_cough_or_speak": {
+      "text": "Can the patient cough forcefully, speak, or make sounds?",
+      "answer_type": "select",
+      "options": [
+        "effective_cough_or_speech",
+        "weak_or_silent_cough",
+        "no_sound_at_all"
+      ],
+      "branch_map": {
+        "effective_cough_or_speech": "outcome_mild_obstruction_encourage_cough",
+        "weak_or_silent_cough": "q3_able_to_assist",
+        "no_sound_at_all": "q3_able_to_assist"
+      }
+    },
+    "q3_able_to_assist": {
+      "text": "Is there someone at the scene able and willing to perform back blows and abdominal thrusts right now, before the ambulance arrives?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Technique differs by age group: standard back blows/abdominal thrusts for children over 1 year and adults; back blows and chest thrusts only (no abdominal thrusts) for infants under 1 year due to organ injury risk.",
+      "branch_map": {
+        "yes": "q4_patient_age_group",
+        "no": "outcome_severe_obstruction_no_bystander"
+      }
+    },
+    "q4_patient_age_group": {
+      "text": "Is the patient an infant under 1 year old, a child, or an adult?",
+      "answer_type": "select",
+      "options": [
+        "infant",
+        "child_or_adult"
+      ],
+      "branch_map": {
+        "infant": "outcome_severe_obstruction_infant",
+        "child_or_adult": "outcome_severe_obstruction_child_adult"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_mild_obstruction_encourage_cough": {
+      "priority_code": "P2_AIRWAY_PARTIAL",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "The patient can still cough and breathe, which means some air is moving \u00e2\u20ac\u201d this is a good sign.",
+        "Encourage the patient to keep coughing forcefully \u00e2\u20ac\u201d this is the most effective way to clear the obstruction.",
+        "Do not perform back blows or abdominal thrusts while the cough remains effective \u00e2\u20ac\u201d this could push the object further in or cause injury.",
+        "Stay with the patient and watch closely. If the cough becomes weak, silent, or the patient cannot breathe at all, call back immediately."
+      ]
+    },
+    "outcome_severe_obstruction_no_bystander": {
+      "priority_code": "P1_AIRWAY_COMPLETE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "If you become able to assist, or someone else arrives, tell me immediately and I will guide you through back blows and abdominal thrusts.",
+        "If the patient becomes unconscious at any point, tell me immediately \u00e2\u20ac\u201d the instructions change."
+      ]
+    },
+    "outcome_severe_obstruction_infant": {
+      "priority_code": "P1_AIRWAY_COMPLETE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me. This is for an infant under 1 year old \u00e2\u20ac\u201d do not use abdominal thrusts.",
+        "Lay the infant face down along your forearm, supporting the head and jaw, head lower than the chest.",
+        "Give 5 firm back blows between the shoulder blades with the heel of your hand.",
+        "If the object does not come out, turn the infant face up along your other arm, head still lower than chest.",
+        "Give 5 chest thrusts using two fingers in the centre of the chest, just below the nipple line.",
+        "Repeat back blows and chest thrusts until the object clears or the infant becomes unconscious \u00e2\u20ac\u201d if that happens, tell me immediately."
+      ]
+    },
+    "outcome_severe_obstruction_child_adult": {
+      "priority_code": "P1_AIRWAY_COMPLETE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Stand behind the patient and give up to 5 firm back blows between the shoulder blades with the heel of your hand.",
+        "If the object does not clear, stand behind them, place a fist just above the navel, grasp it with your other hand, and give up to 5 quick upward abdominal thrusts.",
+        "Alternate between 5 back blows and 5 abdominal thrusts until the object clears or the patient becomes unconscious \u00e2\u20ac\u201d if that happens, tell me immediately, the instructions change to CPR."
+      ]
+    },
+    "outcome_unconscious_redirect": {
+      "priority_code": "P1_AIRWAY_COMPROMISE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "The patient is unconscious \u00e2\u20ac\u201d the choking protocol no longer applies.",
+        "Place the patient on their back on a firm surface.",
+        "If you are trained, open the airway and check for breathing.",
+        "If the patient is not breathing, start CPR immediately.",
+        "Help is on the way."
+      ]
+    }
+  }
+}

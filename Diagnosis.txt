@@ -1,0 +1,76 @@
+Diagnosis
+Backend issues (real, code-grounded)
+1. 'api.py' audit log calls are broken in 'generate_clinical_document' and pathway/DDx runners.
+'get_audit_storage_backend()' returns a string ('"postgres"' or '"sqlite"'), not an object. Calling '.log_event_async(...)' on it crashes at runtime. These three endpoints will 500 on every request.
+2. '_compute_patient_scores' has wrong field access.
+Looks up 'patient_state.get("vitals", {})' and 'patient_state.get("labs", [])' but 'patient_state.py'/'repositories.py' returns keys like 'most_recent_vitals', 'latest_labs_by_type', 'active_diagnoses'. Field names are mismatched — scores are silently skipped for every patient.
+3. 'compute_clinical_score' endpoint invocation is fragile.
+News2 is called as 'scorer_fn(request.inputs)' (single dict), but 'ClinicalScorer.news2' signature needs to be checked. 'child_pugh' and 'malaria_severity' use 'request.inputs' but these scorers take structured dicts ('labs=', 'clinical=') not flat kwargs. This will fail for any non-news2 scorer in the panel.
+4. 'PatientContextPanel' renders 'clinical_params' fields twice.
+'contextOptions.clinical_params' fields are rendered inside 'context-title-group' (the collapsed header, before 'context-body') AND inside 'context-section "Clinical parameters"' — duplicated because whoever added the section inside the header was building on a misread of the original layout.
+5. 'EvidencePanel' override form uses a free-text 'input' for 'override_reason'.
+The directive and 'ScoringPanel' use a structured 5-option dropdown. 'EvidencePanel' sends a free-text string to the same '/alerts/override' endpoint that has a CHECK constraint requiring one of 5 values. This crashes with a DB error on any drug interaction override submission.
+6. 'SessionClearRequest' body is optional but the 'DELETE' body parsing is unreliable.
+'DELETE' with a body is not reliably supported across proxies. The 'handleNewConversation' already sends a body — this may silently fail on some configurations, meaning '_queue_memory_distillation' never fires. Should be 'POST /sessions/{id}/clear' for reliable body-with-request.
+7. 'scoring.py''s '_compute_patient_scores' is defined inside 'api.py' (duplicate, not in 'scoring.py').
+'chat_stream' imports 'from .scoring import _compute_patient_scores' but the function doesn't exist in 'scoring.py' — it's only defined further down in 'api.py' itself. This import will fail at runtime.
+8. 'documents.py' audit log call broken (same as 1).
+'generate_clinical_document' catches the error with a bare 'except' and logs it but doesn't raise — so document generation silently swallows the audit failure and returns the doc regardless, which is the right behavior, but the call 'get_audit_storage_backend().log_event_async(...)' needs to be 'write_audit_log(...)' from 'logs.py' consistently.
+
+Frontend issues (real, code-grounded)
+9. 'PatientContextPanel' layout is structurally broken.
+The 'context-title-group' div (the collapsed header bar) contains clinical params inputs rendered inside it — this means input fields are rendered *inside the clickable toggle header*, making them unclickable/conflicting with the expand toggle. The 'context-header' 'onClick' expands/collapses the panel but also captures clicks on inputs. This is the "Clinical Store modal" contrast problem mentioned — the panel is structurally broken.
+10. 'ScoringPanel' is rendered unconditionally in 'App.jsx' alongside 'PatientContextPanel'.
+Both panels are rendered as permanent DOM elements at the bottom of the layout. On narrow viewports or when both are expanded, they stack and overflow. There's no coordination between them.
+11. 'EvidencePanel' uses a '<details>/<summary>' element.
+The rest of the UI uses 'framer-motion' 'AnimatePresence' for expand/collapse. '<details>' is a native HTML element that doesn't animate. It's visually inconsistent with every other collapsible in the system ('PatientContextPanel', 'ScoringPanel', 'DDxWorkspace' expandables).
+12. 'DDxWorkspace' synthesis output uses '<pre>' for LLM text.
+'<pre>' renders monospace verbatim text. The chat path uses 'MarkdownContent' for LLM output. The synthesis text is LLM-generated markdown with headers and citations — '<pre>' will show raw 'bold' and '' instead of rendering them.
+13. 'CommandPalette' doesn't include DDx and Pathways routes.
+'/ddx' and '/pathways' are real routes with sidebar entries but the command palette only covers: new conversation, search, builder, guidelines, knowledge base, settings, shortcuts. DDx and Pathways are unreachable via keyboard.
+14. 'PatientContextPanel' 'savePatientProfile' triggers on "Save profile" but there's no clear state reset for 'saveStatus' on context change.
+'saveStatus' persists as a stale "Patient context saved..." message even after the user changes conditions or medications, making the status truthfully incorrect.
+15. 'ScoringPanel' debounced auto-run uses stale 'inputs' closure.
+'handleInputChange' calls 'setTimeout(() => runScore(scorer), 300)' inside a 'useCallback' with no 'inputs' dependency. 'runScore' is also a 'useCallback' with 'inputs' as a dependency. When the debounce fires, it captures the 'runScore' from the outer closure at call time — but 'runScore' itself closes over 'inputs' which may be stale because 'handleInputChange''s 'useCallback' didn't list 'runScore' as a dependency. This is a stale closure bug: the auto-calculate will occasionally score with old inputs.
+
+Remediation plan
+BE fixes (in order)
+BE-1. Fix audit log calls in 'api.py' and 'documents.py'
+Replace all three instances of 'get_audit_storage_backend().log_event_async(...)' with 'write_audit_log(...)' from 'logs.py'. This is the same function used everywhere else in 'api.py'.
+Files: 'app/api.py' (DDx runner, pathway runner, document generation endpoint), 'app/documents.py'
+BE-2. Move '_compute_patient_scores' to 'scoring.py' and fix field access
+The function in 'api.py' uses wrong patient_state keys. Move it to 'scoring.py', correct field mapping: 'most_recent_vitals' (not 'vitals'), 'latest_labs_by_type' (not 'labs' list), 'active_diagnoses' (with 'condition_name' field, not 'name'). Remove the duplicate definition from 'api.py' and fix the import.
+Files: 'app/scoring.py', 'app/api.py'
+BE-3. Fix 'compute_clinical_score' endpoint scorer dispatch
+Read 'ClinicalScorer' method signatures and dispatch correctly. News2 takes a 'vitals: dict'. egfr takes 'creatinine, age, sex' as kwargs. WHO HIV stage takes 'clinical_features: List[str], cd4: Optional[float]'. child_pugh takes 'labs: dict, clinical: dict'. malaria_severity takes 'vitals: dict, labs: dict, clinical: dict'. Standardize dispatch in the endpoint to match actual signatures.
+Files: 'app/api.py', 'app/scoring.py'
+BE-4. Fix 'EvidencePanel' override to use structured reasons
+'/alerts/override' enforces a CHECK constraint. The 'EvidencePanel' free-text input will always cause a DB error. Replace with the same 5 structured reasons used in 'ScoringPanel'.
+Files: 'frontend/src/components/chat/EvidencePanel.jsx'
+BE-5. Change 'DELETE /sessions/{id}/clear' to 'POST /sessions/{id}/clear'
+'DELETE' with body is unreliable. Change the endpoint to 'POST', update 'useChat.js''s 'handleNewConversation' to use 'POST'. Keeps all existing logic — just the HTTP method and URL.
+Files: 'app/api.py', 'frontend/src/hooks/useChat.js'
+
+FE fixes (in order)
+FE-1. Fix 'PatientContextPanel' header/body structural bug
+The misplaced 'clinical_params' render inside 'context-title-group' needs to be moved entirely into the 'context-body' section (inside 'AnimatePresence'). The header should only contain: the 'UserCircle' icon, the title text, and the toggle chevron. No form elements in the header.
+Also: add a 'stopPropagation' on any 'onClick' inside the expanded body to prevent bubbling up to the 'context-header' toggle.
+Fix 'saveStatus' stale message: clear it on any 'onContextChange' call.
+Files: 'frontend/src/components/panels/PatientContextPanel.jsx'
+FE-2. Replace 'EvidencePanel' '<details>/<summary>' with motion-based collapse
+Replace the '<details>' element with the same 'AnimatePresence' / 'motion.div' pattern used in 'ScoringPanel' and 'PatientContextPanel'. Keep the same toggle behavior, just use framer-motion for consistency.
+Files: 'frontend/src/components/chat/EvidencePanel.jsx'
+FE-3. Fix 'DDxWorkspace' synthesis output: replace '<pre>' with 'MarkdownContent'
+Replace '<pre className="ddx-synthesis-text">{llmChunks}</pre>' with '<MarkdownContent content={llmChunks} />'. Import 'MarkdownContent' from '../components/chat/MarkdownContent'.
+Files: 'frontend/src/pages/DDxWorkspace.jsx'
+FE-4. Add DDx and Pathways to 'CommandPalette'
+Add two commands to the 'commands' array in 'CommandPalette': '{ id: 'ddx', label: 'Differential Diagnosis', icon: 'D', action: () => { onNavigate('/ddx'); onClose(); } }' and '{ id: 'pathways', label: 'Clinical Pathways', icon: 'P', action: () => { onNavigate('/pathways'); onClose(); } }'.
+Files: 'frontend/src/components/modals/Modals.jsx'
+FE-5. Fix 'ScoringPanel' stale-closure debounce
+Remove 'useCallback' from 'handleInputChange' (or add 'runScore' to its dependency array). Simplest fix: remove the debounced auto-run entirely from 'handleInputChange' and let the explicit "Calculate" button be the only trigger. The auto-calculate-on-type UX is not necessary for a clinical calculator and introduces the stale closure risk.
+Files: 'frontend/src/components/panels/ScoringPanel.jsx'
+Now implementing in order:The indentation in 'check_llm_reachability' broke. Fix that:Now fix '_compute_patient_scores' — move it to 'scoring.py' with correct field names, remove duplicate from 'api.py':Good — 'scoring.py' already has '_compute_patient_scores'. Let me see how it accesses patient state:'scoring.py' already has '_compute_patient_scores' with correct field names ('most_recent_vitals', 'latest_labs_by_type', 'active_conditions', 'active_diagnoses'). The problem is the duplicate bad version in 'api.py'. Fix 'api.py' to remove the duplicate and fix the import:Now fix the import in 'chat_stream' — it references 'from .scoring import _compute_patient_scores' but now it's at module level in 'scoring.py' (not in a class). Confirm the import works by checking how 'chat_stream' calls it:Good — import is already correct and unchanged. Now fix 'compute_clinical_score' endpoint scorer dispatch (BE-3):Now fix 'useChat.js' to use 'POST' for session clear:Now fix the FE issues. Starting with 'EvidencePanel' — replace '<details>' with motion-based collapse and fix override to use structured reasons:Now fix 'PatientContextPanel' — remove the misplaced params from the header, add 'stopPropagation' on body, clear 'saveStatus' on context change:
+
+
+
+Continue from here.

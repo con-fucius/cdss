@@ -1,0 +1,713 @@
+ What Actually Moves the Needle: A Rigorous CDSS Advancement Plan
+Grounded in peer-reviewed evidence, Kenya-specific deployment data, and current clinical standards
+*Not a wishlist. Every item has a clinical justification, a technical specification, and a bounded scope.*
+
+---
+
+ The Honest Starting Point
+
+The current system is a guideline-grounded RAG assistant with a Postgres backend, evidence graph, drug interaction checks via RxNorm, terminology subsystem, and multi-disease retrieval. That is a solid foundation. It is not a CDSS.
+
+A CDSS, properly defined, matches individual patient characteristics against a computable knowledge base and delivers patient-specific assessments or recommendations at the point of care. The gap between what exists and that definition is not a RAG gap. It is a patient-state gap, a computable-rule gap, and a clinical-workflow gap. Every item below closes one of those gaps with evidence behind it.
+
+What the evidence actually says about CDSS impact:
+- <cite index="118-1">Clinical decision support software has been shown to improve guideline adherence, reduce overprescribing of broad-spectrum antibiotics, and personalise prescribing by matching individual patient characteristics to a computerised knowledge base.</cite>
+- <cite index="144-1">In low-resourced settings, CDSS provides an opportunity to support the competencies of local health workers and catalyze decision-making in situations where there is time pressure and no possibility to seek advice from other professional colleagues.</cite>
+- The Kenya HIV CDSS cluster RCT showed a CDSS was <cite index="145-1">associated with a higher likelihood of return to treatment among patients lost to follow-up (OR 1.53, p < 0.001) and improved early action on immunological treatment failure from 30% to 54%.</cite>
+- Alert fatigue is the primary failure mode: <cite index="127-1">33% to 96% of clinical alerts are ignored in practice. Only critical alerts should be interruptive; less critical alerts should be non-interruptive.</cite>
+- <cite index="125-1">Override rates for drug interaction alerts often exceed 85% in clinical settings. In contrast, organisations implementing workflow-aligned CDS platforms have reported up to 87% provider engagement.</cite>
+
+That last data point is the most important number in this document. The difference between 15% engagement and 87% engagement is not technology. It is workflow alignment and alert design.
+
+---
+
+ Part 1: The Six Clinical Capability Gaps That Matter Most
+
+ Gap 1: No computable patient state
+
+The system receives patient context as a JSON dict per request. It has no persistent, queryable representation of a patient's current conditions, active medications, labs, WHO stage, or temporal events. Every query starts from scratch. This is the single most dangerous architectural gap. A CDSS without patient state is a search engine with a medical theme.
+
+What this costs clinically: The system cannot detect that a patient was started on rifampicin 3 weeks ago and is now being prescribed a combined oral contraceptive. It cannot flag that a patient's CD4 count has dropped since the last visit. It cannot notice that the query pattern across sessions suggests treatment failure. Everything the evidence graph and drug interaction checker could catch is invisible without patient state.
+
+ Gap 2: No differential diagnosis surface
+
+The system answers questions. It does not reason about presentations. A clinician with a patient presenting with fever, weight loss, night sweats, and a CD4 of 180 gets the same interface as a clinician asking "what is first-line ART for adults?" The system has no capacity to receive a symptom cluster and return ranked diagnostic hypotheses with discriminating features.
+
+What the evidence says: <cite index="135-1">Incorporating lab data into differential diagnosis generation enhances accuracy by up to 30% across models. Differential diagnosis is a foundational process in medicine that enables clinicians to systematically identify and prioritize conditions that explain a patient's symptoms, thereby guiding effective treatment and reducing diagnostic errors.</cite>
+
+ Gap 3: No clinical scoring engine
+
+SOFA, qSOFA, NEWS2, Child-Pugh, APGAR, Malaria Severity Score, WHO HIV Staging criteria — these are computable algorithms used daily in every clinical setting this system targets. They are not implemented. A clinician must compute them manually. <cite index="166-1">Automated SOFA calculation has been validated in ICU settings and is associated with 30-day mortality prediction, with inter-rater variability being a known challenge in manual assessment that automated systems resolve.</cite>
+
+ Gap 4: No treatment pathway engine
+
+The system retrieves guideline text. It does not walk a clinician through a pathway. Given a confirmed diagnosis and patient state, it cannot say: "Step 1 is complete. Step 2 requires a baseline creatinine — not recorded. Step 3 is initiation of TDF/3TC/DTG. Monitoring at 2 weeks." The evidence graph has the edges. The pathway engine to traverse them does not exist.
+
+ Gap 5: No structured clinical document generation
+
+Every interaction ends with a text response. No SBAR summary. No referral letter. No discharge note. No patient-facing explanation in plain language. <cite index="161-1">The I-PASS structured handoff tool reduces medical errors and adverse events with moderate certainty of evidence. SBAR provides low certainty of improvement in patient safety outcomes. Both outperform unstructured communication.</cite> A CDSS that cannot produce structured output is a tool only for the clinician who uses it — it cannot propagate clinical decisions to the next care provider.
+
+ Gap 6: No CDS Hooks surface for future EHR integration
+
+<cite index="173-1">CDS Hooks is transforming how healthcare providers interact with EHRs by providing real-time, patient-specific information to aid in decision-making. The specification allows EHRs to communicate with external services to display clinical decision support alerts and cards.</cite> Every future EHR integration — KMHFL, OpenMRS, any FHIR-capable system — will expect a CDS Hooks endpoint. Building without it now means rebuilding everything later.
+
+---
+
+ Part 2: The Advancement Plan
+
+Structured as bounded, sequenced phases. Each phase closes one gap. No phase touches the live retrieval or chat path — that boundary holds from the original architecture decision.
+
+---
+
+ Phase A: Persistent Patient State Model
+*Prerequisite for everything else. Without this, Phases B through F are toys.*
+
+A1 — Patient encounter schema
+
+Add to Postgres. One table per concept. No EHR dependency — the clinician enters state manually or via the context panel.
+
+'''sql
+CREATE TABLE patient_encounters (
+    encounter_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    patient_ref     TEXT NOT NULL,        -- hashed, as per existing pattern
+    disease_scope   TEXT NOT NULL,
+    encounter_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+    encounter_type  TEXT NOT NULL,        -- "initial" | "follow_up" | "emergency"
+    clinician_role  TEXT,
+    facility_level  TEXT,                 -- "Level 4" | "Level 5" | "Level 6"
+    notes           TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE patient_vitals (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    encounter_id    UUID REFERENCES patient_encounters(encounter_id),
+    patient_ref     TEXT NOT NULL,
+    recorded_at     TIMESTAMPTZ DEFAULT NOW(),
+    -- Core vitals
+    bp_systolic     INTEGER,
+    bp_diastolic    INTEGER,
+    heart_rate      INTEGER,
+    respiratory_rate INTEGER,
+    temperature     NUMERIC(4,1),
+    spo2            INTEGER,
+    weight_kg       NUMERIC(5,1),
+    height_cm       NUMERIC(5,1),
+    -- Computed scores stored after calculation
+    news2_score     INTEGER,
+    news2_risk      TEXT,      -- "low" | "medium" | "high"
+    bmi             NUMERIC(4,1)
+);
+
+CREATE TABLE patient_labs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    encounter_id    UUID REFERENCES patient_encounters(encounter_id),
+    patient_ref     TEXT NOT NULL,
+    recorded_at     TIMESTAMPTZ DEFAULT NOW(),
+    lab_type        TEXT NOT NULL,   -- "cd4_count" | "viral_load" | "hba1c" | "egfr" | "creatinine" | "alt" | "hb" | "wbc" | "platelets"
+    value           NUMERIC,
+    unit            TEXT,
+    reference_low   NUMERIC,
+    reference_high  NUMERIC,
+    flag            TEXT,            -- "normal" | "low" | "high" | "critical"
+    source          TEXT             -- "entered" | "imported"
+);
+
+CREATE TABLE patient_medications (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    encounter_id    UUID REFERENCES patient_encounters(encounter_id),
+    patient_ref     TEXT NOT NULL,
+    drug_name       TEXT NOT NULL,
+    generic_name    TEXT,
+    rxcui           TEXT,
+    dose            TEXT,
+    frequency       TEXT,
+    route           TEXT,
+    started_date    DATE,
+    stopped_date    DATE,
+    status          TEXT DEFAULT 'active',   -- "active" | "stopped" | "suspended"
+    indication      TEXT,
+    prescribed_by   TEXT
+);
+
+CREATE TABLE patient_diagnoses (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    encounter_id    UUID REFERENCES patient_encounters(encounter_id),
+    patient_ref     TEXT NOT NULL,
+    condition_ref   TEXT,           -- evidence graph concept ref_id
+    condition_name  TEXT NOT NULL,
+    icd10_code      TEXT,
+    status          TEXT DEFAULT 'active',
+    onset_date      DATE,
+    resolved_date   DATE,
+    severity        TEXT,
+    confirmed_by    TEXT            -- "clinical" | "lab" | "imaging"
+);
+'''
+
+A2 — Patient state aggregator
+
+'''python
+ app/patient_state.py
+
+async def get_patient_state(patient_ref: str) -> dict:
+    """
+    Assemble current patient state from all tables.
+    Returns a structured dict used by the scoring engine,
+    pathway engine, and as context injection for chat.
+    """
+'''
+
+Returns: active diagnoses, current medications with RxCUIs, most recent labs with flag status, most recent vitals, active regimens, temporal events (last CD4 date, last viral load, treatment start date).
+
+A3 — Context panel wiring
+
+The frontend PatientContext panel currently holds form fields that vanish on session clear. Wire it to POST to '/patient/encounter' and GET from '/patient/state/{patient_ref}' so state persists. The chat stream reads patient state at query time from Postgres, not from the frontend's transient form state.
+
+A4 — Alembic migration 0006
+
+Standard migration adding all tables above with appropriate indexes on 'patient_ref', 'encounter_id', 'recorded_at', 'lab_type', 'status'.
+
+---
+
+ Phase B: Clinical Scoring Engine
+*Pure computation. No LLM. No retrieval. Deterministic, auditable, fast.*
+
+This is the highest-confidence feature in the entire plan. Scores are computable from patient state. They are wrong when inputs are wrong, not when the LLM hallucinates. They are explainable by definition.
+
+B1 — Scoring engine module
+
+'''python
+ app/scoring.py
+
+class ClinicalScorer:
+
+    def news2(self, vitals: dict) -> dict:
+        """
+        NEWS2 (National Early Warning Score 2).
+        Parameters: RR, SpO2, SpO2 scale, supplemental O2,
+                    BP systolic, heart rate, consciousness, temperature.
+        Returns: {score, risk_level, escalation_required, component_scores}.
+        Evidence: NHS standard. Triggers sepsis pathway at score >= 5.
+        """
+
+    def who_hiv_stage(self, clinical_features: list, cd4: float) -> dict:
+        """
+        WHO HIV Clinical Staging (1–4).
+        Maps presenting conditions and CD4 to stage.
+        Returns: {stage, criteria_met, recommended_actions}.
+        Source: Kenya ARV Guidelines 2022.
+        """
+
+    def child_pugh(self, labs: dict, clinical: dict) -> dict:
+        """
+        Child-Pugh Score for hepatic function.
+        Relevant for: hepatitis B/C coinfection, drug dosing in liver disease.
+        Parameters: bilirubin, albumin, PT/INR, ascites, encephalopathy.
+        Returns: {score, class_A_B_C, implications_for_dosing}.
+        """
+
+    def malaria_severity(self, vitals: dict, labs: dict, clinical: dict) -> dict:
+        """
+        WHO Severe Malaria criteria.
+        Parameters: GCS, RR, BP, Hb, blood glucose, parasitaemia,
+                    creatinine, lactate, urine output.
+        Returns: {is_severe, criteria_met, recommended_management}.
+        Source: Kenya Malaria Guidelines.
+        """
+
+    def diabetes_risk_hba1c(self, hba1c: float, fpg: float) -> dict:
+        """
+        DM diagnostic criteria and glycaemic target assessment.
+        Returns: {diagnosis, target_met, intensification_indicated}.
+        Source: Kenya DM Guidelines V15 2024.
+        """
+
+    def egfr_ckd_stage(self, creatinine: float, age: int, sex: str) -> dict:
+        """
+        CKD-EPI eGFR and CKD staging.
+        Critical for: metformin dosing, ACE inhibitor use,
+                      TDF dose adjustment in HIV/CKD.
+        Returns: {egfr, ckd_stage, drug_implications}.
+        """
+
+    def cvd_risk_score(self, age: int, sex: str, bp: int,
+                       cholesterol: float, smoking: bool,
+                       diabetes: bool) -> dict:
+        """
+        WHO/ISH CVD risk chart implementation for low-resource settings.
+        Returns: {10yr_risk_pct, risk_category, interventions_indicated}.
+        Source: Kenya CVD Guidelines.
+        """
+'''
+
+B2 — Scoring API endpoints
+
+'''
+POST /clinical/score
+Body: {scorer: "news2", patient_ref: "hash", inputs: {...}}
+Returns: {score, interpretation, actions_required, source_guideline}
+'''
+
+All scores are written to an 'audit_logs' row with 'event_type = "CLINICAL_SCORE"' so every computation is traceable.
+
+B3 — Score-triggered alerts (passive, not interruptive)
+
+When a score is computed:
+- NEWS2 >= 5: surface a 'warning' SSE event, not an alert popup
+- WHO HIV Stage 3/4 detected: add to chat context as '[CLINICAL_SCORE: WHO Stage 3 — opportunistic infection prophylaxis indicated]'
+- eGFR < 30: inject as a contraindication flag before any drug interaction check
+- Malaria severe criteria met: surface 'emergency' SSE event with escalation pathway
+
+Critically: scores appear as structured context in the chat response, not as modal interruptions. This is the alert fatigue mitigation. <cite index="126-1">Replacing burdensome interruptive alerts with passive clinical decision support reduces alert burden while improving the percentage of patients who receive appropriate care.</cite>
+
+---
+
+ Phase C: Differential Diagnosis Surface
+*The feature clinicians at every level actually need. From emergency nurses to consultants.*
+
+This is not "ask the LLM what disease this is." That is dangerous and wrong. This is a structured, guideline-grounded differential with explicit discriminating features and evidence citations.
+
+C1 — DDx request model
+
+'''python
+class DDxRequest(BaseModel):
+    patient_ref: Optional[str]
+    presenting_symptoms: List[str]         free text, normalised via terminology
+    duration_days: Optional[int]
+    vital_signs: Optional[dict]            NEWS2 inputs
+    relevant_labs: Optional[dict]          CD4, Hb, glucose, WBC, etc.
+    context: Optional[PatientContext]      existing conditions, meds
+    target_diseases: Optional[List[str]]   restrict to disease scope
+'''
+
+C2 — DDx engine
+
+'''python
+ app/ddx.py
+
+class DifferentialDiagnosisEngine:
+
+    async def generate_ddx(self, request: DDxRequest) -> DDxResponse:
+        """
+        Three-stage differential generation:
+
+        Stage 1 — Evidence graph traversal:
+        Map symptoms to conditions via 'symptom_suggests_condition' edges.
+        Weight by number of matching symptoms.
+        Filter by patient population (age, sex, pregnancy).
+
+        Stage 2 — Guideline retrieval:
+        For each top candidate condition, retrieve the diagnostic criteria
+        section from the guideline via PageIndex.
+        Check which criteria are met given the presented labs and vitals.
+
+        Stage 3 — LLM synthesis with citations:
+        Synthesise the traversal + retrieval output into a ranked
+        differential with: condition name, probability tier (high/med/low),
+        criteria met, criteria missing, next discriminating test,
+        source guideline citation.
+
+        Returns DDxResponse with ranked_differentials and
+        recommended_investigations.
+        """
+'''
+
+C3 — DDx endpoint and SSE integration
+
+'''
+POST /clinical/ddx
+'''
+
+Returns SSE stream so the differential appears progressively — first the evidence graph candidates (instant), then guideline criteria (fast), then LLM synthesis (slow). The clinician sees value immediately at each stage, not after a 10-second wait.
+
+C4 — Key design constraint
+
+Every differential hypothesis must cite the guideline section that defines its diagnostic criteria. If no guideline section supports a hypothesis, that hypothesis is not returned. This is the grounding principle that distinguishes this from Glass Health's approach — Kenya-specific guidelines, Kenya-specific populations.
+
+---
+
+ Phase D: Treatment Pathway Engine
+*Converts the evidence graph from a data store into a navigation system.*
+
+D1 — Pathway definition schema
+
+'''python
+ app/pathways/schema.py
+
+@dataclass
+class PathwayStep:
+    step_id: str
+    step_number: int
+    title: str
+    description: str
+    action_type: str          "assessment" | "test" | "treatment" | "monitoring" | "referral"
+    required_inputs: List[str]           lab types, vital signs, or clinical findings required
+    completion_criteria: str             what marks this step done
+    next_step_if_met: Optional[str]      step_id
+    next_step_if_not_met: Optional[str]  step_id (e.g. escalation)
+    contraindication_check: Optional[str]   evidence graph edge type to check
+    guideline_ref: str                   source guideline + section
+    evidence_edge_ids: List[str]         clinical_edges that support this step
+    time_constraint: Optional[str]       "within 2 weeks" | "before initiation"
+
+@dataclass
+class ClinicalPathway:
+    pathway_id: str
+    disease: str
+    pathway_name: str             "HIV First-Line ART Initiation"
+    target_population: str        "Treatment-naive adult"
+    entry_criteria: List[str]     conditions that qualify a patient for this pathway
+    steps: List[PathwayStep]
+    version: str
+    guideline_source: str
+'''
+
+D2 — Pathway registry
+
+Seed pathways manually for each disease, validated against the actual guideline. Initial set:
+- HIV: ART initiation (treatment-naive adult), ART initiation (treatment-naive pregnant), TB/HIV co-infection management, virological failure response
+- TB: DS-TB treatment initiation, TPT initiation
+- Diabetes: T2DM initial management, T2DM intensification
+- CVD: Hypertension management, hypertension in pregnancy
+- Malaria: Uncomplicated malaria treatment, severe malaria escalation
+- Mental Health: Depression management, suicide risk escalation
+
+D3 — Pathway runner
+
+'''python
+ app/pathways/runner.py
+
+class PathwayRunner:
+
+    async def run(
+        self,
+        pathway_id: str,
+        patient_ref: str,
+        patient_state: dict,
+    ) -> PathwayRunResult:
+        """
+        Walk the pathway given current patient state.
+
+        Returns:
+        - completed_steps: steps whose criteria are met from patient state
+        - current_step: the step the patient is at now
+        - blocking_inputs: what is missing that prevents progression
+        - next_actions: what to do now with guideline citations
+        - contraindications: any detected from evidence graph + drug state
+        - monitoring_due: any overdue monitoring items
+        """
+'''
+
+D4 — Pathway endpoint
+
+'''
+POST /clinical/pathway/run
+Body: {pathway_id, patient_ref}
+Returns: StreamingResponse with SSE events per step as they are evaluated.
+'''
+
+The pathway runner is the feature that turns this from a question-answering system into a workflow navigator. It is also the correct hook point for the future external system integrations (PMIS, facility registry) — they pass patient state in, the runner passes structured next-actions out.
+
+---
+
+ Phase E: Structured Clinical Document Generation
+*Closes the loop. Every consultation produces a structured artefact.*
+
+E1 — Document types
+
+Four bounded document types. Each has a template, a required input schema, and a citation requirement.
+
+'''python
+class ClinicalDocumentType(str, Enum):
+    SBAR = "sbar"                      handoff between providers
+    REFERRAL = "referral"              referral letter with clinical justification
+    PATIENT_SUMMARY = "patient_summary"   patient-facing plain language
+    CLINICAL_NOTE = "clinical_note"    encounter note for file
+'''
+
+E2 — Document generator
+
+'''python
+ app/documents.py
+
+class ClinicalDocumentGenerator:
+
+    async def generate(
+        self,
+        doc_type: ClinicalDocumentType,
+        patient_ref: str,
+        encounter_id: str,
+        additional_context: Optional[str] = None,
+    ) -> ClinicalDocument:
+        """
+        Assembles patient state, relevant guideline sections, and
+        scoring results, then generates the document using the LLM
+        with an explicit structure template.
+
+        All generated documents include:
+        - AI_GENERATED: TRUE header
+        - source citations for every clinical claim
+        - requires_clinician_review: TRUE flag
+        - generated_at timestamp
+
+        Uses cheap model (same pattern as memory distillation).
+        Never uses the expensive reasoning model for document generation.
+        """
+'''
+
+E3 — SBAR template (required structure)
+
+'''
+SITUATION:
+  Patient: [de-identified reference]
+  Presenting: [chief complaint / reason for handoff]
+  Urgency: [routine / urgent / emergency]
+
+BACKGROUND:
+  Active diagnoses: [from patient_diagnoses]
+  Current medications: [from patient_medications]
+  Relevant labs: [flagged abnormals from patient_labs]
+  WHO/NEWS2 scores: [from most recent scoring run]
+
+ASSESSMENT:
+  Clinical reasoning: [LLM-generated, citing guideline sections]
+  Differential rank: [if DDx was run]
+
+RECOMMENDATION:
+  Immediate actions: [from pathway runner current_step]
+  Monitoring required: [from evidence graph drug_requires_monitoring edges]
+  Referral indicated: [yes/no with criteria]
+
+Source guidelines: [list of cited guideline sections]
+AI_GENERATED: TRUE | Requires clinician review before filing.
+'''
+
+E4 — Document endpoint
+
+'''
+POST /clinical/documents/generate
+GET  /clinical/documents/{document_id}
+GET  /clinical/documents/patient/{patient_ref}
+'''
+
+Documents are stored in a 'clinical_documents' Postgres table with full content, type, encounter reference, and review status.
+
+---
+
+ Phase F: CDS Hooks Surface
+*Makes this system integratable. Without it, it is forever a standalone web app.*
+
+<cite index="179-1">CDS Hooks best practices: target known CDS client capabilities, confirm capabilities at the site level, provide the CDS service in containerised form, consider initial deployment in silent mode to validate service performance with actual patient records, and aim for response times on the order of 500ms.</cite>
+
+F1 — CDS Hooks discovery endpoint
+
+'''
+GET /.well-known/cds-services
+'''
+
+Returns the service manifest listing available hooks. Initial hooks:
+- 'patient-view' — fires when a clinician opens a patient chart
+- 'medication-prescribe' — fires when a medication is being prescribed
+- 'order-review' — fires when a lab order is being reviewed
+
+F2 — Hook handler
+
+'''python
+ app/cds_hooks.py
+
+class CDSHooksHandler:
+
+    async def handle_patient_view(self, context: dict) -> CDSResponse:
+        """
+        When a clinician opens a patient chart:
+        1. Retrieve patient state from our Postgres (if patient_ref known)
+        2. Run NEWS2 if vitals present in prefetch
+        3. Check overdue monitoring (evidence graph monitoring_due edges)
+        4. Return 1-3 cards maximum — never more.
+
+        Card types returned (never all at once):
+        - INFO: overdue viral load or HbA1c (passive, non-interruptive)
+        - WARNING: NEWS2 >= 5 (interruptive, single card)
+        - SUGGESTION: pathway step pending action
+        """
+
+    async def handle_medication_prescribe(self, context: dict) -> CDSResponse:
+        """
+        When a medication is being prescribed:
+        1. Extract drug from context.draftOrders
+        2. Run drug interaction check against patient_medications
+        3. Run contraindication check against patient_diagnoses + evidence graph
+        4. Return 0-2 cards. CRITICAL interactions only as WARNING.
+           All other interactions as INFO.
+        """
+'''
+
+F3 — Response card structure
+
+'''python
+@dataclass
+class CDSCard:
+    summary: str           <= 140 characters — the one thing the clinician needs to know
+    detail: str            full explanation with guideline citation
+    indicator: str         "info" | "warning" | "critical"
+    source: CDSSource      guideline name + URL
+    suggestions: List[CDSSuggestion]   optional actions (e.g. "Order CD4 count")
+    override_reasons: List[str]        required if clinician overrides
+'''
+
+The 140-character summary constraint is not arbitrary. It matches the cognitive load research on effective alert design. If you cannot say it in 140 characters, you have not understood what the clinician needs to know.
+
+---
+
+ Phase G: Alert Intelligence and Governance
+*Without this, every new feature degrades into noise.*
+
+The research is unambiguous: <cite index="129-1">approximately 90%-95% of medication alerts are overridden by providers, and more than half of overrides are due to alerts being deemed clinically irrelevant. Ignoring clinically relevant alerts too much triggers patient harm and is associated with an increased rate of mortality.</cite>
+
+G1 — Alert classification schema
+
+Every alert in the system — from drug interactions, scoring, pathway runner, CDS Hooks — is classified at creation:
+
+'''python
+class AlertLevel(str, Enum):
+    CRITICAL = "critical"     interruptive, requires acknowledgement
+    WARNING = "warning"       visible in UI, passive
+    INFO = "info"             shown in sidebar, never modal
+    BACKGROUND = "background"  logged only, not shown
+'''
+
+The mapping:
+- Drug interaction: severity 1 (contraindicated) → CRITICAL. Severity 2 → WARNING. Severity 3 → INFO.
+- NEWS2: >= 7 → CRITICAL. 5-6 → WARNING. 1-4 → INFO.
+- Overdue monitoring: > 6 months overdue → WARNING. < 6 months → INFO.
+- Pathway step: blocking inputs missing → INFO. Contraindication detected → WARNING or CRITICAL based on severity.
+
+G2 — Override tracking
+
+Every CRITICAL or WARNING alert that is overridden must record: 'override_reason' (from a structured list, not free text), 'overriding_clinician_role', 'override_timestamp'. This data feeds the governance review.
+
+G3 — Alert governance endpoint (admin)
+
+'''
+GET /admin/alerts/override-report
+'''
+
+Returns: per-alert-type override rates, top override reasons, alerts overridden at > 80% rate (candidates for downgrade to INFO), alerts with zero overrides but CRITICAL classification (candidates for confirmation that they are truly critical).
+
+This is how Cleveland Clinic's CDS Governance Workgroup operates. <cite index="133-1">The Cleveland Clinic Clinical Decision Support Governance Workgroup is a multidisciplinary group of clinicians that regularly reviews EHR tools designed to enhance decision-making in clinical workflows.</cite> You need the data infrastructure to do the same.
+
+---
+
+ Part 3: External System Integration Surface
+
+You described future integrations: facility registry, emergency response, PMIS, ML weighting frameworks, medical ontology integrations. These are separate services that will call this CDSS or be called by it. The right architectural pattern is:
+
+This system is the CDS brain. External systems are data sources and action targets.
+
+The interface layer is a bounded 'app/external/' module that already exists. Extend it:
+
+'''python
+ app/external/registry.py  — future facility registry client
+class FacilityRegistryClient:
+    async def find_nearest(self, lat, lon, required_services) -> List[Facility]: ...
+    async def get_capacity(self, facility_id) -> FacilityCapacity: ...
+
+ app/external/emergency.py  — future emergency response client
+class EmergencyResponseClient:
+    async def dispatch(self, patient_ref, location, urgency) -> DispatchResult: ...
+    async def report_admission(self, patient_ref, facility_id) -> AckResult: ...
+
+ app/external/pmis.py  — future PMIS client
+class PMISClient:
+    async def get_patient_record(self, patient_ref) -> PMISRecord: ...
+    async def push_encounter(self, encounter_id) -> PushResult: ...
+'''
+
+Each client: async, uses 'async_retry' and 'with_timeout' from 'retry.py', returns typed dataclasses, fails gracefully with logged warnings. The CDSS core never blocks on an external system.
+
+The surface to expose now: Add placeholder endpoints that return structured mock responses. This allows frontend development and integration testing to proceed without the external services being live.
+
+'''
+GET  /external/facility/nearest?lat=&lon=&services=
+GET  /external/emergency/status
+POST /external/emergency/dispatch
+GET  /external/pmis/patient/{external_id}
+'''
+
+Each returns a response with 'status: "mock"' and 'implementation_status: "pending"' until the real client is wired. The contract is established. The implementation follows.
+
+---
+
+ Part 4: UI/UX — What Clinicians Actually Need
+
+The frontend gap is as large as the backend gap. A powerful backend served through a chat box is still a chat box.
+
+What the interface needs:
+
+Patient timeline view — A chronological display of encounters, labs, medications, scores, and pathway progress for a patient. Not a table. A visual timeline that shows: "Started ART → CD4 at 2 weeks → Viral load at 6 months → Viral load undetectable → Now due: 12-month viral load." This is not a graph visualisation. It is a structured timeline with clinical meaning.
+
+Scoring calculator panel — A dedicated panel in the sidebar where a clinician can enter NEWS2 inputs (6 fields) and get an immediate score with risk level and escalation guidance. No LLM. Sub-100ms response. Feels like a clinical tool, not a chatbot feature.
+
+DDx workspace — A structured form: symptom entry → evidence graph candidate display → guideline criteria checklist → ranked differential with cited evidence. Three panels, not a chat thread. The clinician works through it progressively.
+
+Pathway navigator — Visual step-by-step pathway display showing completed steps (green), current step (highlighted), blocking inputs (red with what is missing), and next actions. Clinician can mark steps complete and record inputs. It should look like a clinical flowchart, not a conversation.
+
+Document generation sidebar — One-click SBAR generation from the current encounter. The clinician reviews, edits, and approves. Then clicks "Copy for handoff" or "Save to encounter." Not buried in menus.
+
+Alert tray (non-modal) — A persistent tray in the corner showing WARNING and INFO alerts for the current patient. Never a popup unless CRITICAL. Clinicians can expand, acknowledge, or override from the tray without interrupting their workflow.
+
+---
+
+ Part 5: What Not to Build
+
+Do not build: a force-directed knowledge graph visualisation, a fine-tuned medical LLM, a voice interface, a patient portal, a mobile app, predictive ML models, a genomics integration, a medical imaging interface, population-level analytics dashboards, or a billing system.
+
+Each of these is a separate product. This system is a CDSS. Every sprint that touches any of the above is a sprint that did not close a gap in the six clinical capability gaps identified above.
+
+The future integrations (facility registry, emergency response, PMIS) are external services with bounded HTTP interfaces. They are not features of this CDSS. They call it or it calls them. The integration surface is a client and a set of mock endpoints. That is all that belongs here now.
+
+---
+
+ Phased Delivery Sequence
+
+'''
+Phase A: Patient state model (Postgres schema + API + context panel wiring)
+  → Prerequisite for B, C, D, E. Do this first.
+
+Phase B: Clinical scoring engine
+  → No LLM dependency. Deliverable in 1-2 days per scorer.
+  → Start with NEWS2 and eGFR (highest clinical impact in this disease scope).
+
+Phase C: DDx surface
+  → Requires A (patient state) and evidence graph being seeded.
+  → Start with HIV (most evidence graph edges exist).
+
+Phase D: Pathway engine
+  → Requires A (patient state) and evidence graph.
+  → Start with HIV ART initiation pathway (highest usage, most data).
+
+Phase E: Document generation
+  → Requires A (patient state) and B (scores) for complete SBAR.
+  → Start with SBAR only.
+
+Phase F: CDS Hooks surface
+  → Requires B (scoring) and existing drug interaction checker.
+  → Implement patient-view and medication-prescribe hooks first.
+
+Phase G: Alert governance
+  → Can be built in parallel with any of the above.
+  → The override tracking schema should be added with Phase B.
+
+External surface: mock endpoints
+  → Can be built anytime, in parallel with any phase.
+  → No backend logic required — just typed contracts.
+'''
+
+---
+
+ The Number That Matters
+
+A Kenya CDSS cluster RCT showed that a CDSS with alert-driven HIV management improved appropriate action on treatment failure from 30% to 54% — a 24 percentage point improvement across 20,000+ patients. That is not a technology outcome. That is a survival outcome. The system described in this document is what produces that kind of result. The current RAG assistant does not. The gap between the two is exactly the six clinical capability gaps above.
+
+Close them in order. Do not skip ahead.

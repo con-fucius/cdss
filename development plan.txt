@@ -1,0 +1,219 @@
+Collab Flow
+1. Don't run any git commands. Don't create any task or implementation plan markdown artifacts.
+2. Think critically, review thoroughly, challenge and refine where possible - don't blindly trust my assessment. Criticize and challenge where wrong.
+3. Don't assume, ask where unsure. Don't make assumptions!
+4. We are not adding any new features or overhauling - instead build on top of what exists and bringing system to life.
+5. Instead of deleting, mark components, modules and files that are unneeded as deprecated.
+6. Some issues may not be in the specific lines I highlighted because I have been remediating issues so some things might have changed.
+7. Be thorough and rigorous — critically review, challenge and criticize proposed fixes, refine and improve them.
+8. Explore, refer and be guided by latest official documentation and authoritative resources on the web as of May 2026
+9. No shortcuts, stubs, mocks, dummy or placeholders. Implement exhaustively and integrate with actuals.
+
+
+Task Scope
+Disease Scope: Cardiovascular Diseases, Diabetes Mellitus, HIV/AIDs (already built), Malaria, Mental Health and TB
+PDF Guidelines: See path HIV-agent\app\docs
+
+Architecture Decisions
+| Decision | Choice | Notes |
+|---|---|---|
+| Session history | In-memory (dev), Redis-backed (prod) | Session ID on every request |
+| Patient context | Client-side only (dev), anonymized log (prod) | Never store raw params server-side in dev |
+| Roles | Single-user now, admin/clinician distinction wired in but not enforced | Feature-flagged, not commented-out |
+| Thread safety | Stateless agent per request, shared read-only vectorstore singleton | Flag: PROD-BLOCKING until done |
+| Disease isolation | Per-disease LanceDB tables | 'hiv_guidelines', 'diabetes_guidelines', etc. |
+| LanceDB | Upgrade to 0.14+, drop LangChain wrapper, native SDK | Breaking change, do first |
+| Extraction | Docling → pymupdf4llm → pdfplumber+pymupdf → PyPDF | With quality scoring at each stage |
+| Embeddings | 'BAAI/bge-base-en-v1.5' | Replace 'all-MiniLM-L6-v2' |
+| Retrieval | Hybrid (vector + BM25) with score thresholding | LanceDB native |
+| Reranking | 'BAAI/bge-reranker-base' | Between search and agent |
+| Chunking | Hierarchical parent-child, semantic breakpoints | Level 2 (section) returned, Level 3 indexed |
+| Conversation history | Full history passed per request | 'message_history' param in pydantic-ai |
+| HITL | Real signals only (low score, missing params, conflict) | Delete random trigger |
+| Sources | Inline citations + source panel | Full metadata from tool to UI |
+| Logging | Structured JSON, every query/tool/feedback | Replace no-op 'logs.py' |
+| Export | PDF with citations, patient context, timestamp | Not markdown |
+| Index validation | Quality gate on every ingest | Pre-swap validation |
+
+Actual Task - Start Here
+---
+PHASE 0 — Foundation Rebuild
+Goal: Fix every broken thing before adding anything. No new features ship until Phase 0 is done. This is the prod-blocking phase.
+
+---
+P0.1 — Dependency Overhaul
+- P0.1.1 Update 'pyproject.toml':
+  - 'lancedb' → '>=0.14.0' (pin to latest stable, currently 0.16.x)
+  - Remove 'langchain-community' LanceDB import entirely
+  - Add 'docling' (primary extractor)
+  - Add 'pymupdf4llm' (fallback extractor)
+  - Add 'pdfplumber' (table extraction fallback)
+  - Add 'fastembed' or upgrade 'sentence-transformers' to '>=3.0'
+  - Add 'rerankers[cross-encoders]' (BGE reranker)
+  - Add 'structlog' (structured JSON logging)
+  - Update 'langchain' to '>=0.3' (needed only for remaining LangChain text splitters, then remove)
+  - Add 'tiktoken' (token counting for chunking validation)
+  - Note: 'langchain_community.vectorstores.LanceDB' is being deleted entirely — do not update it
+- P0.1.2 Verify pydantic-ai version against current API — 'agent.run_stream()', 'message_history', 'new_messages()' interfaces. Adjust if needed.
+- P0.1.3 Freeze 'requirements.txt' from updated 'pyproject.toml' and verify clean install in fresh venv.
+
+---
+P0.2 — Logging Infrastructure
+Do this second so everything built after it has real logging.
+- P0.2.1 Rewrite 'logs.py' using 'structlog'. Configure JSON output with timestamps, log level, module name.
+- P0.2.2 Define log schema:
+  '''
+  QUERY_LOG: session_id, timestamp, query_text, disease_targets, patient_context_hash, context_fields_used
+  RETRIEVAL_LOG: session_id, query_id, tool_name, search_query, chunks_returned, top_score, latency_ms
+  TOOL_LOG: session_id, query_id, tool_call_index, tool_name, params, result_length
+  RESPONSE_LOG: session_id, query_id, response_length, sources_cited, total_latency_ms
+  FEEDBACK_LOG: session_id, message_id, feedback_type, note, timestamp
+  INIT_LOG: event (start/success/fail), disease, doc_name, chunk_count, latency_ms, extractor_used, quality_score
+  ERROR_LOG: session_id, query_id, error_type, traceback, recovery_action
+  '''
+- P0.2.3 Create 'log_query()', 'log_retrieval()', 'log_response()', 'log_feedback()', 'log_init()', 'log_error()' helpers. All async-safe.
+- P0.2.4 Wire logging into 'api.py' at every request boundary. Patient context: hash the raw params (SHA-256), log hash + field names only, never values.
+
+---
+P0.3 — Ingestion Pipeline Rebuild ('ingest.py')
+- P0.3.1 Create 'extractors/' module with:
+  - 'DoclingExtractor' — primary, returns 'DocumentStructure' (sections, tables as structured JSON, reading order)
+  - 'PyMuPDFExtractor' — fallback 1, returns markdown with table-to-markdown
+  - 'PDFPlumberExtractor' — fallback 2 (tables only, merged with pymupdf text)
+  - 'PyPDFExtractor' — fallback 3, text only, flags result as 'quality=degraded'
+  - Each extractor has a 'quality_score()' method: measures text density, table count, section depth, expected keyword presence per disease
+  - 'ExtractionPipeline.extract(pdf_path, disease)' tries chain in order, returns first result above quality threshold, logs which extractor succeeded
+- P0.3.2 Create 'chunkers/' module:
+  - 'SemanticChunker' — uses embedding similarity between adjacent sentences to find breakpoints (via 'semantic-text-splitter'). Produces Level 3 chunks (~300-400 tokens, not chars).
+  - 'HierarchicalIndexer' — takes Docling structural output, maps Level 1 (chapter) / Level 2 (section) / Level 3 (sub-chunk). Stores parent-child relationships.
+  - For non-Docling extractions: falls back to 'RecursiveCharacterTextSplitter' at section boundaries where possible, with a warning log.
+- P0.3.3 Define unified chunk schema:
+  '''python
+  @dataclass
+  class IndexedChunk:
+      chunk_id: str           uuid
+      parent_id: str          Level 2 section ID
+      disease: str            "hiv" | "diabetes" | "cvd" | "tb" | "mental_health"
+      guideline_name: str     "Kenya ARV Guidelines 2022"
+      guideline_version: str  "2022"
+      guideline_year: int
+      source_url: str         MOH portal URL
+      section_number: str     "4.2"
+      section_title: str      "First-line ART for Adults"
+      page: int
+      content_type: str       "narrative"|"table"|"list"|"criteria"|"algorithm"
+      population_tags: list   ["adult", "treatment-naive"]
+      clinical_tags: list     ["first-line", "regimen", "dosing"]
+      text: str               Level 3 chunk text (indexed, embedded)
+      parent_text: str        Level 2 section full text (returned to agent)
+      vector: list[float]     embedded Level 3 chunk
+      extraction_quality: str  "full"|"degraded"
+  '''
+- P0.3.4 Parameterize 'TABLE_NAME' → '{disease}_guidelines' per disease. Remove hardcoded '"documents"'.
+- P0.3.5 Per-disease 'index_disease(disease: str, pdf_path: str, db_path: str)' function. Replaces 'index_data()'.
+- P0.3.6 Build ANN + FTS indexes explicitly after table creation:
+  '''python
+  table.create_index(metric="cosine", num_partitions=32, num_sub_vectors=16)
+  table.create_fts_index("text", replace=True)
+  '''
+- P0.3.7 Index validation suite:
+  - Chunk count within expected range per disease
+  - Required clinical terms present (disease-specific keyword list)
+  - Top-5 retrieval on 10 known queries returns expected section titles
+  - Schema validation: all columns present, no null vectors
+  - If validation fails: do not swap to new table, keep old, raise 'IndexValidationError', log
+- P0.3.8 Warm-up embedding call at init: embed a dummy string to trigger JIT compilation before first real query.
+
+---
+P0.4 — Embedding Model Upgrade
+- P0.4.1 Replace 'all-MiniLM-L6-v2' with 'BAAI/bge-base-en-v1.5' everywhere (ingest, search tools, agent init).
+- P0.4.2 Use instruction prefix for query embedding: '"Represent this sentence for searching relevant passages: {query}"'. Do NOT use prefix for document embedding.
+- P0.4.3 Ensure model is loaded once at startup as a singleton, not reinstantiated per request.
+
+---
+P0.5 — Search Tools Rebuild ('search_tools.py')
+- P0.5.1 Delete 'faq_index', 'faq_vindex', 'embeddings' globals. Delete 'set_search_index()'. Delete 'text_search()'. Delete 'vector_search()'.
+- P0.5.2 Create 'SearchIndex' singleton class:
+  - Holds: 'db: lancedb.LanceDBConnection', 'tables: dict[str, lancedb.Table]', 'embeddings_model', 'reranker'
+  - Initialized once at startup from 'api.py' lifespan
+  - Read-only after init — safe to share across requests
+- P0.5.3 Create 'RetrievedChunk' dataclass per schema above.
+- P0.5.4 Implement 'search_guidelines(query: str, disease: str | None, content_type: str | None, k_initial: int = 20, k_final: int = 5) -> list[RetrievedChunk]':
+  - If 'disease' specified: search that table only
+  - If 'disease=None': fan out to all available tables, merge results by score, deduplicate
+  - Hybrid search (vector + BM25) with RRF fusion — LanceDB native
+  - Apply score threshold: if top score < 0.5, return empty with 'low_confidence=True' signal
+  - Cross-encoder rerank top-20 → return top-5
+  - For each returned chunk: fetch parent section text from table by 'parent_id'
+  - Log retrieval: query, disease, scores, latency
+- P0.5.5 Implement 'get_section(section_id: str, disease: str) -> RetrievedChunk | None' — direct fetch by ID, no embedding needed.
+- P0.5.6 Expose these as pydantic-ai tools with proper type annotations and docstrings (the docstring is the tool description the agent sees).
+- P0.5.7 Handle 'low_confidence' case: tool returns a structured signal that the agent can use to ask for clarification rather than hallucinating on poor retrieval.
+
+---
+P0.6 — Agent Rebuild ('search_agent.py')
+- P0.6.1 Remove dependency on 'search_tools.set_search_index()'. Agent receives the 'SearchIndex' singleton via dependency injection (pydantic-ai 'deps' pattern), not global mutation.
+- P0.6.2 Restructure system prompt:
+  '''python
+  BASE_PROMPT = """[core rules: citation format [Guideline Name, §section, p.page], 
+  uncertainty handling, safety rules, response formatting by query type]"""
+  
+  DISEASE_CONTEXT_MAP = {
+      "hiv": "...",
+      "diabetes": "...",
+      "cvd": "...",
+  }
+  
+  def build_system_prompt(available_diseases: list[str]) -> str:
+      disease_context = "\n".join([DISEASE_CONTEXT_MAP[d] for d in available_diseases])
+      return f"{BASE_PROMPT}\n\n Available Knowledge Bases\n{disease_context}"
+  '''
+- P0.6.3 Register tools: 'search_guidelines', 'get_section'. Tools call 'SearchIndex' methods from injected deps.
+- P0.6.4 Agent is instantiated per-request — NOT as a global. The 'SearchIndex' singleton is passed as deps.
+- P0.6.5 System prompt built once at startup from available diseases (detected from LanceDB table names), passed at agent instantiation.
+
+---
+P0.7 — API Rebuild ('api.py')
+- P0.7.1 Remove global '_agent'. Replace with global '_search_index: SearchIndex' (read-only singleton).
+- P0.7.2 Per-request agent instantiation:
+  '''python
+  @app.post("/chat/stream")
+  async def chat_stream(request: ChatRequest):
+      agent = build_agent(_search_index)   lightweight, no IO
+      ...
+  '''
+- P0.7.3 Add 'session_id' to 'ChatRequest'. In-memory session store: 'dict[str, list[ModelMessage]]'. Pass stored history to 'agent.run_stream(message_history=history[session_id])'.
+- P0.7.4 Update 'ChatRequest':
+  '''python
+  class ChatRequest(BaseModel):
+      session_id: str
+      message: str
+      context: Optional[PatientContext] = None
+      history: Optional[list[MessageDict]] = None   client sends back for stateless fallback
+  '''
+- P0.7.5 Streaming response must emit sources event after 'done':
+  '''
+  data: {"type": "chunk", "content": "..."}
+  data: {"type": "done", "full_text": "...", "timestamp": "..."}
+  data: {"type": "sources", "sources": [...RetrievedChunk metadata...]}
+  data: {"type": "stream_end"}
+  '''
+  Sources are extracted from 'result.new_messages()' — parse tool call results to extract 'RetrievedChunk' objects returned by 'search_guidelines'.
+- P0.7.6 Replace 'build_context_prefix()' string injection with structured patient context added to agent's first system message or prepended as a structured block, not string concatenation.
+- P0.7.7 Remove 'HITL_QUESTIONS' random triggering from API response handling. HITL signals come from the agent's output (the agent emits a '[NEEDS_CLARIFICATION: ...]' marker or structured output when it detects missing params or low-confidence retrieval).
+- P0.7.8 Add '/admin/*' route prefix. For now, all admin routes return 200 with stub data but are architecturally separated. Auth middleware placeholder — 'x-admin-token' header checked, always passes in dev.
+- P0.7.9 Add '/diseases' endpoint — returns list of available diseases from LanceDB table names + metadata (version, chunk count, last indexed).
+- P0.7.10 Add '/feedback' POST endpoint — logs feedback with session ID, message ID, type, note. Returns 200.
+- P0.7.11 Thread safety audit: verify no mutable shared state outside '_search_index'. Document any remaining risks.
+
+---
+P0.8 — Frontend Phase 0 ('App.jsx')
+- P0.8.1 Generate 'session_id' (UUID) on app load, persist in 'sessionStorage' (not 'localStorage' — lost on tab close, appropriate for local dev). Include in every API request.
+- P0.8.2 Patient context: move from 'QueryBuilderPage' local state to a persistent 'PatientContextPanel' component. Context is session-scoped state at 'App' level, injected into every 'ChatRequest'. Never sent to any storage.
+- P0.8.3 Wire 'sources' event from SSE stream into message state. 'SourcesDisplay' component now has real data.
+- P0.8.4 Inline citation click: '[ARV Guidelines 2022, §4.2, p.47]' → highlights corresponding source in panel.
+- P0.8.5 Agent action log: replace hardcoded strings with events parsed from SSE stream. Add a 'tool_call' event type to SSE that fires when the agent invokes a tool, with actual tool name and query. Render these in 'AgentActionLog'.
+- P0.8.6 Remove 'HITL_QUESTIONS' random triggering. HITL panel renders only when SSE emits a 'hitl_prompt' event from the agent.
+- P0.8.7 Handle 'low_confidence' signal from sources: show a warning banner on the message — "Retrieval confidence was low for this query. Verify against source."
+- P0.8.8 Export: replace markdown export with PDF export using 'jspdf' + 'html2canvas'. Include: timestamp, session ID, patient context fields (not values), citations list, message thread.
+- P0.8.9 Add '/diseases' fetch on app load. Store available diseases in app state.

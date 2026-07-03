@@ -1,0 +1,143 @@
+{
+  "protocol_id": "respiratory_distress_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "can't breathe",
+    "difficulty breathing",
+    "breathing problem",
+    "short of breath",
+    "wheezing",
+    "chest tight",
+    "asthma attack",
+    "kushindwa kupumua",
+    "pumua ina shida",
+    "anashindwa kupumua"
+  ],
+  "entry_question_id": "q1_speech",
+  "questions": {
+    "q1_speech": {
+      "text": "Can the patient speak in full sentences, or are they only able to say one or two words at a time?",
+      "answer_type": "select",
+      "options": [
+        "full_sentences",
+        "few_words_only",
+        "cannot_speak"
+      ],
+      "branch_map": {
+        "full_sentences": "q2_position",
+        "few_words_only": "q3_stridor_wheeze",
+        "cannot_speak": "q3_stridor_wheeze"
+      }
+    },
+    "q2_position": {
+      "text": "Is the patient able to find a comfortable position, such as sitting upright or leaning forward?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p2_position_comfort",
+        "no": "q3_stridor_wheeze"
+      }
+    },
+    "q3_stridor_wheeze": {
+      "text": "Can you hear any high-pitched sounds when the patient breathes in or out \u00e2\u20ac\u201d stridor (a harsh, high-pitched sound when breathing in) or wheeze (a whistling sound when breathing out)?",
+      "answer_type": "select",
+      "options": [
+        "stridor",
+        "wheeze",
+        "both",
+        "neither"
+      ],
+      "allow_guidance_lookup": true,
+      "guidance_note": "Stridor indicates upper airway obstruction and is immediately life-threatening. Wheeze indicates lower airway narrowing (asthma, COPD) and may respond to bronchodilators if available.",
+      "branch_map": {
+        "stridor": "outcome_p1_respiratory_failure",
+        "wheeze": "q4_able_to_use_inhaler",
+        "both": "outcome_p1_respiratory_failure",
+        "neither": "q4_able_to_use_inhaler"
+      }
+    },
+    "q4_able_to_use_inhaler": {
+      "text": "Does the patient have their own inhaler (reliever) with them, and are they able to use it?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p2_with_inhaler",
+        "no": "q5_spO2"
+      }
+    },
+    "q5_spO2": {
+      "text": "Do you have a pulse oximeter available, and if so what is the oxygen saturation reading? If you do not have one, answer 'not available'.",
+      "answer_type": "select",
+      "options": [
+        "above_92",
+        "below_92",
+        "not_available"
+      ],
+      "branch_map": {
+        "above_92": "outcome_p2_monitor",
+        "below_92": "outcome_p1_hypoxia",
+        "not_available": "outcome_p2_monitor"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_p2_position_comfort": {
+      "priority_code": "P2_RESPIRATORY_DISTRESS",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Help the patient sit upright in a position of comfort \u00e2\u20ac\u201d most people breathe better sitting up.",
+        "Loosen any tight clothing around the chest or neck.",
+        "If oxygen is available, apply it now.",
+        "Monitor the patient closely. If they become more breathless, can only speak one or two words, or their lips turn blue, tell me immediately."
+      ]
+    },
+    "outcome_p1_respiratory_failure": {
+      "priority_code": "P1_RESPIRATORY_FAILURE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a serious breathing problem \u00e2\u20ac\u201d help is on the way.",
+        "Help the patient sit upright in a position of comfort if possible.",
+        "If oxygen is available, apply it now.",
+        "Watch closely \u00e2\u20ac\u201d if the patient becomes less responsive, stops moving, or turns blue around the lips, tell me immediately."
+      ]
+    },
+    "outcome_p2_with_inhaler": {
+      "priority_code": "P2_RESPIRATORY_DISTRESS",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Help the patient use their inhaler \u00e2\u20ac\u201d shake it well, have them breathe out fully, then spray the medicine while they breathe in slowly and deeply.",
+        "After spraying, ask them to hold their breath for 10 seconds if possible.",
+        "They can repeat the inhaler 3-4 times, one puff at a time, waiting 30 seconds between each puff.",
+        "If they have a spacer device, use that \u00e2\u20ac\u201d it makes the medicine work better.",
+        "If the inhaler does not help after 3-4 puffs, or if they become worse, tell me immediately."
+      ]
+    },
+    "outcome_p1_hypoxia": {
+      "priority_code": "P1_HYPOXIA",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "The oxygen level is dangerously low \u00e2\u20ac\u201d help is on the way.",
+        "Help the patient sit upright.",
+        "If oxygen is available, apply it now at the highest flow.",
+        "Do not leave the patient alone.",
+        "If the patient becomes less responsive or stops moving, tell me immediately."
+      ]
+    },
+    "outcome_p2_monitor": {
+      "priority_code": "P2_RESPIRATORY_DISTRESS",
+      "recommended_unit_type": "BLS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Help the patient sit upright in a position of comfort.",
+        "Loosen any tight clothing around the chest or neck.",
+        "If oxygen is available, apply it now.",
+        "Watch the patient closely. If they become more breathless, turn blue around the lips, or become less responsive, tell me immediately."
+      ]
+    }
+  }
+}

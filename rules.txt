@@ -1,0 +1,25 @@
+Hi
+
+General Guidelines
+Collaboration Flow
+1. Don't run any git commands. Skip local docs, .tx, .md when exploring the codebase since they're outdated and inaccurate. Rely on the actual code.
+2. Think critically, review thoroughly, challenge and refine where possible - don't blindly trust my assessment. Criticize and challenge where wrong. Push back!
+3. Build to clear tech debt. Mocks, stubs, placeholders, shortcuts are not acceptable! Wire, integrate and configure with actuals. Do not leave any tech debt behind. 
+AGAIN. If you have taken any shortcuts, go back and do them right. This is a hard acceptance criteria that must be completed.
+4. We are not adding any new features or overhauling instead build on top of what exists and bringing system to life unless where new items must be built to bring the system to life.
+5. Instead of deleting, mark components, modules and files that are unneeded as deprecated. Comment properly so the next developer cannot miss it.
+6. Some issues may not be in the specific lines or placed I highlighted because I have been remediating issues so some things might have changed.
+7. Be thorough and rigorous — critically review, challenge and criticize proposed fixes, refine and improve them. Don't assume, ask where unsure.
+8. Explore, refer and be guided by latest official documentation and authoritative resources on the web as of May 2026. Refer to the web, don't rely on what you know, verify!
+9. Before modifying any code, thoroughly explore what exists to avoid duplicating things or worse creating even more tech debt.
+
+Instructions 
+1. No Cosmetics.
+2. No Shortcuts or Faking: Do not write shallow stubs.Never silently swallow exceptions, and never return empty lists just to prevent UI crashes. Implement explicit, honest degraded states.
+3. Follow the Plan but no Blindly: Methodical, sequential execution is mandatory. Challenge, criticize and refine, don't just agree or blindly follow.
+4. Preserve Architecture: Do NOT delete.
+5. Verify Everything: Before claiming a task is done, you must verify that it is. 
+6. Be Constructive not Destructive: If an endpoint is missing a backing method, build the method in the data layer. Do not just delete the FE component or the route.
+Implement with absolute rigor, exhaustive validation, and zero assumptions. Dig deep and do the real engineering work.
+
+Acknowledge this prompt up to here. Don't do anything else.

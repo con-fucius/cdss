@@ -1,0 +1,150 @@
+HOW TO RUN
+
+The `.env` files are missing — they must be created before anything starts. 
+The `DATABASE_URL` in the env examples uses `localhost:5433` but the compose file exposes Postgres on `5432` externally and inside the Docker network uses the service name `postgres:5432`.
+
+There are two scenarios: Docker Compose (all services in containers) and local dev (services run with `uv` against a local Postgres). Commands for both.
+
+---
+
+## Step 1 — Create `.env` files
+
+Run from `D:\Projects\CDSS\`:
+
+```powershell
+# ambulance-cdss
+Copy-Item ambulance-cdss\.env.example ambulance-cdss\.env
+
+# triage-ranker
+Copy-Item triage-ranker\.env.example triage-ranker\.env
+
+# facility-mapper
+Copy-Item facility-mapper\.env.example facility-mapper\.env
+```
+
+---
+
+## Option A — Docker Compose (recommended, runs everything together)
+
+Run all from `D:\Projects\CDSS\`
+
+```powershell
+# 1. Build all images (first time or after code changes)
+docker compose build
+
+# 2. Start everything
+docker compose up -d
+
+# 3. Watch logs to confirm startup
+docker compose logs -f
+
+# 4. Run ambulance-cdss migrations
+docker compose exec ambulance-cdss uv run alembic upgrade head
+
+# 5. Run facility-mapper migrations
+docker compose exec facility-mapper uv run alembic upgrade head
+```
+
+Wait for `GET /ready` on triage-ranker (spaCy model loads — allow up to 90s).
+
+```powershell
+# 6. Verify all three services healthy
+Invoke-RestMethod http://localhost:8000/health
+Invoke-RestMethod http://localhost:8001/health
+Invoke-RestMethod http://localhost:8100/health
+```
+
+```powershell
+# 7. Load facility data (once — idempotent)
+docker compose exec facility-mapper python -m scripts.load_facilities --source /data/facilities.csv --source-name KMHFL_2024_02
+```
+
+```powershell
+# 8. Reload clinical rules on triage-ranker
+Invoke-RestMethod -Method Post http://localhost:8100/admin/rules/reload -Headers @{"X-Admin-Key"="dev-key"}
+```
+
+---
+
+## Option B — Local dev (each service in its own terminal, no Docker)
+
+The `DATABASE_URL` in each `.env` must point at a locally running Postgres. Fix the port from `5433` to `5432` if your local Postgres is on the default port:
+
+```powershell
+# In ambulance-cdss\.env — set:
+# DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ambulance_cdss_dev
+
+# In facility-mapper\.env — set:
+# DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/facility_mapper_dev
+```
+
+Create the databases first:
+
+```powershell
+psql -U postgres -c "CREATE DATABASE ambulance_cdss_dev;"
+psql -U postgres -c "CREATE DATABASE facility_mapper_dev;"
+```
+
+Terminal 1 — ambulance-cdss:
+```powershell
+cd D:\Projects\CDSS\ambulance-cdss
+uv venv
+.venv\Scripts\Activate.ps1
+uv pip install -e ".[dev]"
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Terminal 2 — facility-mapper:
+```powershell
+cd D:\Projects\CDSS\facility-mapper
+uv venv
+.venv\Scripts\Activate.ps1
+uv pip install -e ".[dev]"
+uv run alembic upgrade head
+uv run python -m scripts.load_facilities --source data\facilities.csv --source-name KMHFL_2024_02
+uv run uvicorn app.main:app --reload --port 8001
+```
+
+Terminal 3 — triage-ranker:
+```powershell
+cd D:\Projects\CDSS\triage-ranker
+uv venv
+.venv\Scripts\Activate.ps1
+uv pip install -e ".[dev]"
+python -m spacy download en_core_web_md
+uv run uvicorn app.main:app --reload --port 8100
+```
+
+---
+
+## Wire the services together
+
+In `ambulance-cdss\.env`, set:
+```
+FACILITY_REGISTRY_BASE_URL=http://localhost:8001
+TRIAGE_RANKER_BASE_URL=http://localhost:8100
+```
+
+In Docker Compose these are already wired via service names (`http://facility-mapper:8001`, `http://triage-ranker:8100`) through the compose network — but those values need to be in the `.env` files the containers read. Check that `ambulance-cdss\.env` has:
+
+```
+FACILITY_REGISTRY_BASE_URL=http://facility-mapper:8001
+TRIAGE_RANKER_BASE_URL=http://triage-ranker:8100
+```
+
+after you copy from `.env.example` — the examples have these blank.
+
+---
+
+## Run tests
+
+```powershell
+# Unit tests only (no DB needed) — from any service directory
+cd D:\Projects\CDSS\ambulance-cdss
+uv run pytest tests\ --ignore=tests\integration -v
+
+# Integration tests (requires running services + DATABASE_URL set)
+$env:DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/ambulance_cdss_dev"
+uv run pytest tests\integration\ -v
+```

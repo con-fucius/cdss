@@ -1,0 +1,163 @@
+{
+  "protocol_id": "obstetric_emergency_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "pregnant",
+    "in labour",
+    "miscarriage",
+    "bleeding during pregnancy",
+    "baby coming",
+    "cord visible",
+    "seizure in pregnancy",
+    "maternity",
+    "ujauzito",
+    "kujifungua",
+    "chungwa damu",
+    "msichana ana mimba"
+  ],
+  "entry_question_id": "q1_pregnant_or_postpartum",
+  "questions": {
+    "q1_pregnant_or_postpartum": {
+      "text": "Is the patient currently pregnant, or has she given birth within the last 6 weeks?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q2_active_bleeding",
+        "no": "outcome_not_obstetric"
+      }
+    },
+    "q2_active_bleeding": {
+      "text": "Is there any bleeding right now \u00e2\u20ac\u201d from the vagina, or any other bleeding that may be pregnancy-related?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "q3_heavy_bleeding",
+        "no": "q4_seizure"
+      }
+    },
+    "q3_heavy_bleeding": {
+      "text": "Is the bleeding heavy \u00e2\u20ac\u201d for example, soaking through a pad quickly, pooling on the floor, or dripping?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p1_obstetric_haemorrhage",
+        "no": "q4_seizure"
+      }
+    },
+    "q4_seizure": {
+      "text": "Has the patient had a seizure, convulsion, or fit \u00e2\u20ac\u201d shaking uncontrollably or losing consciousness suddenly?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Seizures in pregnancy after 20 weeks are eclampsia until proven otherwise \u00e2\u20ac\u201d a life-threatening emergency. Do not restrain the patient during a seizure. Protect from injury and time the seizure.",
+      "branch_map": {
+        "yes": "outcome_p1_eclampsia",
+        "no": "q5_cord_prolapse"
+      }
+    },
+    "q5_cord_prolapse": {
+      "text": "Has anyone mentioned seeing the cord coming out before the baby, or is there something visible at the birth canal that is not the baby's head?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p1_cord_prolapse",
+        "no": "q6_labour_stage"
+      }
+    },
+    "q6_labour_stage": {
+      "text": "Is the baby's head visible or about to be born, or is the patient still in early labour?",
+      "answer_type": "select",
+      "options": [
+        "baby_visible",
+        "early_labour",
+        "not_in_labour"
+      ],
+      "branch_map": {
+        "baby_visible": "q7_complications",
+        "early_labour": "outcome_p2_obstetric_standard",
+        "not_in_labour": "q7_complications"
+      }
+    },
+    "q7_complications": {
+      "text": "Are there any complications \u00e2\u20ac\u201d bleeding, the patient feeling faint or dizzy, the baby not moving normally, or the membranes have been ruptured for more than 18 hours?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p1_obstetric_complications",
+        "no": "outcome_p2_obstetric_standard"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_p1_obstetric_haemorrhage": {
+      "priority_code": "P1_OBSTETRIC_EMERGENCY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is an obstetric emergency \u00e2\u20ac\u201d help is on the way.",
+        "If the patient is lying down, help her lie flat on her back with her legs slightly elevated.",
+        "Do not try to deliver the baby or remove anything from the birth canal.",
+        "If there is bleeding, place a clean pad or cloth against the bleeding area.",
+        "If the patient feels faint or her skin turns pale and clammy, help her lie flat and elevate her legs slightly.",
+        "Monitor her consciousness \u00e2\u20ac\u201d if she becomes less responsive, tell me immediately."
+      ]
+    },
+    "outcome_p1_eclampsia": {
+      "priority_code": "P1_OBSTETRIC_EMERGENCY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "A seizure in pregnancy is a life-threatening emergency \u00e2\u20ac\u201d help is on the way.",
+        "Do not try to restrain her or hold her down during a seizure.",
+        "Clear the area around her of hard or sharp objects to prevent injury.",
+        "After the seizure, gently turn her onto her left side \u00e2\u20ac\u201d this protects her airway.",
+        "Do not put anything in her mouth.",
+        "Time how long the seizure lasts and tell me.",
+        "If another seizure starts, protect her from injury and time it."
+      ]
+    },
+    "outcome_p1_cord_prolapse": {
+      "priority_code": "P1_OBSTETRIC_EMERGENCY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "This is a cord prolapse \u00e2\u20ac\u201d a life-threatening emergency for the baby.",
+        "Ask the patient to kneel on the bed with her head and chest on pillows, bottom in the air \u00e2\u20ac\u201d this is called the knee-chest position.",
+        "This position takes pressure off the cord and protects the baby's blood supply.",
+        "Do not push the cord back in, and do not try to deliver the baby.",
+        "Keep her in this position until the ambulance crew arrives."
+      ]
+    },
+    "outcome_p1_obstetric_complications": {
+      "priority_code": "P1_OBSTETRIC_EMERGENCY",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "There are complications during this delivery \u00e2\u20ac\u201d help is on the way.",
+        "Help the patient lie on her left side.",
+        "Do not try to deliver the baby or remove anything.",
+        "If bleeding starts, apply a clean cloth with gentle pressure.",
+        "Keep her warm and reassure her.",
+        "Monitor her consciousness and tell me if anything changes."
+      ]
+    },
+    "outcome_p2_obstetric_standard": {
+      "priority_code": "P2_OBSTETRIC",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "An ambulance is on the way.",
+        "Help the patient lie on her left side for comfort.",
+        "If the baby is about to be born and no one can stop it, support the baby's head as it comes out \u00e2\u20ac\u201d do not pull on it.",
+        "Wrap the baby in clean, warm clothes immediately after birth.",
+        "Do not cut the cord unless you are trained to do so.",
+        "Keep the baby skin-to-skin with the mother to keep warm."
+      ]
+    },
+    "outcome_not_obstetric": {
+      "priority_code": "ROUTE_REASSESS",
+      "recommended_unit_type": "PENDING_REASSESSMENT",
+      "pre_arrival_instructions": [
+        "This call does not appear to be an obstetric emergency based on the answers given.",
+        "Reassess the chief complaint and select the appropriate protocol."
+      ]
+    }
+  }
+}

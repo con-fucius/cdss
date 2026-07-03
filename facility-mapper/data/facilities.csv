@@ -1,0 +1,21 @@
+facility_id,name,county,level,lat,lon,phone,services,is_active
+F001,Kenyatta National Hospital,Nairobi,6,-1.2979,36.8126,+254-20-2726300,"surgery,icu,emergency,paediatrics,obstetrics",true
+F002,Mbagathi County Hospital,Nairobi,5,-1.3018,36.7848,+254-20-3023244,"emergency,surgery,general",true
+F003,Mama Lucy Kibaki Hospital,Nairobi,5,-1.2567,36.9204,+254-20-2544045,"emergency,maternity,paediatrics",true
+F004,Mathare North Health Centre,Nairobi,4,-1.2621,36.8592,+254-20-6740011,"emergency,general",true
+F005,Viwandani Health Centre,Nairobi,3,-1.2989,36.8713,,"general,maternity",true
+F006,Kibera South Health Centre,Nairobi,4,-1.3133,36.7878,+254-20-6934000,"emergency,general",true
+F007,Kawangware Health Centre,Nairobi,3,-1.2834,36.7543,,"general",true
+F008,Ngara Health Centre,Nairobi,3,-1.2875,36.8341,,"general,maternity",true
+F009,Pumwani Maternity Hospital,Nairobi,4,-1.2852,36.8432,+254-20-2229555,"maternity,emergency",true
+F010,Langata Health Centre,Nairobi,3,-1.3212,36.7745,,"general",true
+F011,Mbagathi District Hospital,Nairobi,5,-1.3018,36.7848,+254-20-3023244,"emergency,surgery,general,paediatrics",true
+F012,The Nairobi Hospital,Nairobi,6,-1.2897,36.8134,+254-20-2845000,"surgery,icu,emergency,cardiology,neurology",true
+F013,Aga Khan University Hospital,Nairobi,6,-1.2624,36.8067,+254-20-3662000,"surgery,icu,emergency,oncology",true
+F014,MP Shah Hospital,Nairobi,5,-1.2912,36.8112,+254-20-4452833,"surgery,emergency,general",true
+F015,Mater Misericordiae Hospital,Nairobi,5,-1.2843,36.7965,+254-20-2693511,"surgery,emergency,maternity,cardiology",true
+F016,Nairobi West Hospital,Nairobi,4,-1.3045,36.7890,+254-20-2600390,"emergency,general,surgery",true
+F017,Westlands Sub-County Hospital,Nairobi,4,-1.2678,36.8034,,"emergency,general",true
+F018,Dagoretti Sub-County Hospital,Nairobi,4,-1.2945,36.7612,,"emergency,general,maternity",true
+F019,Embakasi Sub-County Hospital,Nairobi,4,-1.2489,36.8890,+254-20-8250000,"emergency,general",true
+F020,Starehe Sub-County Hospital,Nairobi,4,-1.2756,36.8345,,"emergency,general",true

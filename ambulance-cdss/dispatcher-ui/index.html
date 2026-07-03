@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambulance CDSS — Dispatcher Console</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Phase 5.1: Offline detection banner — full-width, position:fixed, cannot be missed -->
+<div id="offline-banner" class="offline-banner hidden" role="alert" aria-live="assertive">
+  <span class="offline-banner__icon">⚠</span>
+  <span class="offline-banner__text">API unreachable — working from last known state. New incidents cannot be created until connection is restored.</span>
+  <span class="offline-banner__queue" id="offline-queue-count"></span>
+</div>
+
+<header class="app-header">
+  <div class="app-header__title">Ambulance CDSS — Dispatcher Console</div>
+  <div class="app-header__status" id="connection-status">checking connection…</div>
+</header>
+
+<main class="app-main">
+
+  <!-- ── Call intake ───────────────────────────────────────────────── -->
+  <section id="intake-screen" class="screen">
+    <h1>New call</h1>
+    <form id="intake-form">
+      <label for="chief-complaint">Chief complaint <span class="required">*</span></label>
+      <input type="text" id="chief-complaint" name="chief_complaint" required
+             placeholder="e.g. not breathing, choking, car accident">
+
+      <div class="field-row">
+        <div>
+          <label for="caller-lat">Caller latitude</label>
+          <input type="number" id="caller-lat" step="any" placeholder="optional">
+        </div>
+        <div>
+          <label for="caller-lon">Caller longitude</label>
+          <input type="number" id="caller-lon" step="any" placeholder="optional">
+        </div>
+      </div>
+
+      <label for="caller-location-text">Caller location (description)</label>
+      <input type="text" id="caller-location-text" placeholder="optional — street, landmark, etc.">
+
+      <label for="dispatcher-id">Dispatcher ID <span class="required">*</span></label>
+      <input type="text" id="dispatcher-id" required placeholder="your operator ID">
+
+      <button type="submit" class="btn-primary">Start call</button>
+    </form>
+    <div id="intake-error" class="error-banner hidden"></div>
+  </section>
+
+  <!-- ── Locked script ─────────────────────────────────────────────── -->
+  <section id="script-screen" class="screen hidden">
+    <div class="script-layout">
+
+      <div class="script-main">
+        <div class="incident-banner" id="incident-banner"></div>
+
+        <!-- Phase 5.3: Manual protocol selector — shown when no protocol matches -->
+        <div id="no-protocol-banner" class="warning-banner hidden">
+          <div>No protocol matched this chief complaint automatically.</div>
+          <div class="manual-protocol-selector">
+            <label for="manual-protocol-select">Select protocol manually:</label>
+            <select id="manual-protocol-select">
+              <option value="">Loading protocols…</option>
+            </select>
+            <button id="apply-manual-protocol-btn" class="btn-primary" disabled>Apply protocol</button>
+            <span id="manual-protocol-result" class="action-result"></span>
+          </div>
+        </div>
+
+        <div id="question-card" class="question-card hidden">
+          <div class="question-meta">
+            <span id="question-id-label"></span>
+            <span id="guidance-badge" class="guidance-badge hidden" title="Mode 2 guidance available">Guidance available</span>
+          </div>
+          <div class="question-text" id="question-text"></div>
+          <!-- Phase 5.2: Answer submission loading state — buttons disabled with opacity during submission -->
+          <div class="answer-options" id="answer-options" aria-busy="false"></div>
+
+          <div id="guidance-panel" class="guidance-panel hidden">
+            <div class="guidance-panel__label">MODE 2 — SUPPLEMENTARY GUIDANCE (INFORMATIONAL ONLY)</div>
+            <div class="guidance-panel__text" id="guidance-text"></div>
+            <div class="guidance-panel__footer">This cannot alter the priority code, unit type, or script branch.</div>
+          </div>
+        </div>
+
+        <!-- Phase 5.5: Triage enrichment display — collapsible clinical context -->
+        <div id="triage-enrichment-card" class="triage-enrichment-card hidden">
+          <button id="triage-enrichment-toggle" class="triage-enrichment-toggle" aria-expanded="false">
+            <span>Clinical context</span>
+            <span class="triage-enrichment-toggle__icon">▸</span>
+          </button>
+          <div id="triage-enrichment-body" class="triage-enrichment-body hidden">
+            <div class="triage-enrichment-row">
+              <span class="triage-enrichment-label">Triage level:</span>
+              <span id="triage-level-badge" class="triage-level-badge"></span>
+            </div>
+            <div class="triage-enrichment-row">
+              <span class="triage-enrichment-label">Top diagnosis:</span>
+              <span id="triage-top-diagnosis" class="triage-enrichment-value"></span>
+            </div>
+            <div class="triage-enrichment-row">
+              <span class="triage-enrichment-label">ESI level:</span>
+              <span id="triage-esi-level" class="triage-enrichment-value"></span>
+            </div>
+            <div class="triage-enrichment-row" id="triage-shock-index-row" class="hidden">
+              <span class="triage-enrichment-label">Shock index:</span>
+              <span id="triage-shock-index" class="triage-enrichment-value"></span>
+            </div>
+            <div class="triage-enrichment-row">
+              <span class="triage-enrichment-label">Source:</span>
+              <span id="triage-source" class="triage-enrichment-value"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="out-of-script-error" class="error-banner hidden"></div>
+
+        <div id="terminal-card" class="terminal-card hidden">
+          <div class="terminal-priority" id="terminal-priority"></div>
+          <div class="terminal-unit" id="terminal-unit-type"></div>
+          <!-- Phase 5.4: Pre-arrival instruction timer -->
+          <div class="terminal-timer">
+            <span class="terminal-timer__label">Time since outcome reached:</span>
+            <span id="terminal-timer-display" class="terminal-timer__display">00:00</span>
+          </div>
+          <div class="terminal-instructions-label">Pre-arrival instructions — read to caller now</div>
+          <ol class="terminal-instructions" id="terminal-instructions"></ol>
+
+          <div class="terminal-actions">
+            <button id="confirm-pre-arrival-btn" class="btn-secondary">Confirm — all instructions read to caller</button>
+            <span id="confirm-pre-arrival-result" class="action-result"></span>
+          </div>
+          <div class="terminal-actions">
+            <button id="dispatch-unit-btn" class="btn-primary">Dispatch unit</button>
+            <span id="dispatch-result" class="action-result"></span>
+          </div>
+          <div class="terminal-actions">
+            <button id="route-facility-btn" class="btn-secondary">Find nearest facility</button>
+            <span id="facility-result" class="action-result"></span>
+          </div>
+          <div id="facility-list" class="facility-list"></div>
+
+          <div id="handoff-delivery-card" class="handoff-delivery-card hidden">
+            <h3>Handoff to Receiving Hospital</h3>
+            <p class="handoff-delivery-hint">Generate a handoff link to send to the receiving ER before the patient arrives.</p>
+            <div class="handoff-delivery-actions">
+              <button id="send-to-er-btn" class="btn-primary">Send to ER</button>
+              <span id="handoff-link-result" class="action-result"></span>
+            </div>
+            <div id="handoff-link-display" class="handoff-link-display hidden">
+              <label>Handoff URL (copy and send via SMS, WhatsApp, or phone):</label>
+              <div class="handoff-link-row">
+                <input type="text" id="handoff-link-url" readonly class="handoff-link-input">
+                <button id="copy-handoff-link-btn" class="btn-secondary">Copy</button>
+              </div>
+              <p class="handoff-link-expiry">Link expires in 24 hours.</p>
+            </div>
+          </div>
+
+          <div id="field-url-card" class="field-url-card hidden">
+            <h3>Field Unit Link</h3>
+            <p class="field-url-hint">Send this URL to the assigned paramedic so they can open the incident on their device.</p>
+            <div class="handoff-link-row">
+              <input type="text" id="field-link-url" readonly class="handoff-link-input">
+              <button id="copy-field-link-btn" class="btn-secondary">Copy</button>
+            </div>
+          </div>
+
+          <button id="new-call-btn" class="btn-tertiary">Start new call</button>
+        </div>
+      </div>
+
+      <aside class="script-sidebar">
+        <h2>Call transcript</h2>
+        <div id="transcript" class="transcript"></div>
+      </aside>
+
+    </div>
+  </section>
+
+</main>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

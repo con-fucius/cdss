@@ -1,0 +1,415 @@
+# Handoff Note — Ambulance CDSS Convergence Implementation
+
+## Context
+
+Building a production-grade pre-hospital CDSS for East/Central Africa (Kenya/Uganda/Congo scale). Not a PoC. Not an MVP. A critical clinical system where failures cost lives.
+
+Repository root: 'D:\Projects\CDSS\'
+
+'''
+D:\Projects\CDSS\
+├── ambulance-cdss\          ← EXISTS. Authoritative incident record + dispatch engine.
+├── HIV-agent\               ← EXISTS. Chronic-disease CDSS (separate product, separate codebase).
+├── triage-ranker\           ← NOT YET BUILT.
+├── facility-mapper\         ← NOT YET BUILT.
+└── shared\                  ← NOT YET BUILT. Shared Pydantic contract schemas.
+'''
+
+---
+
+## What exists in 'ambulance-cdss\' right now
+
+Solid, production-grade:
+- FastAPI backend, PostgreSQL, async SQLAlchemy, Alembic migrations (0001–0005 + administered column)
+- Incident lifecycle: create → dispatch script → terminal outcome → field protocol → vitals → medications → handoff → export
+- Locked Mode 1 dispatch script engine (governance-gated, hard-fail on undefined answer, deterministic)
+- Field protocol runner (non-locked, checklist-based, step ordering permissive by design)
+- NEWS2 + GCS scoring and trend alerting on every vitals write
+- Incident search, timeline, audit export (SHA256-hashed), shift handover report
+- Answer correction window (60s, configurable)
+- Unit location tracking
+- Pre-arrival instruction confirmation log
+- ETA tracking + overdue detection
+- Status transition enforcement ('_VALID_TRANSITIONS')
+- Admin endpoints: purge, protocol reload, protocol status — all gated by 'X-Admin-Key'
+- CORS tightened: 'get_allowed_origins()' from config, 'validate_startup_config()' blocks production startup if wildcard
+- Dashboard: active incidents (priority-sorted), rolling-window stats
+- 'FacilityRegistryClient' — stub, returns empty (no service behind it yet)
+- 'EmergencyDispatchClient' — stub, returns None (no service behind it yet)
+- 'TriageRankerClient' — does not exist yet, needs to be built
+- 3 dispatch protocols: cardiac arrest, choking, major trauma — all PLACEHOLDER sign-off, correctly rejected by registry at load time
+- 0 field protocols loaded and signed (field_cardiac_arrest_v1 exists but PLACEHOLDER)
+- Dispatcher UI: 'dispatcher-ui/' — static HTML/CSS/JS, functional, needs hardening
+- Field UI: 'field-ui/' — static HTML/CSS/JS, functional, needs offline hardening
+- Integration tests: 'tests/integration/test_incident_lifecycle.py' — requires 'DATABASE_URL'
+- Unit tests: comprehensive coverage across all modules
+
+Known gaps in 'ambulance-cdss\':
+- 'outcome_route_to_other_protocol' in existing protocols routes to a protocol that doesn't exist — live clinical safety gap
+- No 'triage_enrichment' column on 'Incident' model yet (migration 0006 not written)
+- 'POST /incidents/from-capture' endpoint not written
+- 'TriageRankerClient' not written
+- 'triage_ranker.py' in 'app/external/' does not exist
+
+---
+
+## Absolute rules — read before writing a single line
+
+1. Read before writing. For every file you touch, read its current content first. Never edit based on memory from earlier in a session.
+2. No bare 'except:'. Every caught exception has a named variable and a 'logger.warning("...: %s", exc)'. No silent swallowing.
+3. Every 'asyncio.create_task()' has '.add_done_callback()' that logs exceptions. Background tasks that fail silently are invisible bugs.
+4. No PHI in logs anywhere. 'incident_desc', 'chief_complaint', 'description', patient names — never in any 'logger.*' call. CI must catch this.
+5. No external HTTP call propagates exceptions to the incident path. Every external call returns 'None'/empty on failure.
+6. Type annotations on every function. 'def f(x)' is wrong. 'def f(x: str) -> Optional[int]' is correct.
+7. 'ruff' passes zero warnings before any file is committed.
+8. No '.env' files committed. Only '.env.example'.
+9. No 'allow_origins=["*"]' in production. 'validate_startup_config()' must enforce this in every service.
+10. Clinical content in protocol files and 'clinical_rules.yaml' is reviewed by a clinician before commit. A comment block '# reviewed_by: [name]' is required on guidance notes containing clinical instructions.
+11. Protocol files are never committed without reachability validation passing ('_validate_protocol_reachability' in registry).
+12. Windows/PowerShell environment. Scripts, paths, and commands must work in PowerShell. No bash-isms.
+
+---
+
+## Implementation plan — all remaining phases
+
+---
+
+### Phase 0 — Shared contract schemas
+Location: 'D:\Projects\CDSS\shared\'
+Prerequisite for: everything. Build this first.
+
+Tasks:
+- [ ] Create 'shared/' as a Python package installable as 'ambulance-cdss-contracts'
+- [ ] 'pyproject.toml' with '[build-system]' using hatchling, name 'ambulance-cdss-contracts'
+- [ ] 'shared/contracts/triage.py' — 'TriageRequest', 'TriageResponse', 'DiagnosisRankItem', 'ExtractedKeyword', 'TriageMetadata' as Pydantic v2 models
+- [ ] 'shared/contracts/facility.py' — 'FacilitySearchRequest', 'FacilityResult', 'FacilitySearchResponse' as Pydantic v2 models
+- [ ] 'shared/contracts/incident_capture.py' — 'CapturePayload', 'PatientInfo', 'IncidentInfo' as Pydantic v2 models
+- [ ] Every field has a docstring explaining its clinical meaning
+- [ ] No logic — schemas only
+- [ ] 'uv pip install -e ../../shared' works from each service directory
+
+Acceptance:
+- [ ] 'from ambulance_cdss_contracts.triage import TriageRequest' works from all three service directories
+- [ ] All fields type-annotated with docstrings
+- [ ] No functions, no business logic in 'shared/'
+
+---
+
+### Phase 1 — Facility Mapper service
+Location: 'D:\Projects\CDSS\facility-mapper\'
+Unblocks: 'FacilityRegistryClient' returning real data
+
+Structure:
+'''
+facility-mapper/
+├── app/
+│   ├── main.py
+│   ├── config.py
+│   ├── data.py          ← facility loading + validation
+│   ├── geocoding.py     ← Nominatim abstraction, cached
+│   ├── matcher.py       ← BallTree KNN, level filter, ETA
+│   ├── models.py        ← SQLAlchemy Facility model
+│   └── schemas.py       ← re-exports from shared contracts
+├── alembic/
+├── scripts/
+│   └── load_facilities.py   ← idempotent data loader CLI
+├── tests/
+├── pyproject.toml
+└── .env.example
+'''
+
+Tasks:
+
+1.1 Scaffold
+- [ ] 'pyproject.toml' identical conventions to 'ambulance-cdss' (uv, ruff, pytest, asyncio_mode=auto)
+- [ ] '.env.example' with 'DATABASE_URL', 'ADMIN_API_KEY', 'ALLOWED_ORIGINS', 'AMBULANCE_SPEED_KMH=60', 'FACILITY_CACHE_TTL_SECONDS=3600'
+- [ ] 'alembic.ini' and initial env setup
+
+1.2 Data model and migration
+- [ ] 'Facility' SQLAlchemy model: 'facility_id TEXT PK', 'name TEXT NOT NULL', 'county TEXT', 'level INTEGER NOT NULL', 'lat DOUBLE PRECISION NOT NULL', 'lon DOUBLE PRECISION NOT NULL', 'phone TEXT', 'services TEXT[]', 'is_active BOOLEAN DEFAULT TRUE', 'data_source TEXT NOT NULL', 'last_verified_at TIMESTAMPTZ', 'created_at', 'updated_at'
+- [ ] 'DataImport' model: 'id UUID PK', 'source TEXT', 'record_count INTEGER', 'loaded_at TIMESTAMPTZ', 'loaded_by TEXT'
+- [ ] Migration '0001_facilities.py'
+- [ ] Indexes: '(lat, lon)', 'level', 'is_active'
+
+1.3 Data loader script
+- [ ] 'scripts/load_facilities.py' — reads CSV/JSON source, validates each row (lat/lon bounds for Kenya/Uganda/DRC: lat -5 to 5, lon 29 to 42), upserts by 'facility_id', writes 'DataImport' row
+- [ ] CLI: 'uv run python -m scripts.load_facilities --source path/to/data.csv --source-name KMHFL_2024_02'
+- [ ] Idempotent: second run produces same count, no duplicates
+- [ ] Rows with invalid coordinates are rejected with a count in the final log, not silently skipped
+
+1.4 BallTree matcher
+- [ ] 'matcher.py': 'FacilityMatcher' class, BallTree built at init from DB query of active facilities
+- [ ] 'find_nearest(lat, lon, level_min, required_services, radius_km, max_results) -> List[FacilityResult]'
+- [ ] Level filter: post-KNN, not pre-KNN (KNN finds nearest N, then filter by level, then re-sort by distance)
+- [ ] ETA: '(distance_km / AMBULANCE_SPEED_KMH) * 60' minutes — configurable speed from config
+- [ ] BallTree uses Haversine metric ('metric='haversine'', inputs in radians)
+- [ ] In-process cache: 'FacilityMatcher' is a module-level singleton, rebuilt only on explicit reload
+
+1.5 Geocoding
+- [ ] 'geocoding.py': 'geocode(location_text: str) -> Optional[tuple[float, float]]'
+- [ ] Uses Nominatim with 'user_agent="ambulance-cdss-facility-mapper"'
+- [ ] 5s timeout, returns 'None' on any failure — never raises
+- [ ] In-process TTLCache: 1 hour, max 500 entries (location strings repeat)
+- [ ] Bounding box hint for geocoding: Kenya/Uganda/DRC region to avoid ambiguous results
+
+1.6 Endpoints
+- [ ] 'GET /health' — '{"status": "ok", "facility_count": n, "data_as_of": "...", "last_loaded_at": "..."}'
+- [ ] 'GET /ready' — 503 until BallTree built and at least 1 facility loaded
+- [ ] 'GET /facilities/nearest' — params: 'lat', 'lon', 'radius_km', 'level_min', 'required_services', 'max_results' (default 3, max 10)
+- [ ] 'POST /facilities/nearest-by-location' — body: '{"location": "Kiambu", "radius_km": 50, "level_min": 4}' — geocodes then searches
+- [ ] 'GET /facilities/{facility_id}' — single facility detail
+- [ ] 'GET /data-currency' — returns 'DataImport' history
+- [ ] 'POST /admin/reload-facilities' — clears cache, rebuilds BallTree — requires 'X-Admin-Key'
+- [ ] Response always includes 'data_as_of' field
+
+1.7 Update 'ambulance-cdss' 'FacilityRegistryClient'
+- [ ] Update '_parse_nearest_response' to match 'FacilitySearchResponse' from shared contracts
+- [ ] Add 'POST /facilities/nearest-by-location' path as secondary method for text-location callers
+- [ ] Add 'FACILITY_REGISTRY_BASE_URL=http://facility-mapper:8001' to '.env.example'
+
+1.8 Tests
+- [ ] 'test_matcher.py': BallTree returns closest facility; level filter excludes Level 3 when 'level_min=4'; empty when no facilities within radius; ETA correct at 60 km/h
+- [ ] 'test_geocoding.py': cache hit returns without second HTTP call (mock Nominatim); timeout returns 'None'
+- [ ] 'test_data_loader.py': idempotent load produces same count; invalid coordinates rejected with count logged
+
+Acceptance:
+- [ ] 'GET /facilities/nearest?lat=-1.2921&lon=36.8219&level_min=4' returns ≤3 facilities with distance and ETA
+- [ ] 'POST /facilities/nearest-by-location' geocodes "Kiambu" and returns results
+- [ ] 'GET /health' includes 'data_as_of'
+- [ ] 'ambulance-cdss' 'POST /incidents/{id}/route-facility' returns real facility data when service running
+- [ ] All tests pass without network (BallTree tests use seeded DB data, geocoding mocks Nominatim)
+
+---
+
+### Phase 2 — Triage Ranker service
+Location: 'D:\Projects\CDSS\triage-ranker\'
+Unblocks: enriched protocol matching, clinical context on incidents
+
+Structure:
+'''
+triage-ranker/
+├── app/
+│   ├── main.py
+│   ├── config.py
+│   ├── pipeline/
+│   │   ├── extractor.py      ← Stage 1: spaCy NLP + rules
+│   │   ├── resolver.py       ← Stage 2: UMLS 4-layer cache
+│   │   └── ranker.py         ← Stage 3: composite scoring
+│   ├── cache/
+│   │   ├── memory.py         ← L1: TTLCache
+│   │   └── persistent.py     ← L2: SQLite
+│   └── rules/
+│       └── clinical_rules.yaml
+├── tests/
+├── pyproject.toml
+└── .env.example
+'''
+
+Tasks:
+
+2.1 Scaffold — same conventions as other services
+
+2.2 'clinical_rules.yaml'
+- [ ] Minimum 50 terms, English + Swahili
+- [ ] Categories: 'RESPIRATORY', 'CARDIOVASCULAR', 'NEUROLOGICAL', 'TRAUMA', 'OBSTETRIC', 'PAEDIATRIC'
+- [ ] Each entry: 'term', 'synonyms' (Swahili included), 'category', 'severity_weight' (0.0–1.0), 'icd10_prefix', 'snomed_hint'
+- [ ] Swahili terms mandatory for: not breathing ('kushindwa kupumua'), unconscious ('kupoteza fahamu'), chest pain ('maumivu ya kifua'), bleeding ('kutoka damu'), seizure ('degedege')
+- [ ] Every entry with 'severity_weight > 0.7' has a comment with clinical basis
+
+2.3 Stage 1 — NLP extractor
+- [ ] 'extractor.py': loads 'en_core_web_md' — model path from config, never downloaded at runtime
+- [ ] Applies 'clinical_rules.yaml' term matching after spaCy tokenisation — handles Swahili terms not recognised by spaCy model
+- [ ] Extracts ACVPU clues, vital sign mentions, negation markers
+- [ ] Returns 'List[ExtractedKeyword]'
+
+2.4 Stage 2 — UMLS resolver
+- [ ] L1: 'cachetools.TTLCache(maxsize=1000, ttl=3600)'
+- [ ] L2: SQLite at 'cache/umls_cache.db' (named volume in production)
+- [ ] L3: UMLS REST API, 3s timeout, only called on L1+L2 miss, only if 'UMLS_API_KEY' configured
+- [ ] L4: fallback from 'clinical_rules.yaml' 'icd10_prefix'/'snomed_hint' fields
+- [ ] On L3 success: write to L2 then L1
+- [ ] On L3 failure or no key: use L4, set 'degraded_mode=True' on response
+- [ ] Never blocks Stage 3
+
+2.5 Stage 3 — Ranker
+- [ ] Composite score: 'w_rule + w_semantic + w_modifier + w_scoring_system'
+- [ ] 'w_rule': from 'severity_weight' in 'clinical_rules.yaml' for matched terms
+- [ ] 'w_modifier': severity modifiers ("severe", "critical", "acute", and Swahili equivalents)
+- [ ] 'w_scoring_system': GCS component if 'gcs_score' provided; Shock Index ('hr/sbp') if both provided — Shock Index > 1.0 → critical flag
+- [ ] Maps composite score to 'triage_level' (P1–P4) and 'esi_level' (1–5)
+- [ ] Never returns zero results. Fallback: 'DiagnosisRankItem(canonical_name="Undifferentiated Emergency", triage_level="P2", degraded_mode=True)'
+
+2.6 Endpoints
+- [ ] 'POST /triage' — validates 'TriageRequest', runs pipeline, returns 'TriageResponse'. No patient text in any log.
+- [ ] 'GET /health' — UMLS reachability (non-blocking), cache stats, model loaded status
+- [ ] 'GET /ready' — 503 until spaCy model loaded
+- [ ] 'POST /admin/rules/reload' — reloads 'clinical_rules.yaml' without restart, requires 'X-Admin-Key'
+- [ ] 'DELETE /admin/cache' — purges L1 and L2, requires 'X-Admin-Key'
+
+2.7 'TriageRankerClient' in 'ambulance-cdss'
+- [ ] New file: 'app/external/triage_ranker.py'
+- [ ] Same pattern as 'FacilityRegistryClient' — returns 'None' on failure, never raises
+- [ ] 'enrich(incident_desc, gcs_score, acvpu, sbp, hr) -> Optional[TriageEnrichment]'
+- [ ] 'TriageEnrichment' dataclass: 'triage_level', 'esi_level', 'top_diagnosis', 'icd10_code', 'snomed_code', 'shock_index', 'degraded_mode'
+- [ ] Add 'TRIAGE_RANKER_BASE_URL' to 'config.py' and '.env.example'
+
+2.8 Migration '0006_triage_enrichment' in 'ambulance-cdss'
+- [ ] 'op.add_column("incidents", sa.Column("triage_enrichment", JSONB, nullable=True))'
+- [ ] 'down_revision = "0005_superseded_by_and_unit_location"' (or whatever current head is — check before writing)
+
+2.9 Wire enrichment into 'create_incident'
+- [ ] Fire 'triage_ranker.enrich()' as 'asyncio.create_task()'
+- [ ] Task has '.add_done_callback()' that writes result to 'incident.triage_enrichment' on success, logs warning on failure
+- [ ] 'create_incident' returns without waiting for enrichment
+- [ ] 'get_incident_full', 'get_incident_handoff', '/export' include 'triage_enrichment' (null if not yet resolved)
+
+2.10 Tests
+- [ ] 'test_extractor.py': "not breathing, unconscious" → NEUROLOGICAL + RESPIRATORY. Swahili 'kushindwa kupumua' → RESPIRATORY. Negated "denies chest pain" → not extracted as active.
+- [ ] 'test_ranker.py': GCS=3 → P1. Shock Index > 1.0 (HR=120, SBP=90) → 'severity_level=critical'. No inputs → returns 'Undifferentiated Emergency' not empty list.
+- [ ] 'test_resolver.py': L1 cache hit returns without SQLite call. L2 hit returns without UMLS API call. UMLS timeout → L4 result with 'degraded_mode=True'.
+- [ ] 'test_no_phi_in_logs.py': captures log output during 'POST /triage', asserts 'incident_desc' value does not appear in any log record.
+
+Acceptance:
+- [ ] 'POST /triage' with "patient collapsed, not breathing, no pulse" → 'triage_level: "P1"'
+- [ ] 'POST /triage' with Swahili text → RESPIRATORY category result
+- [ ] 'POST /triage' with UMLS down (mocked) → result returned with 'degraded_mode: true'
+- [ ] No patient text in any log during triage call
+- [ ] 'create_incident' returns in < 200ms regardless of triage ranker state
+- [ ] 'GET /incidents/{id}/full' after 2s → 'triage_enrichment' populated
+
+---
+
+### Phase 3 — Missing protocols (clinical safety gap, blocks production)
+
+5 new dispatch protocols, all in 'ambulance-cdss/app/protocols/dispatch/':
+
+- [ ] 'unresponsive_breathing_v1' — entry: breathing normally? → recovery position P2. Abnormal breathing + bystander capable → P1_AIRWAY_COMPROMISE. Retire 'outcome_route_to_other_protocol' references.
+- [ ] 'respiratory_distress_v1' — entry: full sentences? → P2. No → stridor/wheeze present? → P1_RESPIRATORY_FAILURE or P1_AIRWAY_COMPROMISE.
+- [ ] 'obstetric_emergency_v1' — entry: pregnant or ≤6 weeks postpartum? Branches: active bleeding, seizure, cord prolapse. All P1_OBSTETRIC_EMERGENCY.
+- [ ] 'paediatric_respiratory_v1' — entry: age? Branches by < 1yr, 1–5yr, > 5yr with age-appropriate reference ranges.
+- [ ] 'trauma_moi_v1' — mechanism of injury: falls, assault, burns, industrial. Complements major trauma MVA protocol.
+
+For every protocol:
+- [ ] Full branch coverage — every branch reachable from 'entry_question_id'
+- [ ] Reachability validation passes ('_validate_protocol_reachability')
+- [ ] 'chief_complaint_trigger' includes English and Swahili terms
+- [ ] 'approved_by'/'approved_date' PLACEHOLDER — same governance posture as existing three, pending clinical sign-off
+- [ ] 'guidance_note' on every gated question with '# reviewed_by:' comment
+- [ ] 'outcome_route_to_other_protocol' retired from existing protocols once target protocols exist
+
+Acceptance:
+- [ ] 'GET /protocols' after sign-off shows 8 active, 0 rejected
+- [ ] No terminal outcome in any protocol references a missing protocol
+- [ ] All 8 pass reachability validation
+
+---
+
+### Phase 4 — Enriched incident creation + System 3 data flow
+
+4.1 'POST /incidents/from-capture' in 'ambulance-cdss'
+- [ ] Accepts 'CapturePayload' from shared contracts
+- [ ] Maps 'consciousness' → ACVPU ('"unconscious"' → GCS estimate 3, '"alert"' → 15, documented as approximation)
+- [ ] Maps 'activelyBleeding' → TRAUMA modifier hint for triage ranker
+- [ ] Delegates internally to existing 'create_incident' logic — no duplicate code
+- [ ] Returns standard 'create_incident' response + 'capture_correlation_id' (echoes 'dispatchId')
+
+4.2 Triage enrichment uses CapturePayload vitals
+- [ ] 'gcs_score' derived from 'consciousness' string — mapping documented with limitations
+- [ ] 'activelyBleeding: true' adds TRAUMA severity weight to enrichment request
+
+4.3 Facility routing uses enrichment output
+- [ ] P1 cardiac enrichment → adds '"icu"', '"cardiac"' to 'required_services'
+- [ ] P1 trauma enrichment → adds '"surgery"', '"blood_bank"'
+- [ ] Enrichment-based filter is opportunistic — routing endpoint does not wait for enrichment
+
+4.4 Integration test
+- [ ] Full pipeline test: 'POST /incidents/from-capture' → incident created → enrichment fired → facility routing returns enrichment-aware results
+
+---
+
+### Phase 5 — Dispatcher UI hardening
+
+All changes in 'dispatcher-ui/' — no new dependencies, vanilla JS + CSS only.
+
+- [ ] 5.1 Offline detection banner — 'position: fixed', full-width, amber, cannot be missed. Text: "API unreachable — working from last known state. New incidents cannot be created until connection is restored."
+- [ ] 5.2 Answer submission loading state — all answer buttons 'disabled' + 'opacity: 0.5' from click until next question renders. No spinner. 'aria-busy="true"' on question card.
+- [ ] 5.3 Manual protocol selector — when 'protocol_matched: false' or 'requires_manual_verification: true': render '<select>' from 'GET /protocols' active list. Dispatcher selects → incident re-created with selected protocol. No dead-end "warning" states.
+- [ ] 5.4 Pre-arrival instruction timer — 'Date.now()' delta, not 'setInterval' counting (setInterval drifts). Label: "Time since outcome reached: 00:00". Stops on "Confirm — instructions read to caller" button click.
+- [ ] 5.5 Triage enrichment display — collapsible "Clinical context" section below question card when enrichment available. Shows 'triage_level' badge (P1 red, P2 amber, P3 green, P4 grey), 'top_diagnosis', 'esi_level', 'shock_index'. Collapsed by default.
+- [ ] 5.6 Keyboard navigation — Tab through all answer buttons, Enter/Space to activate. Visible ':focus' outline. No mouse required for full dispatch flow.
+
+---
+
+### Phase 6 — Field UI offline hardening
+
+All changes in 'field-ui/' — no new dependencies.
+
+- [ ] 6.1 Write queue — failed POST/PATCH stored in 'localStorage' key 'ambulance_cdss_write_queue' as '[{endpoint, method, body, queued_at}]'. Max 50 entries — alert user and stop queuing beyond that. Queue drains at start of next successful user action (not setInterval — avoids battery drain).
+- [ ] 6.2 Optimistic UI — step buttons show "Pending..." immediately, update to confirmed status on API success, revert to "Failed — queued" on failure.
+- [ ] 6.3 Vitals pre-population — pre-populate form from most recent vitals in 'vitals_history'. Labelled: "Pre-filled from last recording at [timestamp]". Values editable.
+- [ ] 6.4 Triage context — read-only "Dispatch triage" section on checklist tab when 'triage_enrichment' populated. 'triage_level', 'top_diagnosis', 'esi_level'. Clearly labelled "From dispatch — read only."
+- [ ] 6.5 Offline indicator — same pattern as dispatcher UI. Full-width amber banner. "X actions pending sync" counter.
+
+---
+
+### Phase 7 — Docker Compose orchestration
+
+Location: 'D:\Projects\CDSS\compose.yaml' (repo root)
+
+- [ ] 7.1 'compose.yaml' — 4 services: 'ambulance-cdss' (8000), 'triage-ranker' (8100), 'facility-mapper' (8001), 'postgres' (5432). Named volumes: 'postgres-data', 'triage-ranker-cache'. 'depends_on' with 'condition: service_healthy' for DB-dependent services.
+- [ ] 7.2 'Dockerfile' per service — multi-stage: 'builder' installs deps via 'uv', 'runtime' copies only what's needed. spaCy model 'en_core_web_md' downloaded in triage-ranker 'builder' stage — not at runtime.
+- [ ] 7.3 'postgres.env.example' — separate databases per service: 'ambulance_cdss' and 'facility_mapper' databases in same Postgres instance.
+- [ ] 7.4 '.env.example' cross-service URLs — each service's '.env.example' includes: 'TRIAGE_RANKER_BASE_URL=http://triage-ranker:8100', 'FACILITY_REGISTRY_BASE_URL=http://facility-mapper:8001'.
+- [ ] 7.5 'RUNBOOK.md' at repo root — startup sequence, facility data load steps, protocol reload steps, clinical rules reload steps, manual purge trigger, how to run integration tests.
+- [ ] 7.6 Integration test compose — 'compose.test.yaml' with stub services for Triage Ranker and Facility Mapper (return fixed valid responses). Used in CI to test end-to-end call chain without real UMLS or geocoding.
+
+---
+
+## Execution order (strict)
+
+'''
+Phase 0 (shared contracts)
+    ↓
+Phase 1 (facility mapper) ←→ Phase 3 (missing protocols)
+    ↓                              ↓
+Phase 2 (triage ranker)       (can run in parallel with Phase 1)
+    ↓
+Phase 4 (enriched incident creation)
+    ↓
+Phase 5 (dispatcher UI) ←→ Phase 6 (field UI)
+    ↓
+Phase 7 (Docker Compose)
+'''
+
+Phases 1 and 3 can run in parallel. Phases 5 and 6 can run in parallel. Everything else is sequential.
+
+---
+
+## Pitfalls and constraints to not violate
+
+| # | Pitfall | Rule |
+|---|---|---|
+| 1 | spaCy model download at container startup | Model must be in Dockerfile 'builder' stage. 'RUN python -m spacy download en_core_web_md' in build, never in app startup. |
+| 2 | Triage enrichment blocking incident creation | Fire as 'create_task()' only. Incident endpoint returns before enrichment resolves. |
+| 3 | 'asyncio.create_task()' silent failures | Every 'create_task' has '.add_done_callback(lambda t: logger.error("...", t.exception()) if t.exception() else None)'. |
+| 4 | Facility JSON file data store | Postgres only. JSON files cannot support live updates, versioning, or atomic upserts. |
+| 5 | BallTree rebuilt on every request | Singleton. Rebuilt only at startup and on explicit '/admin/reload-facilities'. |
+| 6 | Geocoding cache miss on every request | TTLCache on 'geocode()'. Repeat location strings (very common in a dispatch centre) cost zero external calls. |
+| 7 | 'outcome_route_to_other_protocol' left dangling | Once target protocols exist, remove 'outcome_route_to_other_protocol' from all existing protocol files and replace with specific terminal outcomes. |
+| 8 | PHI in logs | No 'incident_desc', 'chief_complaint', 'description', or patient name in any 'logger.*' call in any service. |
+| 9 | Swahili terms absent from protocol triggers | Every high-volume protocol must have Swahili 'chief_complaint_trigger' entries. |
+| 10 | Clinical rules with no review attribution | Every 'severity_weight > 0.7' entry in 'clinical_rules.yaml' needs '# clinical_basis:' comment. Guidance notes in protocols need '# reviewed_by:' comment. |
+| 11 | Stale facility data treated as live | 'data_as_of' always in 'GET /health' and 'GET /data-currency' responses. Dispatcher UI must display it. |
+| 12 | Missing migration head check | Before writing any new migration: run 'alembic heads' to confirm single head. New migration's 'down_revision' must match current head exactly. |
+| 13 | CORS wildcard in production | 'validate_startup_config()' in every service must block 'ENVIRONMENT=production' if 'ALLOWED_ORIGINS' is unset or '*'. |
+| 14 | Admin endpoints unprotected | '_require_admin_key' FastAPI dependency applied to every '/admin/*' route in every service. |
+| 15 | ETA as a magic number | Ambulance speed is 'AMBULANCE_SPEED_KMH' from config (default 60). Not hardcoded. Documented: "urban/rural Kenya realistic average." |
+
+---
+
+## What still needs non-engineering resolution (blockers for production)
+
+- Protocol sign-off: 8 protocols need named medical director + named reviewing clinician in 'approved_by'/'approved_date'
+- Facility data source: need a current Kenya/Uganda/DRC facility dataset. KMHFL (Kenya Master Health Facility List) is the right source for Kenya. Data currency cadence must be decided.
+- UMLS API key: needed for L3 UMLS resolution in triage ranker. Without it, service runs in degraded mode (L4 fallback only) — still functional but no canonical SNOMED/ICD-10 codes on cache misses.
+- 'FACILITY_REGISTRY_BASE_URL' and 'EMERGENCY_DISPATCH_BASE_URL': once the services are running, these must be set in 'ambulance-cdss' '.env' before facility routing and unit dispatch actually work.

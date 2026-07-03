@@ -1,0 +1,60 @@
+{
+  "protocol_id": "field_cardiac_arrest_v1",
+  "version": "1.0.0",
+  "disease_or_presentation": "Cardiac arrest / unresponsive patient",
+  "steps": [
+    {
+      "step_id": "f1_scene_safety",
+      "title": "Confirm scene safety",
+      "action_type": "assessment",
+      "description": "Confirm scene is safe before approaching. Note any hazards (traffic, fire, violence) in the field log."
+    },
+    {
+      "step_id": "f2_confirm_arrest",
+      "title": "Confirm cardiac arrest",
+      "action_type": "assessment",
+      "description": "Confirm unresponsive, not breathing normally (or only agonal gasps), no pulse on a 10-second check."
+    },
+    {
+      "step_id": "f3_start_cpr",
+      "title": "Start high-quality CPR",
+      "action_type": "intervention",
+      "description": "Begin chest compressions at 100-120/min, depth 5-6cm, full recoil, minimal interruption. Attach defibrillator/monitor as soon as available.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol \u00e2\u20ac\u201d Cardiac Arrest, Section 2"
+    },
+    {
+      "step_id": "f4_rhythm_check",
+      "title": "Analyse rhythm / defibrillate if indicated",
+      "action_type": "intervention",
+      "description": "Pause compressions briefly for rhythm analysis. Defibrillate if shockable rhythm (VF/pulseless VT) per device prompts, then resume CPR immediately.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol \u00e2\u20ac\u201d Cardiac Arrest, Section 3"
+    },
+    {
+      "step_id": "f5_airway",
+      "title": "Manage airway",
+      "action_type": "intervention",
+      "description": "Establish airway per local scope of practice (OPA/supraglottic/ETT) without significantly interrupting compressions.",
+      "guideline_ref": "Kenya BLS/ACLS Field Protocol \u00e2\u20ac\u201d Airway Management"
+    },
+    {
+      "step_id": "f6_iv_access",
+      "title": "Establish IV/IO access",
+      "action_type": "intervention",
+      "description": "Establish vascular access for medication administration per local scope of practice and formulary (see Phase 0.5 \u00e2\u20ac\u201d open decision on prehospital drug list)."
+    },
+    {
+      "step_id": "f7_vitals_during_arrest",
+      "title": "Document vitals / rhythm checks",
+      "action_type": "vitals",
+      "description": "Log each rhythm check, shock delivered, and any return-of-spontaneous-circulation (ROSC) signs as they occur."
+    },
+    {
+      "step_id": "f8_disposition",
+      "title": "Determine disposition",
+      "action_type": "disposition",
+      "description": "Record outcome: ROSC achieved and transporting, continued resuscitation in transport, or resuscitation terminated per local termination-of-resuscitation criteria and medical control contact."
+    }
+  ],
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03"
+}

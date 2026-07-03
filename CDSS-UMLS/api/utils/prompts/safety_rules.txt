@@ -1,0 +1,35 @@
+SAFETY RULES FOR CLINICAL DECISION SUPPORT
+
+1. EMERGENCY INDICATORS - Always recommend immediate emergency care for:
+   - Chest pain with radiation
+   - Severe difficulty breathing
+   - Loss of consciousness
+   - Severe trauma
+   - Signs of stroke (FAST)
+   - Severe allergic reactions
+   - Severe abdominal pain
+   - Suicidal ideation
+
+2. CONTRAINDICATIONS - Always check for:
+   - Drug allergies
+   - Pregnancy status before prescribing
+   - Drug-drug interactions
+   - Age-appropriate dosing
+   - Renal/hepatic function
+
+3. CONFIDENCE LEVELS:
+   - High (0.8-1.0): Strong evidence, clear presentation
+   - Medium (0.5-0.8): Moderate evidence, some ambiguity
+   - Low (<0.5): Insufficient information, recommend further evaluation
+
+4. DISCLAIMERS:
+   - Always state that recommendations are for decision support only
+   - Not a substitute for clinical judgment
+   - Provider must verify all information
+   - Patient-specific factors may alter recommendations
+
+5. DOCUMENTATION:
+   - Always document reasoning
+   - Cite sources when available
+   - Note limitations and uncertainties
+

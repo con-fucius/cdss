@@ -1,0 +1,57 @@
+# DEPRECATED: do not use this manifest. The root ../pyproject.toml is the
+# single dependency manifest for the project. Kept only as an explicit marker
+# for older local Poetry workflows.
+
+[tool.poetry]
+name = "kenya-hiv-cdss"
+version = "0.1.0"
+description = "Streamlit RAG app for Kenya HIV Guidelines (2022)"
+authors = ["Gerald Muriuki"]
+readme = "README.md"
+packages = []
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# App
+streamlit = "^1.38.0"
+python-dotenv = "^1.0.1"
+fastapi = "^0.111.0"
+uvicorn = "^0.30.0"
+httpx = "^0.27.0"
+
+# RAG stack
+langchain = "^0.3.0"
+langchain-core = "^0.3.0"
+langchain-text-splitters = "^0.3.0"
+pydantic-ai = "^0.0.14"
+
+# Extraction & Parsing
+docling = "^2.0.0"
+pymupdf4llm = "^0.0.17"
+pdfplumber = "^0.11.0"
+pypdf = "^4.2.0"
+
+# Vector Store
+lancedb = "^0.17.0"
+
+# Embeddings & Reranking
+sentence-transformers = ">=3.0.0"
+fastembed = "^0.3.0"
+rerankers = "^0.10.0"
+tiktoken = "^0.7.0"
+pandas = "^2.2.0"
+pydantic = "^2.0.0"
+
+# Logging & Operations
+structlog = "^24.2.0"
+python-multipart = "^0.0.9"
+semantic-text-splitter = "^0.17.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.1.0"
+ruff = "^0.3.0"
+jupyter = "^1.0.0"
+nbconvert = "^7.0.0"
+ipykernel = "^6.0.0"

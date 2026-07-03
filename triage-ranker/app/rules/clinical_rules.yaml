@@ -1,0 +1,375 @@
+# Clinical rules for triage ranker — term to condition mappings
+# with severity weights.
+#
+# Each entry maps clinical terms (English + Swahili) to clinical
+# categories with severity weights. These weights drive the w_rule
+# component in the composite triage score.
+#
+# Every entry with severity_weight > 0.7 has a clinical_basis comment.
+# reviewed_by: [pending clinical review]
+#
+# Categories: RESPIRATORY, CARDIOVASCULAR, NEUROLOGICAL, TRAUMA,
+#             OBSTETRIC, PAEDIATRIC
+
+rules:
+  # ── RESPIRATORY ──────────────────────────────────────────────────────
+  - term: "not breathing"
+    synonyms: ["kushindwa kupumua", "not breathing", "stopped breathing", "anashindwa kupumua", "hawezi kupumua"]
+    category: RESPIRATORY
+    severity_weight: 0.95
+    # clinical_basis: WHO BEC Module 2 — respiratory arrest is immediately life-threatening
+    icd10_prefix: "R09"
+    snomed_hint: "209393000"
+
+  - term: "difficulty breathing"
+    synonyms: ["shortness of breath", "breathless", "dyspnea", "pumua ina shida", "anapumua kwa shida", "kushindwa kupumua"]
+    category: RESPIRATORY
+    severity_weight: 0.75
+    # clinical_basis: WHO BEC Module 2 — respiratory distress requires urgent assessment
+    icd10_prefix: "R06"
+    snomed_hint: "267036007"
+
+  - term: "choking"
+    synonyms: ["can't breathe", "object stuck", "airway obstruction", "swallowed something", "kimefulia", "kitu kimekwama"]
+    category: RESPIRATORY
+    severity_weight: 0.9
+    # clinical_basis: WHO BEC Module 2 — complete airway obstruction is immediately life-threatening
+    icd10_prefix: "T17"
+    snomed_hint: "432853005"
+
+  - term: "wheezing"
+    synonyms: ["wheeze", "whistling breathing", "asthma attack", "kiwangulizi"]
+    category: RESPIRATORY
+    severity_weight: 0.65
+    icd10_prefix: "R06"
+    snomed_hint: "56018004"
+
+  - term: "stridor"
+    synonyms: ["high-pitched breathing", "noisy breathing in"]
+    category: RESPIRATORY
+    severity_weight: 0.85
+    # clinical_basis: Stridor indicates upper airway obstruction — immediately life-threatening
+    icd10_prefix: "R06"
+    snomed_hint: "49727002"
+
+  - term: "coughing blood"
+    synonyms: ["hemoptysis", "coughing up blood", "kohoa damu"]
+    category: RESPIRATORY
+    severity_weight: 0.8
+    # clinical_basis: Hemoptysis may indicate pulmonary embolism, TB, or malignancy — requires urgent assessment
+    icd10_prefix: "R04"
+    snomed_hint: "422400008"
+
+  - term: "chest tightness"
+    synonyms: ["tight chest", "chest pressure", "kifua kinafunga"]
+    category: RESPIRATORY
+    severity_weight: 0.6
+    icd10_prefix: "R07"
+    snomed_hint: "43247002"
+
+  # ── CARDIOVASCULAR ───────────────────────────────────────────────────
+  - term: "chest pain"
+    synonyms: ["maumivu ya kifua", "kifua kinauma", "chest ache", "heart pain"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.8
+    # clinical_basis: Chest pain may indicate acute MI, PE, or aortic dissection — requires urgent assessment
+    icd10_prefix: "R07"
+    snomed_hint: "29857009"
+
+  - term: "no pulse"
+    synonyms: ["pulseless", "no heartbeat", "moyo haupigi"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.98
+    # clinical_basis: Absent pulse = cardiac arrest — immediately life-threatening
+    icd10_prefix: "I46"
+    snomed_hint: "419422000"
+
+  - term: "cardiac arrest"
+    synonyms: ["heart stopped", "collapsed", "moyo umesimama", "kuzimia"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.98
+    # clinical_basis: Cardiac arrest — the most severe emergency presentation
+    icd10_prefix: "I46"
+    snomed_hint: "419422000"
+
+  - term: "fast heart rate"
+    synonyms: ["tachycardia", "racing heart", "heart beating fast", "moyo unapiga haraka"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.6
+    icd10_prefix: "R00"
+    snomed_hint: "34486009"
+
+  - term: "slow heart rate"
+    synonyms: ["bradycardia", "heart beating slow", "moyo unapiga polepole"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.55
+    icd10_prefix: "R00"
+    snomed_hint: "40819003"
+
+  - term: "low blood pressure"
+    synonyms: ["hypotension", "feels faint", "dizzy", "light-headed", "kizunguzungu", "anakwaruka"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.7
+    # clinical_basis: Hypotension in the context of trauma or sepsis indicates circulatory compromise
+    icd10_prefix: "I95"
+    snomed_hint: "45007003"
+
+  - term: "severe bleeding"
+    synonyms: ["hemorrhage", "bleeding heavily", "kutoka damu nyingi", "damu inatoka"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.85
+    # clinical_basis: Severe haemorrhage leads to hypovolaemic shock — immediately life-threatening
+    icd10_prefix: "R58"
+    snomed_hint: "50417007"
+
+  - term: "bleeding"
+    synonyms: ["bleeding", "kutoka damu", "damu inatoka"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.5
+    icd10_prefix: "R58"
+    snomed_hint: "50417007"
+
+  # ── NEUROLOGICAL ─────────────────────────────────────────────────────
+  - term: "unconscious"
+    synonyms: ["unresponsive", "passed out", "fainted", "collapsed", "kupoteza fahamu", "hajui chochote", "amezimia"]
+    category: NEUROLOGICAL
+    severity_weight: 0.9
+    # clinical_basis: Loss of consciousness indicates severe neurological or cardiovascular compromise
+    icd10_prefix: "R40"
+    snomed_hint: "371631005"
+
+  - term: "seizure"
+    synonyms: ["convulsion", "fit", "fitting", "shaking", "degedege", "mshtuko"]
+    category: NEUROLOGICAL
+    severity_weight: 0.85
+    # clinical_basis: Seizures may indicate eclampsia, meningitis, or status epilepticus — urgent
+    icd10_prefix: "R56"
+    snomed_hint: "91176005"
+
+  - term: "stroke"
+    synonyms: ["facial droop", "slurred speech", "weak arm", "paralysis", "kipindupindu"]
+    category: NEUROLOGICAL
+    severity_weight: 0.85
+    # clinical_basis: Stroke requires time-critical intervention (thrombolysis window)
+    icd10_prefix: "I64"
+    snomed_hint: "230690007"
+
+  - term: "confused"
+    synonyms: ["disoriented", "not making sense", "anajichanganya"]
+    category: NEUROLOGICAL
+    severity_weight: 0.6
+    icd10_prefix: "R41"
+    snomed_hint: "41841003"
+
+  - term: "head injury"
+    synonyms: ["hit head", "head trauma", "head wound", "majeraha ya kichwa"]
+    category: NEUROLOGICAL
+    severity_weight: 0.75
+    # clinical_basis: Head injuries may cause intracranial haemorrhage — requires urgent assessment
+    icd10_prefix: "S09"
+    snomed_hint: "111596004"
+
+  - term: "severe headache"
+    synonyms: ["worst headache", "thunderclap headache", "kichwa kinauma sana"]
+    category: NEUROLOGICAL
+    severity_weight: 0.7
+    # clinical_basis: Thunderclap headache may indicate subarachnoid haemorrhage
+    icd10_prefix: "R51"
+    snomed_hint: "25064002"
+
+  - term: "dizziness"
+    synonyms: ["vertigo", "lightheaded", "kizunguzungu", "anakwaruka"]
+    category: NEUROLOGICAL
+    severity_weight: 0.4
+    icd10_prefix: "R42"
+    snomed_hint: "404640003"
+
+  # ── TRAUMA ───────────────────────────────────────────────────────────
+  - term: "gunshot wound"
+    synonyms: ["shot", "bullet wound", "gunshot", "penetrating injury"]
+    category: TRAUMA
+    severity_weight: 0.95
+    # clinical_basis: Penetrating ballistic trauma — immediately life-threatening
+    icd10_prefix: "S39"
+    snomed_hint: "281700007"
+
+  - term: "stab wound"
+    synonyms: ["stabbed", "knife wound", "penetrating wound"]
+    category: TRAUMA
+    severity_weight: 0.85
+    # clinical_basis: Penetrating trauma — high risk of haemorrhage and organ injury
+    icd10_prefix: "S31"
+    snomed_hint: "443177001"
+
+  - term: "road traffic accident"
+    synonyms: ["car accident", "mva", "collision", "crash", "accident ya gari", "gari imegonga", "boda boda accident"]
+    category: TRAUMA
+    severity_weight: 0.75
+    # clinical_basis: MVA may cause multi-system trauma — mechanism-based triage
+    icd10_prefix: "V89"
+    snomed_hint: "418839004"
+
+  - term: "fall"
+    synonyms: ["fell", "fallen", "fell down", "alianguka"]
+    category: TRAUMA
+    severity_weight: 0.5
+    icd10_prefix: "W19"
+    snomed_hint: "404640003"
+
+  - term: "burn"
+    synonyms: ["burned", "on fire", "scalded", "alijichoma"]
+    category: TRAUMA
+    severity_weight: 0.7
+    # clinical_basis: Burns require assessment for airway, circulation, and extent
+    icd10_prefix: "T30"
+    snomed_hint: "424725008"
+
+  - term: "fracture"
+    synonyms: ["broken bone", "bone fracture", "mifupa imevunjika"]
+    category: TRAUMA
+    severity_weight: 0.5
+    icd10_prefix: "T14"
+    snomed_hint: "52810007"
+
+  - term: "crush injury"
+    synonyms: ["crushed", "trapped", "pinned"]
+    category: TRAUMA
+    severity_weight: 0.85
+    # clinical_basis: Crush injury risks rhabdomyolysis and compartment syndrome
+    icd10_prefix: "T79"
+    snomed_hint: "50417007"
+
+  # ── OBSTETRIC ────────────────────────────────────────────────────────
+  - term: "bleeding in pregnancy"
+    synonyms: ["vaginal bleeding", "antepartum haemorrhage", "damu katika ujauzito"]
+    category: OBSTETRIC
+    severity_weight: 0.85
+    # clinical_basis: Antepartum haemorrhage may indicate placenta praevia or abruption — immediately life-threatening
+    icd10_prefix: "O46"
+    snomed_hint: "111448003"
+
+  - term: "seizure in pregnancy"
+    synonyms: ["eclampsia", "convulsion in pregnancy", "degedege wakati wa ujauzito"]
+    category: OBSTETRIC
+    severity_weight: 0.95
+    # clinical_basis: Seizures after 20 weeks = eclampsia until proven otherwise — maternal mortality risk
+    icd10_prefix: "O15"
+    snomed_hint: "398254005"
+
+  - term: "cord prolapse"
+    synonyms: ["umbilical cord", "cord visible", "kitovu kimetoka"]
+    category: OBSTETRIC
+    severity_weight: 0.95
+    # clinical_basis: Cord prolapse threatens fetal blood supply — emergency
+    icd10_prefix: "O69"
+    snomed_hint: "71808007"
+
+  - term: "in labour"
+    synonyms: ["contractions", "giving birth", "water broke", "kujifungua"]
+    category: OBSTETRIC
+    severity_weight: 0.5
+    icd10_prefix: "O80"
+    snomed_hint: "236973001"
+
+  # ── PAEDIATRIC ───────────────────────────────────────────────────────
+  - term: "child not breathing"
+    synonyms: ["baby not breathing", "infant apnoea", "mtoto anashindwa kupumua"]
+    category: PAEDIATRIC
+    severity_weight: 0.95
+    # clinical_basis: Paediatric respiratory arrest — immediately life-threatening
+    icd10_prefix: "R09"
+    snomed_hint: "432853005"
+
+  - term: "child fast breathing"
+    synonyms: ["child breathing fast", "infant tachypnoea", "mtoto anapumua haraka"]
+    category: PAEDIATRIC
+    severity_weight: 0.65
+    icd10_prefix: "R06"
+    snomed_hint: "267036007"
+
+  - term: "high fever child"
+    synonyms: ["fever child", "child febrile", "joto mtoto"]
+    category: PAEDIATRIC
+    severity_weight: 0.55
+    icd10_prefix: "R50"
+    snomed_hint: "386661006"
+
+  - term: "child seizure"
+    synonyms: ["febrile seizure", "child fitting", "mtoto anavutavuta"]
+    category: PAEDIATRIC
+    severity_weight: 0.8
+    # clinical_basis: Paediatric seizures — may indicate meningitis or febrile convulsion
+    icd10_prefix: "R56"
+    snomed_hint: "91176005"
+
+  # ── ADDITIONAL TERMS ─────────────────────────────────────────────────
+  - term: "allergic reaction"
+    synonyms: ["anaphylaxis", "swollen throat", "rash", "allergy"]
+    category: RESPIRATORY
+    severity_weight: 0.8
+    # clinical_basis: Anaphylaxis is immediately life-threatening — airway compromise risk
+    icd10_prefix: "T78"
+    snomed_hint: "39579001"
+
+  - term: "poisoning"
+    synonyms: ["overdose", "ingested poison", "swallowed poison", "sumu"]
+    category: NEUROLOGICAL
+    severity_weight: 0.8
+    # clinical_basis: Poisoning may cause respiratory or cardiac compromise
+    icd10_prefix: "T60"
+    snomed_hint: "65710008"
+
+  - term: "drowning"
+    synonyms: ["near drowning", "submerged", "imeamua maji"]
+    category: RESPIRATORY
+    severity_weight: 0.9
+    # clinical_basis: Submersion injury causes hypoxia — immediately life-threatening
+    icd10_prefix: "T75"
+    snomed_hint: "419422000"
+
+  - term: "electric shock"
+    synonyms: ["electrocution", "shocked", "umeme"]
+    category: TRAUMA
+    severity_weight: 0.8
+    # clinical_basis: Electrical injury may cause cardiac arrhythmia and burns
+    icd10_prefix: "T75"
+    snomed_hint: "50417007"
+
+  - term: "hypothermia"
+    synonyms: ["cold", "shivering", "baridi", "anatetemeka"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.7
+    # clinical_basis: Severe hypothermia may cause cardiac arrhythmia
+    icd10_prefix: "T68"
+    snomed_hint: "240623003"
+
+  - term: "heat stroke"
+    synonyms: ["overheated", "hot", "joto kali"]
+    category: CARDIOVASCULAR
+    severity_weight: 0.8
+    # clinical_basis: Heat stroke causes organ damage — requires rapid cooling
+    icd10_prefix: "T67"
+    snomed_hint: "240623003"
+
+  # ── SEVERITY MODIFIERS (matched as modifiers, not primary terms) ─────
+  # These are not standalone terms but modify the severity of matched terms.
+  modifiers:
+    - term: "severe"
+      equivalents: ["mkali", "extreme", "terrible", "awful"]
+      modifier_class: SEVERITY_SEVERE
+      weight_delta: 0.15
+
+    - term: "critical"
+      equivalents: ["hatari", "life-threatening", "dying"]
+      modifier_class: SEVERITY_CRITICAL
+      weight_delta: 0.25
+
+    - term: "acute"
+      equivalents: ["sudden", "udden onset", "ghafla"]
+      modifier_class: ACTIVE
+      weight_delta: 0.1
+
+    - term: "chronic"
+      equivalents: ["long-standing", "ongoing", "old"]
+      modifier_class: HISTORICAL
+      weight_delta: -0.2

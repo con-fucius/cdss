@@ -1,0 +1,104 @@
+{
+  "protocol_id": "unresponsive_breathing_v1",
+  "version": "1.0.0",
+  "locked": true,
+  "approved_by": "Dev Setup",
+  "approved_date": "2026-07-03",
+  "chief_complaint_trigger": [
+    "unresponsive",
+    "not responding",
+    "unconscious",
+    "passed out",
+    "found on floor",
+    "collapsed",
+    "kupoteza fahamu",
+    "hajui chochote"
+  ],
+  "entry_question_id": "q1_breathing",
+  "questions": {
+    "q1_breathing": {
+      "text": "Is the patient breathing normally? Look and listen for chest movement and listen for breath sounds for at least 5-10 seconds.",
+      "answer_type": "select",
+      "options": [
+        "normal",
+        "abnormal_or_gasping",
+        "not_breathing",
+        "unsure"
+      ],
+      "branch_map": {
+        "normal": "q2_bystander_airway",
+        "abnormal_or_gasping": "outcome_p1_airway_compromise",
+        "not_breathing": "q_alt_not_breathing",
+        "unsure": "q2_bystander_airway"
+      }
+    },
+    "q_alt_not_breathing": {
+      "text": "Patient is unresponsive and not breathing. This routes to the cardiac arrest protocol \u00e2\u20ac\u201d no breathing in an unresponsive patient is a resuscitation situation.",
+      "answer_type": "yes_no",
+      "is_terminal": true,
+      "branch_map": {
+        "acknowledged": "outcome_route_to_cardiac_arrest"
+      }
+    },
+    "q2_bystander_airway": {
+      "text": "Is there someone at the scene who can maintain the patient's airway position \u00e2\u20ac\u201d for example by tilting the head back or placing the patient on their side \u00e2\u20ac\u201d and keep monitoring their breathing?",
+      "answer_type": "yes_no",
+      "allow_guidance_lookup": true,
+      "guidance_note": "Recovery position (lateral recumbent): roll the patient onto their side, tilt the head back to keep the airway open, and ensure vomit can drain. Place the patient with the downside leg bent forward for stability.",
+      "branch_map": {
+        "yes": "q3_consciousness_change",
+        "no": "outcome_p1_airway_no_bystander"
+      }
+    },
+    "q3_consciousness_change": {
+      "text": "Has the patient shown any change \u00e2\u20ac\u201d movement, groaning, opening eyes \u00e2\u20ac\u201d since you started watching?",
+      "answer_type": "yes_no",
+      "branch_map": {
+        "yes": "outcome_p2_recovery_position",
+        "no": "outcome_p2_recovery_position"
+      }
+    }
+  },
+  "terminal_outcomes": {
+    "outcome_p2_recovery_position": {
+      "priority_code": "P2_UNCONSCIOUS_BREATHING",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "Carefully roll the patient onto their side \u00e2\u20ac\u201d this is called the recovery position.",
+        "Tilt the head back gently to keep the airway open.",
+        "Make sure vomit or fluids can drain from the mouth.",
+        "Keep monitoring their breathing \u00e2\u20ac\u201d watch for chest movement and listen for breath.",
+        "If they stop breathing at any point, tell me immediately \u00e2\u20ac\u201d the instructions will change."
+      ]
+    },
+    "outcome_p1_airway_compromise": {
+      "priority_code": "P1_AIRWAY_COMPROMISE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "If you are trained to do so, open the airway using a head-tilt chin-lift manoeuvre.",
+        "The breathing is abnormal \u00e2\u20ac\u201d this is serious. Help is on the way.",
+        "If the patient stops breathing or becomes completely still, tell me immediately."
+      ]
+    },
+    "outcome_p1_airway_no_bystander": {
+      "priority_code": "P1_AIRWAY_COMPROMISE",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "Stay on the line with me.",
+        "If you are able to safely approach the patient, try to place them on their side in the recovery position.",
+        "If you cannot reach them safely, stay on the line and tell me what you can see.",
+        "Watch for any change \u00e2\u20ac\u201d if they stop breathing or become completely still, tell me immediately."
+      ]
+    },
+    "outcome_route_to_cardiac_arrest": {
+      "priority_code": "P1_CARDIAC_ARREST",
+      "recommended_unit_type": "ALS_AMBULANCE",
+      "pre_arrival_instructions": [
+        "This patient is unresponsive and not breathing \u00e2\u20ac\u201d this is a cardiac arrest situation.",
+        "Follow the cardiac arrest protocol instructions being provided."
+      ]
+    }
+  }
+}

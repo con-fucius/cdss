@@ -1,0 +1,7 @@
+node_modules
+dist
+.vite
+*.log
+*.out
+*.err
+_tmp_*

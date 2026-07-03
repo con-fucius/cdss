@@ -1,0 +1,50 @@
+[project]
+name = "triage-ranker"
+version = "0.1.0"
+description = "NLP clinical enrichment service for the ambulance CDSS"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "python-dotenv>=1.0.0",
+    "structlog>=24.1.0",
+    "spacy>=3.8.0",
+    "cachetools>=5.3.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0.0",
+    "ambulance-cdss-contracts",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.5.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.uv.sources]
+ambulance-cdss-contracts = { path = "../shared", editable = true }

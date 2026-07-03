@@ -1,0 +1,5 @@
+[theme]
+font = "Kumbh Sans:https://fonts.googleapis.com/css2?family=Kumbh+Sans:wght@400;500;600;700&display=swap"
+baseFontSize = 14
+baseFontWeight = 500
+headingFontWeights = 600

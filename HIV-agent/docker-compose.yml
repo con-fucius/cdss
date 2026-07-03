@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres@sha256:60b180625695e90b6e450405d5f0bcb74bc8c52c65d1cd11aeb3da46cac06dd8
+    environment:
+      POSTGRES_DB: cdss
+      POSTGRES_USER: cdss
+      POSTGRES_PASSWORD: cdss
+    ports:
+      - "5432:5432"
+    volumes:
+      - cdss_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdss -d cdss"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: hiv-agent-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cdss:cdss@postgres:5432/cdss
+      LANCEDB_PATH: /app/app/lancedb
+      RERANK_STRATEGY: none
+    command: ["sh", "-c", "python -m app.migrations && python -m scripts.seed_evidence"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app/lancedb:/app/app/lancedb
+      - cdss_hf_cache:/root/.cache/huggingface
+    restart: "no"
+
+  backend:
+    image: hiv-agent-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cdss:cdss@postgres:5432/cdss
+      LANCEDB_PATH: /app/app/lancedb
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000
+      RERANK_STRATEGY: none
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./app/lancedb:/app/app/lancedb
+      - cdss_hf_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()\""]
+      interval: 15s
+      timeout: 20s
+      retries: 10
+      start_period: 8m
+
+  frontend:
+    image: hiv-agent-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  cdss_postgres_data:
+  cdss_hf_cache:

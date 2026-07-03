@@ -1,0 +1,681 @@
+/* Ambulance CDSS Dispatcher Console
+   Deliberately plain: a working call-taker's console, not a marketing
+   surface. High contrast, large touch targets, no animation that could
+   delay perception of a state change during a live emergency call. */
+
+:root {
+  --bg: #0c0f12;
+  --bg-panel: #14181d;
+  --bg-card: #1a1f26;
+  --border: #2a313a;
+  --text: #e8edf2;
+  --text-dim: #8b96a3;
+  --accent: #2f7de1;
+  --accent-hover: #4a8eea;
+  --danger: #d3402f;
+  --danger-bg: #2a1714;
+  --warning: #d98920;
+  --warning-bg: #2a2114;
+  --success: #2fa86a;
+  --guidance: #9b6fd6;
+  --guidance-bg: #221a2c;
+  --radius: 6px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hidden { display: none !important; }
+
+/* ── Phase 5.1: Offline detection banner ───────────────────────── */
+
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--warning);
+  color: #1a1400;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.offline-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.offline-banner__text {
+  flex: 1;
+}
+
+.offline-banner__queue {
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Shift header down when offline banner is visible */
+body.offline .app-header {
+  margin-top: 48px;
+}
+
+/* ── Phase 5.6: Keyboard focus styles ──────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header__title {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.app-header__status {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.app-header__status.ok { color: var(--success); border-color: var(--success); }
+.app-header__status.degraded { color: var(--warning); border-color: var(--warning); }
+.app-header__status.error { color: var(--danger); border-color: var(--danger); }
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+
+.app-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+}
+
+.screen h1 {
+  font-size: 20px;
+  margin: 0 0 18px;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────── */
+
+form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+
+label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.required { color: var(--danger); }
+
+input[type="text"], input[type="number"] {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: var(--font);
+}
+
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: var(--font);
+}
+
+select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+button {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 18px;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--accent); }
+
+.btn-tertiary {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  margin-top: 18px;
+}
+
+/* ── Banners ─────────────────────────────────────────────────────── */
+
+.error-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: #f4a89e;
+  font-size: 13px;
+}
+
+.warning-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  color: #f0c98a;
+  font-size: 13px;
+}
+
+.info-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--guidance-bg);
+  border: 1px solid var(--guidance);
+  color: #c9b0e8;
+  font-size: 13px;
+}
+
+.incident-banner {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  font-family: ui-monospace, monospace;
+}
+
+/* ── Script layout ───────────────────────────────────────────────── */
+
+.script-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 24px;
+  align-items: start;
+}
+
+.script-sidebar h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
+.transcript {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 13px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.transcript-entry {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.transcript-entry:last-child { border-bottom: none; }
+
+.transcript-entry__q { color: var(--text-dim); margin-bottom: 2px; }
+.transcript-entry__a { font-weight: 600; }
+.transcript-entry__a.backtrack { color: var(--warning); }
+
+/* ── Question card ───────────────────────────────────────────────── */
+
+.question-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+
+/* Phase 5.2: Submitting state — subtle opacity change, no spinner */
+.question-card.submitting {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.question-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#question-id-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+}
+
+.guidance-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--guidance);
+  background: var(--guidance-bg);
+  border: 1px solid var(--guidance);
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.question-text {
+  font-size: 19px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.answer-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 14px 20px;
+  font-size: 15px;
+  border-radius: var(--radius);
+  min-width: 110px;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+.answer-btn:hover { border-color: var(--accent); background: #1f2731; }
+.answer-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.answer-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Mode 2 guidance — deliberately distinct colour family (purple) from
+   everything else in the UI (blue=primary, red=danger, amber=warning)
+   so it can never be visually confused with a Mode 1 script element,
+   per docs/GOVERNANCE.md "visually distinct in the dispatcher UI". */
+.guidance-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--guidance-bg);
+  border: 1px solid var(--guidance);
+}
+
+.guidance-panel__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--guidance);
+  margin-bottom: 8px;
+}
+
+.guidance-panel__text {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.guidance-panel__footer {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Phase 5.5: Triage enrichment card ──────────────────────────── */
+
+.triage-enrichment-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 16px;
+}
+
+.triage-enrichment-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.triage-enrichment-toggle:hover {
+  background: var(--bg-card);
+}
+
+.triage-enrichment-toggle__icon {
+  color: var(--text-dim);
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+
+.triage-enrichment-body {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.triage-enrichment-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.triage-enrichment-label {
+  color: var(--text-dim);
+  min-width: 100px;
+}
+
+.triage-enrichment-value {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Phase 5.5: Triage level badges with color coding */
+.triage-level-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.triage-level-p1 {
+  background: var(--danger);
+  color: #fff;
+}
+
+.triage-level-p2 {
+  background: var(--warning);
+  color: #1a1400;
+}
+
+.triage-level-p3 {
+  background: var(--accent);
+  color: #fff;
+}
+
+.triage-level-p4 {
+  background: var(--success);
+  color: #fff;
+}
+
+/* ── Phase 5.4: Pre-arrival timer ───────────────────────────────── */
+
+.terminal-timer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.terminal-timer__label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.terminal-timer__display {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  color: var(--warning);
+  letter-spacing: 1px;
+}
+
+/* ── Phase 5.3: Manual protocol selector ────────────────────────── */
+
+.manual-protocol-selector {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.manual-protocol-selector label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.manual-protocol-selector select {
+  min-width: 200px;
+}
+
+/* ── Terminal outcome ────────────────────────────────────────────── */
+
+.terminal-card {
+  background: var(--bg-panel);
+  border: 2px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.terminal-card.priority-low { border-color: var(--success); }
+.terminal-card.priority-medium { border-color: var(--warning); }
+
+.terminal-priority {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.terminal-unit {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  margin-bottom: 18px;
+}
+
+.terminal-instructions-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.terminal-instructions {
+  margin: 0 0 22px;
+  padding-left: 22px;
+}
+.terminal-instructions li {
+  margin-bottom: 10px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.action-result {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.action-result.success { color: var(--success); }
+.action-result.error { color: var(--danger); }
+
+.facility-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.facility-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── Handoff delivery card ───────────────────────────────────── */
+
+.handoff-delivery-card {
+  margin-top: 20px;
+  padding: 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.handoff-delivery-card h3 {
+  font-size: 15px;
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.handoff-delivery-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.handoff-delivery-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.handoff-link-display {
+  margin-top: 12px;
+}
+
+.handoff-link-display label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.handoff-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.handoff-link-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+}
+
+.handoff-link-expiry {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+/* ── Field URL card ──────────────────────────────────────────── */
+
+.field-url-card {
+  margin-top: 16px;
+  padding: 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.field-url-card h3 {
+  font-size: 15px;
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.field-url-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
