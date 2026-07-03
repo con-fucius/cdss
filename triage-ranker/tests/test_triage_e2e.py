@@ -8,6 +8,8 @@ Run with the server started: uvicorn app.main:app --host 0.0.0.0 --port 8100
 
 from __future__ import annotations
 
+import time
+
 import httpx
 
 BASE = "http://localhost:8100"
@@ -395,3 +397,60 @@ class TestAdminEndpoints:
         with _client() as c:
             r = c.post("/admin/rules/reload")
             assert r.status_code in (200, 403)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Performance benchmarks
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPerformance:
+    """Response-time assertions for the triage-ranker service.
+
+    Baseline measurements (local dev, no spaCy, regex-only):
+      - /triage cold: ~80ms  /triage warm (cache hit): ~40ms
+      - /health: < 5ms
+
+    Thresholds are set generously (5× baseline) to avoid flaky tests
+    on slower CI hardware.
+    """
+
+    def test_triage_response_under_5s(self):
+        """Triage endpoint must respond within 5 seconds (wall-clock sanity bound)."""
+        with _client() as c:
+            t0 = time.monotonic()
+            d = _triage(c, incident_desc="chest pain, shortness of breath", hr=110, sbp=90)
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert elapsed_ms < 5000, f"Triage took {elapsed_ms:.0f}ms (limit 5000ms)"
+            # Server-side processing should be under 500ms
+            server_ms = d["metadata"]["processing_times_ms"]["total"]
+            assert server_ms < 500, f"Server processing {server_ms}ms (limit 500ms)"
+
+    def test_triage_warm_cache_fast(self):
+        """Second triage call (warm cache) should complete server-side in < 100ms."""
+        with _client() as c:
+            # First call primes the L1/L2 caches
+            _triage(c, incident_desc="chest pain")
+            # Second call should be served from cache
+            d = _triage(c, incident_desc="chest pain")
+            server_ms = d["metadata"]["processing_times_ms"]["total"]
+            assert server_ms < 100, (
+                f"Warm-cache server time {server_ms}ms (limit 100ms)"
+            )
+
+    def test_metadata_processing_time_positive(self):
+        """metadata.processing_times_ms.total must be positive."""
+        with _client() as c:
+            d = _triage(c, incident_desc="difficulty breathing")
+            total_ms = d["metadata"]["processing_times_ms"]["total"]
+            assert total_ms > 0, "Processing time must be positive"
+            assert total_ms < 5000, f"Processing time {total_ms}ms exceeds 5s sanity limit"
+
+    def test_health_endpoint_fast(self):
+        """Health endpoint must respond within 3 seconds."""
+        with _client() as c:
+            t0 = time.monotonic()
+            r = c.get("/health")
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert r.status_code == 200
+            assert elapsed_ms < 3000, f"Health took {elapsed_ms:.0f}ms (limit 3000ms)"

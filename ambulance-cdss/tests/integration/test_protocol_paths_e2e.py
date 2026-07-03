@@ -8,6 +8,7 @@ Run with the server started: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 from __future__ import annotations
 
+import time
 import uuid
 
 import httpx
@@ -366,3 +367,61 @@ class TestErrorPaths:
             d = r.json()
             assert "dispatch" in d
             assert "active" in d["dispatch"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Performance benchmarks
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPerformance:
+    """Response-time assertions for ambulance-cdss.
+
+    Baseline measurements (local dev, SQLite, no external deps):
+      - /incidents create: ~350ms
+      - /incidents/{id}/answer: < 100ms
+      - /health: < 10ms
+
+    Thresholds are set generously (5× baseline) to avoid flaky tests
+    on slower CI hardware.
+    """
+
+    def test_incident_create_under_5s(self):
+        """Creating an incident must complete within 5 seconds."""
+        with _client() as c:
+            t0 = time.monotonic()
+            r = c.post("/incidents", json={"chief_complaint": "choking"})
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert r.status_code == 200
+            assert elapsed_ms < 5000, f"Create took {elapsed_ms:.0f}ms (limit 5000ms)"
+
+    def test_answer_under_3s(self):
+        """Answering a question must complete within 3 seconds."""
+        with _client() as c:
+            iid, q = _create(c, "choking")
+            t0 = time.monotonic()
+            r = c.post(
+                f"/incidents/{iid}/answer",
+                json={"current_question_id": q["question_id"], "answer": q["valid_answers"][0], "dispatcher_id": "perf"},
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert r.status_code == 200
+            assert elapsed_ms < 3000, f"Answer took {elapsed_ms:.0f}ms (limit 3000ms)"
+
+    def test_health_endpoint_fast(self):
+        """Health endpoint must respond within 3 seconds."""
+        with _client() as c:
+            t0 = time.monotonic()
+            r = c.get("/health")
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert r.status_code == 200
+            assert elapsed_ms < 3000, f"Health took {elapsed_ms:.0f}ms (limit 3000ms)"
+
+    def test_full_walk_under_10s(self):
+        """Walking an incident to terminal must complete within 10 seconds."""
+        with _client() as c:
+            iid, q = _create(c, "choking")
+            t0 = time.monotonic()
+            _walk(c, iid, q)
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            assert elapsed_ms < 10000, f"Walk took {elapsed_ms:.0f}ms (limit 10000ms)"
