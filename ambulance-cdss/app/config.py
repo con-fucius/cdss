@@ -114,6 +114,22 @@ def get_admin_api_key() -> str:
     return os.getenv("ADMIN_API_KEY", "").strip()
 
 
+def get_field_ui_base_url() -> str:
+    """Base URL for the field UI that paramedics open on their devices.
+    Replaces the hardcoded http://localhost:8081 in dispatch_unit().
+    Must not be localhost in production.
+    """
+    return os.getenv("FIELD_UI_BASE_URL", "http://localhost:5501").strip()
+
+
+def get_handoff_base_url() -> str:
+    """Base URL for the receiving hospital handoff page.
+    Replaces the hardcoded http://localhost:8000 in get_handoff_link().
+    Must not be localhost in production.
+    """
+    return os.getenv("HANDOFF_BASE_URL", "http://localhost:8000").strip()
+
+
 def get_allowed_origins() -> list[str]:
     """Comma-separated list of allowed CORS origins.
     Defaults to ['*'] when not set (development only).
@@ -163,4 +179,14 @@ def validate_startup_config() -> None:
             raise RuntimeError(
                 "ALLOWED_ORIGINS must be set to specific origins (not '*') "
                 "before running in production."
+            )
+        if "localhost" in get_field_ui_base_url():
+            raise RuntimeError(
+                "FIELD_UI_BASE_URL must not contain localhost before running "
+                "in production. See docs/OPERATIONAL MATURITY.txt item 7.1."
+            )
+        if "localhost" in get_handoff_base_url():
+            raise RuntimeError(
+                "HANDOFF_BASE_URL must not contain localhost before running "
+                "in production. See docs/OPERATIONAL MATURITY.txt item 7.5."
             )

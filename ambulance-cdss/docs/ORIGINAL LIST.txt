@@ -1,0 +1,33 @@
+Original List
+
+1. The "Listener": Real-Time Audio Transcription & Smart Extraction (Dispatch)
+The dispatcher's hands should be free to manage the system, not play stenographer.
+Audio Ingestion: Implement a streaming audio listener (using the Web Speech API or a service like Deepgram/AWS Transcribe) directly into the  dispatcher-ui . This captures the caller's raw audio in real-time.
+NLP Entity Extraction: Pipe the transcript stream into a robust NLP engine (upgrading the existing  Triage Ranker  to use MedSpacy, spaCy, or a localized LLM).
+Auto-Population: The NLP engine must actively listen for and extract:
+    Location: Auto-resolves addresses and drops a pin on the map.
+    Chief Complaint: Auto-suggests the correct locked protocol based on keywords.
+    Protocol Answers: If the caller screams "He's turning blue and not breathing!", the system should detect this and pre-highlight/suggest "No" for the breathing question on the locked script, drastically reducing cognitive load.
+
+2. Live Spatial Mapping (Dispatch & Field)
+Static number inputs for latitude/longitude are completely unacceptable.
+Interactive Map (Dispatch): Integrate Leaflet.js or Mapbox GL into the  dispatcher-ui . The map must be live, zoomable, and support clicking to drop a pin.
+Geocoding & Reverse Geocoding: Typing an address must instantly pan the map and drop a pin. Clicking the map must reverse-geocode into a human-readable street address for the transcript.
+E911 / AML Integration: The system needs a webhook to accept Advanced Mobile Location (AML) or E911 data to automatically lock onto the caller's cell phone GPS coordinates the moment the call connects.
+
+3. Field Console Overhaul (The Paramedic Experience)
+Paramedics are wearing gloves, dealing with chaos, and riding in a vibrating box. The current HTML forms (dropdowns for vitals and meds) will fail.
+Voice-Assisted Logging: Integrate speech-to-text so paramedics can log actions hands-free (e.g., "System, log BP 120 over 80, pulse 110" or "Administered 1mg Epinephrine").
+One-Tap Quick Actions: Replace the vitals and medications  <select>  forms with large, high-contrast, fat-finger-friendly buttons for the most common emergency interventions (e.g., a massive red "Epi Given" button, a "Shock Delivered" button).
+True Offline-First Architecture: The current "offline banner" isn't enough. The  field-ui  must be wrapped as a Progressive Web App (PWA) with Service Workers and IndexedDB. It must cache map tiles and protocol trees so the UI remains 100% functional in dead zones, queuing all logs to sync automatically when service returns.
+Turn-by-Turn Navigation: The UI needs to actively route the driver to the incident pin and then to the receiving facility, compensating for traffic.
+
+4. ER Dashboard & Live Tracking (Receiving UI)
+The current  receiving-ui  is just a static handoff document that asks the user to print it. The ER needs a live tactical view.
+Live WebSockets / SSE: The backend must stream incident updates via WebSockets or Server-Sent Events.
+Live Ambulance Tracking: The ER screen should show a live map with the ambulance's GPS blip and a continuously updating ETA countdown.
+Streaming Vitals: As the paramedic logs vitals in the field, they must appear instantly on the ER's screen as a live trending graph, not a static block of text. The trauma team needs to see a patient's BP crashing before they arrive at the bay.
+
+5. Legal & Audit Resilience (Backend)
+Raw Audio & Transcript Persistence: If a dispatcher is ever deposed in court over a fatal outcome, the system must produce not just the Q&A log, but the immutable raw audio transcript proving why a specific script branch was taken.
+Event Sourcing UI: Every interaction (clicking the map, overriding an NLP suggestion, losing network connection) needs to be appended to the incident log with a precise timestamp.

@@ -1,0 +1,521 @@
+Ambulance CDSS — Operational Maturity Implementation Plan
+
+## Architecture Additions to the Original List
+
+Additions:
+   A: Dispatch protocol governance pipeline — the "approved_by: Dev Setup" values must be replaced with a real sign-off UI/workflow before any protocol can be considered production-
+  authorised. This is the most critical correctness gap.
+   B: Manual protocol application is a stub — the "Apply protocol" button in dispatcher-ui does nothing. This is a live dead code path.
+   C: Field-ui never pings unit location — the backend model exists, the endpoint exists, the field-ui never calls it. Zero GPS data flows in normal use.
+   D: Triage enrichment is not live — it's a background task but the UI never re-polls to show the result. A dispatcher who doesn't answer a question will never see it.
+   E: Dashboard UI does not exist — no fleet/supervisor view at all.
+   F: Field protocols are critically thin — 1 field protocol for 8 dispatch conditions. A paramedic attending a trauma, obstetric, or paediatric call has no checklist.
+   G: PII purge job is wired to nothing —  purge_expired_incidents()  exists but no scheduler calls it.
+   H: Handoff URL base is hardcoded to localhost — every production handoff link is broken.
+   I: Audio transcription persistence — raw transcript should attach to the incident log for medico-legal chain.
+   J: Authentication — no login, no session. Any browser opening the URL becomes a dispatcher. Dispatcher IDs are self-reported freeform text.
+
+Removed from original list:
+   Turn-by-turn navigation — out of scope for a CDSS. Surface the destination coordinate; let the device's native maps app take it from there.
+   "AML/E911 integration as a first-party build" — replaced with: expose a well-documented webhook endpoint that an E911 system can POST to. We define the API surface, not the telecom
+  stack.
+
+
+  ──────
+  ## The Full Plan
+  ──────
+  ### EPIC 1 — Listener: Real-Time Audio Capture & NLP Extraction (Dispatcher)
+  Goal: Free the dispatcher's hands. The system must hear the caller, extract entities, and pre-populate the protocol — not wait for the dispatcher to type.
+
+  #### 1.1 — Streaming Audio Capture in Dispatcher UI
+
+  Tasks:
+   Add a "Start listening" toggle button to the intake form in  dispatcher-ui/index.html
+   Implement  Web Speech API  ( SpeechRecognition ) with interim and final result callbacks in  dispatcher-ui/app.js
+   Implement graceful degradation: if browser does not support  SpeechRecognition , show a warning and fall back to manual entry — never block
+   Mute the microphone when the dispatcher is speaking (push-to-listen or VAD threshold)
+
+   Display a live rolling transcript panel (distinct from the Q&A transcript sidebar) in the intake screen during active listening
+   Add a "Stop listening / manual mode" toggle
+  Acceptance Criteria:
+   Browser microphone activates on button click; permission prompt shown once
+   Rolling transcript updates in near-real-time (< 500ms lag)
+   Microphone icon shows active/inactive state visually
+   If  SpeechRecognition  unsupported (Firefox without flag): clear "Manual entry only" notice appears; all other UI functional
+
+  Constraints/Pitfalls:
+
+    SpeechRecognition  is Chrome-only without polyfill — document this constraint for deployment; target browser must be Chrome or Edge
+   No audio leaves the browser without explicit consent and transport encryption
+   Interim results are noisy — only final results trigger entity extraction
+   Background noise in a call centre is real — do not auto-submit anything; only suggest
+  ──────
+  #### 1.2 — NLP Entity Extraction (Backend)
+
+  Tasks:
+
+   Add  POST /triage/extract-entities  endpoint to  app/main.py
+   Implement  app/external/nlp_extractor.py  as a new client (mirrors  triage_ranker.py  pattern — degrades gracefully to  None  if unconfigured)
+   Entity types to extract: location (street address, landmark, area name), chief complaint (condition keywords), vitals (BP, HR, RR mentioned verbally), patient descriptors (age,
+  gender, consciousness level)
+   If  TRIAGE_RANKER_BASE_URL  is configured, pipe the transcript to the existing triage ranker first; add entity extraction as a second pass
+   Add a  degraded_mode  path using local regex rules as fallback (no external service required): patterns for common Kenyan address formats, named landmarks, cardinal directions
+   Return structured JSON:  { location_text, lat, lon, chief_complaint_suggestion, vitals, confidence }
+
+  New Backend Route:
+
+    POST /triage/extract-entities
+    Body: { transcript: str, incident_id?: str }
+    Response: { location_text, lat, lon, chief_complaint_suggestion, vitals: {...}, confidence: float, degraded_mode: bool }
+
+  Acceptance Criteria:
+   "Patient collapsed near Kenyatta Hospital, not breathing" → extracts  chief_complaint_suggestion: "cardiac arrest" ,  location_text: "Kenyatta Hospital"
+   "chest pain, bp 180 over 90" → extracts vitals BP systolic=180 diastolic=90
+   Endpoint returns within 2 seconds in degraded (local regex) mode
+   Any failure returns  degraded_mode: true  with best-effort partial results — never a 500
+  Pitfalls:
+   Do not auto-apply extracted data — always surface as a suggestion with a confidence badge; human confirms
+   Ambiguous location text (e.g. "near the school") must not be geocoded without confirmation
+   Never write extracted data to the incident without dispatcher explicit confirmation click
+  ──────
+  #### 1.3 — Auto-Suggestion UI Integration (Dispatcher)
+
+  Tasks:
+   Wire the  SpeechRecognition  final result to call  POST /triage/extract-entities
+   Render suggestion cards below the chief complaint input: "We heard: cardiac arrest — apply?" with Accept / Dismiss buttons
+   Render suggestion cards for location: "Location heard: Kenyatta Hospital — pin on map?" with map integration (Epic 2)
+   Render extracted vitals as a read-only overlay on the field-ui vitals form (pre-fill candidates)
+   Protocol auto-suggest: if  chief_complaint_suggestion  matches an active protocol trigger, highlight that protocol in the manual selector and flash a badge "Protocol suggestion:
+  Cardiac Arrest — confirm?"
+   Dispatcher must explicitly click "Confirm" — no auto-apply
+
+  Acceptance Criteria:
+
+   Suggestions appear within 3 seconds of end of caller sentence
+   Dismissed suggestions do not reappear unless new audio triggers them
+   All suggestions are visually distinct from confirmed data (dashed border, grey background)
+   Confirmed suggestions write into the form fields; dismissed ones are logged to  guidance_lookup_log  with  action_type: "suggestion_dismissed"
+  ──────
+  #### 1.4 — Call Transcription Persistence (Backend + Dispatcher)
+  Tasks:
+   Add  transcript_text  column to  Incident  model (Text, nullable)
+   Add Alembic migration  0004_transcript_column.py
+   Add  PATCH /incidents/{id}/transcript  endpoint: append-only, each call appends a timestamped chunk with speaker label ( dispatcher ,  caller )
+   Dispatcher UI auto-saves transcript chunks every 30 seconds during an active call
+   Include transcript in  GET /incidents/{id}/full  response and in the audit export  render_audit_text()
+   Include transcript in the handoff summary  text_rendering
+
+  Acceptance Criteria:
+   After a call,  GET /incidents/{id}/export  includes the full verbatim transcript with timestamps
+   Transcript is append-only — no overwrite path exists in the API
+   Empty transcript (e.g. manual-entry call) is valid —  null  is acceptable
+  ──────
+  #### 1.5 — E911 / AML Webhook Receiver (Backend)
+  Tasks:
+   Add  POST /intake/e911-push  endpoint — accepts an E911 or AML location push payload
+   Document the expected payload shape in a new  docs/E911_CONTRACT.md  file (this is the API surface we offer; the telecom partner implements against it)
+   Extract  lat ,  lon ,  caller_number ,  accuracy_m  from the payload
+   If an  incident_id  is present in the payload, update that incident's location; if absent, create a pre-populated intake record in  status: received  and return the  incident_id  so
+  the dispatcher can open it
+   Store  accuracy_m  on the incident (add column) so the dispatcher knows whether the pin is 5m or 500m accurate
+   Emit a server-sent event on the incident's SSE stream (Epic 4) when location is updated
+  New Backend Route:
+
+    POST /intake/e911-push
+    Body: { caller_number, lat, lon, accuracy_m, incident_id? }
+    Response: { incident_id, created: bool }
+
+  Pitfalls:
+
+   Caller number is PII — must be subject to the same 30-day retention purge as  caller_location_*
+   Accuracy matters clinically — a 500m radius in a city block is useless; display accuracy badge on the map pin
+  ──────
+  ### EPIC 2 — Live Interactive Map (Dispatcher UI)
+
+  Goal: Replace the lat/lon number inputs with a zoomable, clickable, geocoding-aware map. Location must be point-and-click, not numerical.
+
+  #### 2.1 — Leaflet.js Map Integration (Dispatcher Intake)
+  Tasks:
+   Add Leaflet.js (CDN, no build step) to  dispatcher-ui/index.html
+   Replace the  #caller-lat ,  #caller-lon  inputs and the  #caller-location-text  input with a map panel + a single address search bar
+   Map renders at intake screen, centred on the organisation's operational area (configurable via  window.AMBULANCE_CDSS_MAP_CENTER  in  config.js )
+   Clicking the map drops a pin and reverse-geocodes the coordinate to a human-readable address (use Nominatim/OpenStreetMap — no API key required; or Mapbox if a key is configured)
+   Address search bar: typing an address forward-geocodes and pans the map + drops a pin
+   Lat/lon values are captured as hidden state from the pin, not from direct user input
+   When the E911 webhook fires (1.5), the pin auto-moves and pulses with an accuracy circle
+   "Clear location" button removes the pin and clears the hidden lat/lon
+
+  New  config.js  additions:
+    window.AMBULANCE_CDSS_MAP_CENTER = [lat, lon]; // default: [-1.286389, 36.817223] (Nairobi)
+    window.AMBULANCE_CDSS_MAP_ZOOM = 13;
+    window.AMBULANCE_CDSS_GEOCODER = "nominatim"; // or "mapbox"
+    window.AMBULANCE_CDSS_MAPBOX_TOKEN = ""; // only if mapbox
+
+  Acceptance Criteria:
+
+   Map loads within 2 seconds on a local network (tiles cached after first load)
+   Clicking anywhere drops a pin within 100ms
+   Reverse geocode result appears in the address display within 3 seconds
+   Address search auto-completes with 3+ characters typed
+   Pin coordinate is what gets submitted with the incident — not manually typed numbers
+   Map degrades gracefully if geocoding service is offline: pin still works, address field shows raw coordinate string
+   Map tiles load over HTTPS only
+
+  Pitfalls:
+
+   Nominatim has a usage policy — 1 request per second, must identify the application with a User-Agent header
+   Do not request geolocation of the dispatcher's browser — the map is for the caller's location, not the workstation's
+   No tiles should be cached by default in incognito/private mode — warn if tiles fail to load
+  ──────
+  #### 2.2 — Live Unit Tracking Map (Dispatcher & ER Views)
+  Tasks:
+   Add a second Leaflet map panel to the dispatcher script screen (collapsible, shown after unit is dispatched)
+   This map shows: the incident pin (caller location), the assigned unit's live GPS blip (from  GET /incidents/{id}/unit-location/latest ), and if a facility has been selected, the
+  facility pin
+   Poll  GET /incidents/{id}/unit-location/latest  every 15 seconds; update the unit blip position
+   Show a line between unit blip and incident pin; show estimated ETA if available
+   Add the same map panel to  receiving-ui/index.html  for the ER team
+   Field UI (Epic 3) must push unit location on a timer so these maps have data
+
+  Acceptance Criteria:
+
+   Unit blip moves as GPS pings arrive; stale blip (>2 min old) shown in grey with "Last seen X min ago"
+   Incident pin stays fixed at caller intake coordinates
+   Facility pin shown in green when routed
+   If no location data available: "Unit location not yet available" placeholder shown — not a broken map
+  ──────
+  ### EPIC 3 — Field Console Overhaul
+
+  Goal: Make the paramedic interface usable in an active emergency — gloves on, bumpy road, chaos, possibly no signal.
+  #### 3.1 — GPS Location Auto-Push (Field UI)
+  Tasks:
+   On incident open, request  navigator.geolocation  permission
+   Push  POST /incidents/{id}/unit-location  every 30 seconds while the incident is open and the device has signal
+   Queue location pings in IndexedDB (not localStorage — structured data) when offline; flush on reconnect
+   Show a small GPS status indicator in the header: "GPS active", "GPS unavailable", "GPS paused (offline)"
+   Stop pinging when  status === 'handoff_complete'  or  status === 'closed'
+  Acceptance Criteria:
+
+   Location ping begins within 5 seconds of incident open
+   Pings continue during brief network outages (queued)
+   Ping stops when incident is closed; no battery drain after handoff
+   If geolocation permission denied: warning shown once; no repeated prompts; manual location works
+  ──────
+  #### 3.2 — Field Protocol Expansion
+  Tasks:
+   Author field protocols for every dispatch protocol that exists:
+        field_major_trauma_v1.json  — major trauma/MVA steps
+        field_respiratory_distress_v1.json  — respiratory distress/choking
+        field_obstetric_v1.json  — obstetric emergency
+        field_paediatric_respiratory_v1.json  — paediatric respiratory
+        field_unresponsive_breathing_v1.json  — unresponsive but breathing (recovery position protocol)
+        field_trauma_moi_v1.json  — mechanism-of-injury trauma
+   Each protocol must have clinical steps authored against the appropriate Kenya BLS/ACLS field guidelines
+   Each step must have:  step_id ,  title ,  action_type ,  description ,  guideline_ref
+   Auto-select field protocol based on dispatch outcome: when  dispatch-unit  is called and  priority_code  is set, the API should suggest the matching field protocol ID in the
+  response
+
+  New Backend behaviour:
+   Add  suggested_field_protocol_id  to the  dispatch-unit  response based on a  priority_code → field_protocol_id  mapping in  config.py
+   Field UI: if  suggested_field_protocol_id  is present in the incident, pre-select it in the protocol dropdown and prompt "Suggested: Field Cardiac Arrest Protocol — confirm?"
+
+  Acceptance Criteria:
+   Every dispatch scenario has a corresponding field protocol available
+   Field protocols pass the structural validation in  field_registry.py
+   Suggested field protocol appears pre-selected (but not auto-applied) when the paramedic opens the incident
+  ──────
+  #### 3.3 — Large-Target Quick Action Buttons (Field UI)
+  Tasks:
+   Add a "Quick Actions" section to the field checklist tab with fat-finger-friendly buttons for the most critical interventions
+   Buttons: "Defibrillation delivered", "CPR started", "Airway secured", "IV/IO access", "ROSC achieved", "Transport started", "On scene", "Handoff complete"
+   Each button writes a  POST /incidents/{id}/field-log  entry with a pre-structured payload — no form to fill out
+   Status-transition buttons ("On scene", "Transport started", "Handoff complete") also call  POST /incidents/{id}/status
+   Buttons that represent step completions in the active checklist also mark the corresponding step as done
+   Visual: minimum 64px tall, high contrast, with haptic feedback on mobile (via  navigator.vibrate )
+  Acceptance Criteria:
+
+   Every button works with a single tap, no confirmation dialog except "Handoff complete" (irreversible)
+   Each button press results in a visible feedback state (green flash + checkmark)
+   Buttons cannot be pressed multiple times in rapid succession (debounce 2s)
+   On an iPhone 12-sized screen, at least 4 buttons are visible without scrolling
+  ──────
+  #### 3.4 — Voice-Assisted Log Entry (Field UI)
+
+  Tasks:
+
+   Add a microphone icon button to the Field Log entry form
+   On press, activate  SpeechRecognition  and transcribe into the note field
+   Do not auto-submit — paramedic reviews and taps "Add entry"
+   Support common EMS dictation phrases: "BP 120 over 80" auto-formats to "BP 120/80"
+   Deactivates automatically after 10 seconds of silence
+
+  Acceptance Criteria:
+   Dictated text appears in the note field within 1 second of speaking
+   "BP 120 over 80" → "BP 120/80" (medication formatting normalisation)
+   Does not auto-submit under any circumstance
+   Gracefully degrades if mic permission denied: input remains manual
+  ──────
+  #### 3.5 — Progressive Web App (Field UI)
+  Tasks:
+   Add  field-ui/manifest.json  with app name, icons,  display: standalone ,  start_url
+   Add  field-ui/sw.js  (Service Worker) that pre-caches:  index.html ,  app.js ,  style.css ,  config.js , and map tiles for the operational area at zoom 12–16
+   Service Worker caches API responses for  GET /field-protocols ,  GET /incidents/{id} ,  GET /incidents/{id}/field-protocol/state  with a stale-while-revalidate strategy
+   Service Worker does NOT cache  POST  responses — writes always go through the write queue (6.1, already implemented)
+   Add  <link rel="manifest">  to  field-ui/index.html
+   Test installability on Android Chrome
+
+  Acceptance Criteria:
+   Field UI can be installed as a home screen app on Android Chrome
+   Opening the installed app with no signal shows the last-viewed incident's checklist from cache
+   Write queue drains automatically on reconnect (already implemented in 6.1 — confirm it still works with SW)
+   Lighthouse PWA score ≥ 80
+  ──────
+  ### EPIC 4 — ER Dashboard: Live Incoming Patient View
+
+  Goal: The ER team must see the patient's vitals trending live before the ambulance arrives — not a static printout.
+
+  #### 4.1 — Server-Sent Events (SSE) Endpoint (Backend)
+
+  Tasks:
+   Add  GET /incidents/{id}/stream  SSE endpoint to  app/main.py
+   Events streamed:  vitals_added ,  medication_added ,  status_changed ,  unit_location_updated ,  field_log_added
+   Backend maintains an in-memory  asyncio.Queue  per active incident; each write endpoint notifies the queue
+   SSE stream sends JSON-encoded events with  event:  type and  data:  payload
+   SSE connection authenticated by the handoff token (same  ?token=  param as the handoff URL)
+   Connection keepalive ping every 15 seconds
+   Stream closes automatically when incident reaches  handoff_complete  or  closed
+
+  New Backend Route:
+
+    GET /incidents/{id}/stream?token=<handoff_token>
+    Content-Type: text/event-stream
+
+  Pitfalls:
+
+   In-memory queues are lost on server restart — document this; SSE is ephemeral, not persistent
+   Each open SSE connection holds an async generator — rate-limit to 10 concurrent SSE connections per incident
+   Stale connections (client disconnected without clean close) must be garbage-collected
+  ──────
+  #### 4.2 — Live Receiving UI Overhaul
+
+  Tasks:
+
+    receiving-ui/index.html : add a live vitals section with real-time updating
+   Connect to  GET /incidents/{id}/stream?token=  on page load
+   On  vitals_added  event: render a new row in the vitals timeline immediately; update the "Latest vitals" panel
+   On  status_changed  event: update the status banner and ETA countdown
+   On  unit_location_updated  event: update the map blip (Epic 2.2)
+   Add a live NEWS2 sparkline chart (plain Canvas, no charting library dependency) that updates with each vitals event
+   Add a "Time to arrival" countdown based on  eta_minutes  from dispatch; count down in real time
+   On SSE connection loss: show an amber reconnecting banner; auto-reconnect with exponential backoff
+
+  Acceptance Criteria:
+   Vitals appear on the ER screen within 3 seconds of being logged by the paramedic
+   ETA countdown ticks every second
+   NEWS2 chart updates in real time — no page refresh required
+   SSE reconnect happens automatically within 30 seconds of drop
+   Page remains readable and useful even when SSE is offline (last known data stays visible)
+  ──────
+  ### EPIC 5 — Control Room Dashboard (Supervisor)
+  Goal: The Phase 6.6 gap — a fleet-wide view of all active incidents for supervisors.
+  #### 5.1 — Dashboard UI (New file:  dispatcher-ui/dashboard.html )
+
+  Tasks:
+
+   Create  dispatcher-ui/dashboard.html  as a separate page linked from the dispatcher UI header
+   Fetch  GET /dashboard/active-incidents  on load and every 30 seconds
+   Render a table: Priority | Incident ID | Chief Complaint | Status | Assigned Unit | ETA | Time Since Dispatch
+   Priority-colour rows: P1 = red background, P2 = amber, P3 = green
+   Oldest P1 incident blinks if not dispatched within 2 minutes (CSS animation, no library)
+   Clicking a row opens a side panel with a mini map showing the incident pin and unit blip
+   Add a stats bar at the top using  GET /dashboard/stats  (24h window): total incidents, by status, by priority
+   Shift handover button: opens a date-range picker and calls  GET /dashboard/shift-handover
+
+  Acceptance Criteria:
+
+   Dashboard loads within 2 seconds
+   Auto-refreshes every 30 seconds without page reload
+   P1 incidents not dispatched within 2 minutes are visually flagged
+   Shift handover report renders as both an on-screen table and a printable plain-text block
+   Works on a 1920×1080 control room monitor without horizontal scroll
+  ──────
+  ### EPIC 6 — Authentication & Session Management
+
+  Goal: "Dispatcher ID" cannot be a freeform text box. The system must know who is operating it.
+
+  #### 6.1 — Dispatcher Login (Frontend)
+
+  Tasks:
+
+   Add a login gate page to  dispatcher-ui/index.html : username + PIN (4-digit minimum)
+   On successful login, store  dispatcher_id  and a session token in  sessionStorage  (not localStorage — clears on tab close)
+   All API calls include the session token in an  X-Dispatcher-ID  header
+   Backend validates the  X-Dispatcher-ID  header on all write endpoints (not GET) — reject with 401 if absent or invalid in production mode
+   Auto-logout after 8 hours of inactivity
+   Dispatcher ID auto-populates the "Dispatcher ID" field in incident creation
+
+  New Backend Behaviour:
+   Add  POST /auth/dispatcher-login  endpoint: validates username+PIN against a configured list (initially:  DISPATCHER_CREDENTIALS  env var as JSON), returns a signed session token
+  (HMAC, same pattern as  handoff_link.py )
+   In  ENVIRONMENT=development , auth is bypassed — any dispatcher_id accepted
+   In  ENVIRONMENT=production ,  validate_startup_config()  must assert  DISPATCHER_CREDENTIALS  is set
+
+  Pitfalls:
+   PINs must be stored hashed (bcrypt or SHA256+salt) — never plain text in env vars
+   Session tokens must have an expiry; same HMAC+expiry pattern as handoff tokens
+   A compromised session token exposes all incidents the dispatcher can reach — scope tokens to read-only vs. write
+  ──────
+  #### 6.2 — Paramedic Login (Field UI)
+
+  Tasks:
+   Same pattern as 6.1 but for  field-ui
+   Paramedic enters unit ID + PIN
+   Session token used as  recorded_by  value for all field log writes
+   Auto-populated from URL param  ?unit_id=  when dispatcher sends the field URL
+  ──────
+  ### EPIC 7 — Backend Hardening & Production Gaps
+  #### 7.1 — Fix the Hardcoded localhost:8081 Field URL
+  Tasks:
+
+   Add  FIELD_UI_BASE_URL  to  .env.example  and  config.py  with default  http://localhost:5501
+   Replace the hardcoded  http://localhost:8081  string in  dispatch_unit()  and  correct_answer()  with  get_field_ui_base_url()
+   Add  validate_startup_config()  assertion: in production,  FIELD_UI_BASE_URL  must be set and must not be  localhost
+
+  Acceptance Criteria:
+
+   Field URL in dispatch response matches the configured  FIELD_UI_BASE_URL
+   A test asserts this URL is not  localhost  when  ENVIRONMENT=production
+  ──────
+  #### 7.2 — Wire PII Purge Scheduler
+  Tasks:
+
+   Add  apscheduler  (or use  asyncio  periodic task) to run  purge_expired_incidents()  daily at 02:00 UTC
+   Add  PURGE_SCHEDULE_ENABLED  env var (default  false  in dev,  true  required in production per  validate_startup_config() )
+   Log each purge run: number of incidents purged, any errors
+   Add a  GET /admin/purge-status  endpoint returning last run time and count
+  Acceptance Criteria:
+   In production, purge runs automatically without a cron or external scheduler
+   Failed purge run is logged as ERROR and retried the next day — does not crash the app
+   A test asserts  purge_expired_incidents()  correctly nullifies PII fields and sets  pii_purged_at
+  ──────
+  #### 7.3 — Fix the Manual Protocol Application Stub
+
+  Tasks:
+   Implement  POST /incidents/{id}/select-protocol  endpoint: takes  protocol_id , sets the dispatch protocol on the incident (same logic as  create_incident  post-match), returns the
+  entry question
+   In  dispatcher-ui/app.js , wire  apply-manual-protocol-btn  to call this endpoint
+   If the incident already has a protocol, reject with 409 (conflict) and a clear error message — never silently overwrite a protocol mid-call
+
+  New Backend Route:
+
+    POST /incidents/{id}/select-protocol
+    Body: { protocol_id: str, dispatcher_id: str }
+    Response: { protocol_id, entry_question }
+    ──────
+  #### 7.4 — Triage Enrichment Live Polling (Dispatcher UI)
+
+  Tasks:
+
+   After incident creation, start a 3-second polling interval on  GET /incidents/{id}  for  triage_enrichment
+   When  triage_enrichment  is non-null on the incident, stop polling and render the triage card
+   Maximum polling duration: 30 seconds; if not resolved, show "Triage enrichment not available" and stop
+   This replaces the current pattern where enrichment is only shown if the answer submission response includes it
+
+  Acceptance Criteria:
+
+   Triage card appears within 5 seconds of enrichment resolving, even if no answers have been submitted
+   Polling stops after 30 seconds maximum — no infinite polling
+  ──────
+  #### 7.5 — Handoff URL Base URL from Config
+
+  Tasks:
+
+   Add  HANDOFF_BASE_URL  to  .env.example  and  config.py  (default:  http://localhost:8000 )
+   Replace the hardcoded  http://localhost:8000/receiving/{incident_id}  string in  get_handoff_link()  with  get_handoff_base_url()
+   Add production assertion in  validate_startup_config() :  HANDOFF_BASE_URL  must not be  localhost
+  ──────
+  #### 7.6 — Paediatric & Trauma Scoring
+
+  Tasks:
+
+   Add  compute_pediatric_news  (PEWS) to  app/scoring/scorers.py  for patients under 16
+   Add  compute_revised_trauma_score  (RTS) to  app/scoring/scorers.py
+   Add  compute_shock_index  (HR/SBP) — already partially referenced in triage_ranker output but not computed independently
+   All three follow the same pattern as  compute_news2 : deterministic, synchronous, raises  ScoringError  on missing inputs
+   Add  age_years  and  is_pediatric  fields to  AddVitalsRequest  — if  is_pediatric=true , compute PEWS instead of NEWS2
+   Include  pews_score ,  rts_score ,  shock_index  in vitals history output
+  ──────
+  ### EPIC 8 — Protocol Library & Governance
+
+  #### 8.1 — Sign-Off the Existing Protocols Properly
+
+  Current reality: All 8 dispatch protocols and 1 field protocol have  "approved_by": "Dev Setup" . The registry accepts this because any non-empty string passes the governance check.
+  This means governance enforcement is currently meaningless.
+
+  Tasks:
+
+   Strengthen the registry check:  approved_by  must not equal a list of blocked placeholder values ( "Dev Setup" ,  "PLACEHOLDER" ,  "TBD" ,  "" ) — add this list to  registry.py
+   Add a  GET /admin/protocol-audit  endpoint returning each protocol's  approved_by  and  approved_date  so the medical director can see what needs signing
+   Create a protocol sign-off checklist in  docs/SIGN_OFF_CHECKLIST.md  that the medical director works through for each protocol
+   The actual sign-off replacement of placeholder values must happen out-of-band (the medical director provides real names/dates; engineering writes them into the JSON files)
+
+  Acceptance Criteria:
+
+   Any protocol with  approved_by: "Dev Setup"  is rejected at load time after this fix
+    GET /health  correctly reports 0 active protocols until real sign-off is in place
+   The  GET /admin/protocol-audit  endpoint shows which protocols are pending sign-off
+  ──────
+  #### 8.2 — Missing Field Protocols
+
+  Author the 6 missing field protocols listed in Epic 3.2. Each must:
+
+   Cover all steps a paramedic would perform for that presentation
+   Reference Kenya BLS/ACLS guidelines where applicable
+   Pass structural validation
+   Include at least one  disposition  step
+  ──────
+  ### EPIC 9 — Cross-Cutting: Testing, Deployment, and Observability
+
+  #### 9.1 — Integration Tests for Critical Paths
+
+  Tasks:
+
+   Add  tests/integration/test_full_incident_lifecycle.py : end-to-end test of create → answer all questions → dispatch → field protocol → vitals → handoff
+   Add  tests/integration/test_sse_stream.py : test SSE events fire on vitals add and status change
+   Add  tests/test_auth.py : test session token generation, validation, expiry
+   Add  tests/test_entity_extraction.py : test the NLP extractor with fixture transcripts
+   Add  tests/test_protocol_sign_off_gate.py : assert "Dev Setup" is rejected after the fix in 8.1
+  ──────
+  #### 9.2 — Deployment Configuration
+
+  Tasks:
+
+   Add a  docker-compose.yml  with:  api  service,  postgres  service, volume mounts for protocol JSONs
+   Add  Dockerfile  health check using  curl /health
+   Document Nginx reverse proxy configuration for the three static UIs and the API
+   Add  FIELD_UI_BASE_URL ,  HANDOFF_BASE_URL ,  HANDOFF_SIGNING_KEY ,  ADMIN_API_KEY ,  DISPATCHER_CREDENTIALS ,  PURGE_SCHEDULE_ENABLED  to  .env.example
+  ──────
+  ## Task Priority & Sequencing
+
+   Priority                                                    | Epic                                                       | Rationale
+  -------------------------------------------------------------|------------------------------------------------------------|------------------------------------------------------------
+   P0 — Must before first use                                  | 7.1 Fix localhost field URL                                | Every dispatched unit gets a dead link
+   P0                                                          | 7.3 Fix protocol application stub                          | Manual protocol assignment is dead code
+   P0                                                          | 8.1 Strengthen governance check                            | Governance is currently meaningless
+   P0                                                          | 7.5 Fix handoff URL base                                   | Every ER handoff link is broken in production
+   P1 — First sprint                                           | EPIC 2 — Live Map                                          | Dispatcher cannot function without location
+   P1                                                          | 3.1 GPS auto-push                                          | Unit tracking is wired but never called
+   P1                                                          | 3.2 Field protocol expansion                               | 7 out of 8 scenarios have no field checklist
+   P1                                                          | 5.1 Dashboard UI                                           | Supervisors are blind
+   P2 — Second sprint                                          | EPIC 1 — Listener / NLP                                    | High value, manageable complexity
+   P2                                                          | 4.1 + 4.2 — SSE & live ER UI                               | Critical for hospital prep
+   P2                                                          | 7.2 PII purge scheduler                                    | Legal compliance
+   P2                                                          | 7.4 Triage enrichment live poll                            | Current triage display is broken
+   P3 — Third sprint                                           | EPIC 6 — Auth                                              | Cannot go to production without this
+   P3                                                          | 7.6 Paediatric/Trauma scoring                              | Completeness
+   P3                                                          | 3.3 Quick action buttons                                   | UX improvement
+   P3                                                          | 3.4 Voice log entry                                        | UX improvement
+   P4 — Before go-live                                         | 3.5 PWA/Service Worker                                     | Offline resilience
+   P4                                                          | 8.2 Missing field protocols                                | Clinical completeness
+   P4                                                          | 9.1 Integration tests                                      | Confidence before live use
+   P4                                                          | 9.2 Deployment configuration                               | Production packaging

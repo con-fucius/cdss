@@ -76,24 +76,30 @@ class DispatchProtocol:
     approved_by: str
     approved_date: str  # ISO date string
 
+    # Values that indicate the governance fields have not been replaced
+    # with real sign-off data.  A protocol whose approved_by or approved_date
+    # matches any of these is rejected at load time — it is inert, not
+    # selectable for real incidents.  See docs/OPERATIONAL MATURITY.txt
+    # Epic 8.1.
+    _BLOCKED_GOVERNANCE_VALUES: frozenset[str] = frozenset({
+        "placeholder",
+        "dev setup",
+        "tbd",
+        "todo",
+        "pending",
+        "unassigned",
+    })
+
     def is_governance_complete(self) -> bool:
         """True only if locked, approved_by, approved_date, and version are
-        all non-empty AND approved_by/approved_date do not contain the
-        literal word "PLACEHOLDER" (case-insensitive).
+        all non-empty AND approved_by/approved_date do not match any blocked
+        placeholder value (case-insensitive).
 
-        The placeholder check exists because the three protocols authored
-        so far were written with deliberate PLACEHOLDER text in these
-        fields pending the real named doctor + medical director sign-off
-        (Phase 0.1/0.2, resolved as in-house authorship with named
-        approvers still to be supplied). Without this check, a non-empty
-        placeholder string satisfies a plain truthiness/strip() test and
-        the protocol would load as locked=true and be selectable for real
-        incidents — silently contradicting docs/GOVERNANCE.md's claim that
-        "a protocol cannot be loaded as active without [governance fields]
-        being explicitly set". Until real names/dates are substituted in
-        the three existing protocol JSON files, they are REJECTED at
-        startup (see app/protocols/registry.py list_rejected()) rather
-        than silently treated as approved.
+        Without this check, a non-empty placeholder string satisfies a plain
+        truthiness/strip() test and the protocol would load as locked=true
+        and be selectable for real incidents — silently contradicting
+        docs/GOVERNANCE.md's claim that "a protocol cannot be loaded as
+        active without [governance fields] being explicitly set".
         """
         if not (
             self.locked
@@ -102,9 +108,20 @@ class DispatchProtocol:
             and self.version.strip()
         ):
             return False
-        if "placeholder" in self.approved_by.lower():
+        approved_lower = self.approved_by.strip().lower()
+        date_lower = self.approved_date.strip().lower()
+        if approved_lower in self._BLOCKED_GOVERNANCE_VALUES:
             return False
-        return "placeholder" not in self.approved_date.lower()
+        if date_lower in self._BLOCKED_GOVERNANCE_VALUES:
+            return False
+        # Also reject if the value merely *contains* a blocked term
+        # (e.g. "Dev Setup — pending review")
+        for blocked in self._BLOCKED_GOVERNANCE_VALUES:
+            if blocked in approved_lower:
+                return False
+            if blocked in date_lower:
+                return False
+        return True
 
 
 @dataclass

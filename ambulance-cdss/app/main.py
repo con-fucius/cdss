@@ -37,6 +37,8 @@ from .config import (
     get_admin_api_key,
     get_allowed_origins,
     get_answer_correction_window_seconds,
+    get_field_ui_base_url,
+    get_handoff_base_url,
     get_prehospital_formulary,
     get_rate_limit_chat_per_minute,
     get_rate_limit_default_per_minute,
@@ -55,6 +57,7 @@ from .observability import MetricsMiddleware, RateLimitMiddleware, metrics_text
 from .protocols.field_registry import field_registry
 from .protocols.field_runner import FieldRunState, rebuild_from_field_log
 from .protocols.registry import registry
+from .protocols.schema import DispatchProtocol
 from .protocols.runner import (
     OutOfScriptAnswerError,
     can_backtrack,
@@ -296,6 +299,11 @@ class RouteFacilityRequest(BaseModel):
 class ReportAdmissionRequest(BaseModel):
     facility_id: str = Field(min_length=1)
     summary: str = Field(min_length=1)
+
+
+class SelectDispatchProtocolRequest(BaseModel):
+    protocol_id: str = Field(min_length=1)
+    dispatcher_id: str = Field(min_length=1)
 
 
 class SelectFieldProtocolRequest(BaseModel):
@@ -958,10 +966,10 @@ async def get_handoff_link(incident_id: str):
         raise HTTPException(status_code=404, detail="Incident not found")
 
     token = generate_handoff_token(incident_id)
-    # Determine the base URL from the request context. In development
-    # this defaults to localhost:8000. The /receiving/ path is served
-    # by the static file mount below.
-    base_url = f"http://localhost:8000/receiving/{incident_id}"
+    # Determine the base URL from config. In development this defaults
+    # to localhost:8000. The /receiving/ path is served by the static
+    # file mount below.
+    base_url = f"{get_handoff_base_url()}/receiving/{incident_id}"
     handoff_url = f"{base_url}?token={token}"
 
     return {
@@ -1260,6 +1268,37 @@ async def protocol_status():
     }
 
 
+@app.get("/admin/protocol-audit", dependencies=[Security(_require_admin_key)])
+async def protocol_audit():
+    """Implements Epic 8.1 — returns each protocol's governance fields
+    (approved_by, approved_date) so the medical director can see
+    which protocols need real sign-off. Protocols with placeholder
+    values ("Dev Setup", "TBD", etc.) are flagged as pending.
+    """
+    blocked = DispatchProtocol._BLOCKED_GOVERNANCE_VALUES
+    dispatch_protos = []
+    for p in registry.list_active():
+        approved_lower = p.get("approved_by", "").strip().lower()
+        dispatch_protos.append({
+            "protocol_id": p["protocol_id"],
+            "version": p["version"],
+            "approved_by": p["approved_by"],
+            "approved_date": p["approved_date"],
+            "status": "active",
+        })
+    for r in registry.list_rejected():
+        dispatch_protos.append({
+            "file": r["file"],
+            "status": "rejected",
+            "reason": r["reason"],
+        })
+    return {
+        "dispatch_protocols": dispatch_protos,
+        "field_protocols": field_registry.list_active(),
+        "blocked_governance_values": sorted(blocked),
+    }
+
+
 @app.post("/incidents/{incident_id}/vitals")
 async def add_incident_vitals(incident_id: str, request: AddVitalsRequest):
     incident = await repo.get_incident(incident_id)
@@ -1331,6 +1370,57 @@ async def _build_field_run_state(incident_id: str, protocol_id: str) -> FieldRun
         )
     field_log = await repo.get_field_log(incident_id)
     return rebuild_from_field_log(protocol, field_log)
+
+
+@app.post("/incidents/{incident_id}/select-protocol")
+async def select_dispatch_protocol(incident_id: str, request: SelectDispatchProtocolRequest):
+    """Implements Epic 7.3 — manual dispatch protocol assignment.
+
+    When no protocol matches the chief complaint at incident creation,
+    the dispatcher can manually select one. This endpoint snapshots the
+    selected protocol onto the incident, exactly as create_incident does
+    when a match is found. If the incident already has a protocol assigned,
+    returns 409 Conflict — never silently overwrite a mid-call protocol.
+    """
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    if incident["dispatch_protocol_id"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "protocol_already_assigned",
+                "message": (
+                    f"Incident already has protocol {incident['dispatch_protocol_id']!r} "
+                    "assigned. Cannot overwrite a mid-call protocol."
+                ),
+            },
+        )
+
+    protocol = registry.get(request.protocol_id)
+    if protocol is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Protocol {request.protocol_id!r} is not in the active registry.",
+        )
+
+    snapshot = {
+        "protocol_id": protocol.protocol_id,
+        "version": protocol.version,
+        "approved_by": protocol.approved_by,
+        "approved_date": protocol.approved_date,
+    }
+    await repo.set_dispatch_protocol(
+        incident_id, protocol.protocol_id, protocol.version, snapshot
+    )
+
+    entry_question = get_entry_question(protocol)
+    return {
+        "protocol_id": protocol.protocol_id,
+        "protocol_version": protocol.version,
+        "current_question": _question_to_dict(entry_question),
+    }
 
 
 @app.post("/incidents/{incident_id}/field-protocol")
@@ -1601,7 +1691,7 @@ async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
             "assigned_unit_id": synthetic_unit_id,
             "eta_minutes": None,
             "status": "dispatched_manual",
-            "field_url": f"http://localhost:8081/?incident_id={incident_id}&unit_id={synthetic_unit_id}",
+            "field_url": f"{get_field_ui_base_url()}/?incident_id={incident_id}&unit_id={synthetic_unit_id}",
             "message": "Dispatch service unavailable. Unit assigned manually. "
             "Send the field URL to the paramedic.",
         }
@@ -1619,7 +1709,7 @@ async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
         "assigned_unit_id": result.assigned_unit_id,
         "eta_minutes": result.eta_minutes,
         "status": result.status,
-        "field_url": f"http://localhost:8081/?incident_id={incident_id}&unit_id={result.assigned_unit_id}",
+        "field_url": f"{get_field_ui_base_url()}/?incident_id={incident_id}&unit_id={result.assigned_unit_id}",
     }
 
 

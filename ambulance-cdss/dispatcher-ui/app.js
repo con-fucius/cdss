@@ -340,24 +340,46 @@ el("apply-manual-protocol-btn").addEventListener("click", async () => {
 
   if (!protocolId || !state.incidentId) return;
 
+  // Field protocols (prefixed with "field:") are not assignable via this endpoint
+  if (protocolId.startsWith("field:")) {
+    resultEl.textContent = "Field protocols are assigned from the field console, not the dispatcher.";
+    resultEl.className = "action-result error";
+    return;
+  }
+
   const btn = el("apply-manual-protocol-btn");
   btn.disabled = true;
   resultEl.textContent = "Applying...";
 
   try {
-    // For now, we'll re-create the incident with the manual protocol hint
-    // In a full implementation, this would call a specific endpoint
-    resultEl.textContent =
-      "Protocol selected. Please continue with the dispatch script.";
+    const data = await apiCall(`/incidents/${state.incidentId}/select-protocol`, {
+      method: "POST",
+      body: JSON.stringify({
+        protocol_id: protocolId,
+        dispatcher_id: state.dispatcherId || "unknown",
+      }),
+    });
+
+    state.protocolId = data.protocol_id;
+    state.currentQuestion = data.current_question;
+
+    resultEl.textContent = `Protocol ${data.protocol_id} (v${data.protocol_version}) applied.`;
     resultEl.className = "action-result success";
 
-    // Hide the manual selector and show that we're ready
+    // Hide the manual selector and no-protocol banner
     hide(el("no-protocol-banner"));
 
-    // Note: In a real implementation, this would trigger a protocol re-match
-    // or create a new incident with the selected protocol
+    // Show the first question from the assigned protocol
+    if (data.current_question) {
+      renderQuestion(data.current_question);
+      renderTranscript();
+    }
   } catch (err) {
-    resultEl.textContent = `Error: ${err.message}`;
+    if (err.status === 409) {
+      resultEl.textContent = `${err.body?.detail?.message || err.message}`;
+    } else {
+      resultEl.textContent = `Error: ${err.message}`;
+    }
     resultEl.className = "action-result error";
   } finally {
     btn.disabled = false;
