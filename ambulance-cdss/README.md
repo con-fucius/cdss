@@ -13,36 +13,58 @@ Four consoles sharing one incident record:
 
 Backend: FastAPI + PostgreSQL + Redis. Frontends: plain HTML/CSS/JS, no build step.
 
-## Quick Start
+## Setup
 
-> **Note:** Update paths below to match your local clone location.
+### 1. Clone and install
 
 ```bash
-# Terminal 1 — Docker infrastructure
-docker run -d --name ambulance-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ambulance_cdss_dev -p 5432:5432 postgres:16-alpine
-docker run -d --name ambulance-redis -p 6379:6379 redis:alpine
+git clone https://github.com/con-fucius/cdss.git
+cd cdss/ambulance-cdss
 
-# Terminal 2 — Backend (from ambulance-cdss/)
-alembic upgrade head
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+# Create virtual environment (Python 3.11+)
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # Linux/Mac
 
-# Terminal 3+ — Frontends (open in browser or serve with any static server)
-# Windows:
-start dispatcher-ui\index.html
-start field-ui\index.html
-start admin-ui\index.html
-# Receiving UI needs incident params:
-# receiving-ui/index.html?id={incident_id}&token={token}
-
-# Linux/Mac:
-open dispatcher-ui/index.html
-open field-ui/index.html
-open admin-ui/index.html
+# Install dependencies
+pip install -e ".[dev]"
 ```
 
-**Docker services:** PostgreSQL on `localhost:5432`, Redis on `localhost:6379`.
-**Backend:** `http://localhost:8000` (API + admin dashboard).
-**Frontends:** open HTML files directly or serve via `python -m http.server` in each directory.
+### 2. Configure environment
+
+```bash
+copy .env.example .env        # Windows
+# cp .env.example .env        # Linux/Mac
+```
+
+Edit `.env` — the defaults work for local development with Docker services below.
+
+### 3. Start infrastructure (Terminal 1)
+
+```bash
+docker run -d --name ambulance-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ambulance_cdss_dev -p 5432:5432 postgres:16-alpine
+docker run -d --name ambulance-redis -p 6379:6379 redis:alpine
+```
+
+### 4. Start backend (Terminal 2)
+
+```bash
+alembic upgrade head
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Backend runs at `http://localhost:8000`. API docs at `http://localhost:8000/docs`.
+
+### 5. Open frontends (Terminal 3+)
+
+Open these HTML files in your browser:
+
+| Console | Path | Notes |
+|---------|------|-------|
+| Dispatcher | `dispatcher-ui/index.html` | Login with any username/PIN |
+| Field | `field-ui/index.html` | Login with any Unit ID/PIN |
+| Admin | `admin-ui/index.html` | No login required |
+| Receiving | `receiving-ui/index.html?id=INCIDENT_ID&token=TOKEN` | Get URL from dispatcher handoff |
 
 ## Key Features
 
