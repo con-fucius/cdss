@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambulance CDSS — Admin Dashboard</title>
+<style>
+  :root { --bg: #0f1117; --surface: #1a1d27; --surface2: #242836; --border: #2e3347; --text: #e1e4ed; --text2: #8b90a0; --accent: #4f8cff; --green: #34d399; --red: #f87171; --yellow: #fbbf24; --orange: #fb923c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .badge { background: var(--accent); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .toolbar { padding: 12px 24px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .toolbar label { font-size: 13px; color: var(--text2); }
+  .toolbar input, .toolbar select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+  .toolbar button { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .toolbar button:hover { opacity: 0.9; }
+  .toolbar button.secondary { background: var(--surface2); border: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 24px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .card-header .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .card-header .status-dot.ok { background: var(--green); }
+  .card-header .status-dot.error { background: var(--red); }
+  .card-header .status-dot.warn { background: var(--yellow); }
+  .card-body { padding: 16px 18px; font-size: 13px; }
+  .card-body .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .card-body .row:last-child { border-bottom: none; }
+  .card-body .label { color: var(--text2); }
+  .card-body .value { font-weight: 500; }
+  .card-body .value.green { color: var(--green); }
+  .card-body .value.red { color: var(--red); }
+  .card-body .value.yellow { color: var(--yellow); }
+  .full-width { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text2); font-weight: 500; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: var(--surface2); }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag.active { background: rgba(52,211,153,0.15); color: var(--green); }
+  .tag.rejected { background: rgba(248,113,113,0.15); color: var(--red); }
+  .tag.pending { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  #audit-log-container { max-height: 400px; overflow-y: auto; }
+  .loading { text-align: center; padding: 20px; color: var(--text2); }
+  .error-msg { color: var(--red); padding: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ambulance CDSS Admin</h1>
+  <span class="badge">Admin</span>
+  <span style="flex:1"></span>
+  <span id="clock" style="color:var(--text2);font-size:13px"></span>
+</header>
+<div class="toolbar">
+  <label>Admin Key:</label>
+  <input type="password" id="adminKey" placeholder="X-Admin-Key (leave empty for dev)" style="width:220px">
+  <button onclick="refreshAll()">Refresh All</button>
+  <button class="secondary" onclick="reloadProtocols()">Reload Protocols</button>
+  <span style="flex:1"></span>
+  <span id="lastRefresh" style="color:var(--text2);font-size:12px"></span>
+</div>
+
+<div class="grid">
+  <!-- System Status -->
+  <div class="card" id="system-card">
+    <div class="card-header"><span><span class="status-dot" id="sys-dot"></span>System Status</span></div>
+    <div class="card-body" id="system-body"><div class="loading">Loading...</div></div>
+  </div>
+
+  <!-- Cache Health -->
+  <div class="card" id="cache-card">
+    <div class="card-header"><span><span class="status-dot" id="cache-dot"></span>Cache (Redis)</span></div>
+    <div class="card-body" id="cache-body"><div class="loading">Loading...</div></div>
+  </div>
+
+  <!-- Active Incidents -->
+  <div class="card full-width" id="incidents-card">
+    <div class="card-header"><span>Active Incidents</span><span id="inc-count" style="color:var(--text2);font-size:12px"></span></div>
+    <div class="card-body" id="incidents-body"><div class="loading">Loading...</div></div>
+  </div>
+
+  <!-- Protocol Management -->
+  <div class="card full-width" id="protocols-card">
+    <div class="card-header"><span>Dispatch Protocols</span></div>
+    <div class="card-body" id="protocols-body"><div class="loading">Loading...</div></div>
+  </div>
+
+  <!-- Audit Log -->
+  <div class="card full-width" id="audit-card">
+    <div class="card-header">
+      <span>Audit Log</span>
+      <span>
+        <select id="auditLimit" onchange="loadAuditLog()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+      </span>
+    </div>
+    <div class="card-body" id="audit-body"><div class="loading">Loading...</div></div>
+  </div>
+
+  <!-- Facility Registry -->
+  <div class="card" id="facility-card">
+    <div class="card-header"><span><span class="status-dot" id="fac-dot"></span>Facility Registry</span></div>
+    <div class="card-body" id="facility-body"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+function headers() {
+  const k = document.getElementById('adminKey').value.trim();
+  const h = {'Content-Type': 'application/json'};
+  if (k) h['X-Admin-Key'] = k;
+  return h;
+}
+async function api(path) {
+  const r = await fetch(BASE + path, {headers: headers()});
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+function setDot(id, status) {
+  const el = document.getElementById(id);
+  el.className = 'status-dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'error');
+}
+function fmt(val, fallback) { return val !== null && val !== undefined ? val : (fallback || '—'); }
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+async function loadSystemStatus() {
+  try {
+    const d = await api('/admin/system-status');
+    setDot('sys-dot', d.database?.status);
+    document.getElementById('system-body').innerHTML = [
+      row('Database', d.database?.status === 'ok' ? `<span class="green">Connected</span>` : `<span class="red">${d.database?.status || 'error'}</span>`),
+      row('DB Pool Size', fmt(d.database?.pool?.pool_size)),
+      row('DB Checked Out', fmt(d.database?.pool?.checked_out)),
+      row('Redis', d.redis?.connected ? `<span class="green">Connected (${d.redis.keys} keys)</span>` : `<span class="red">${d.redis?.status || 'unavailable'}</span>`),
+      row('Dispatch Protocols', `${d.protocols?.dispatch_active || 0} active, ${d.protocols?.dispatch_rejected || 0} rejected`),
+      row('Field Protocols', `${d.protocols?.field_active || 0} active, ${d.protocols?.field_rejected || 0} rejected`),
+      row('Total Incidents', fmt(d.total_incidents, '0')),
+      row('Incidents by Status', Object.entries(d.incidents_by_status || {}).map(([k,v]) => `${k}: ${v}`).join(', ') || '—'),
+      row('Memory', d.memory?.rss_mb ? d.memory.rss_mb + ' MB' : '—'),
+      row('Uptime', d.uptime_human || '—'),
+    ].join('');
+  } catch(e) { document.getElementById('system-body').innerHTML = `<div class="error-msg">${e.message}</div>`; setDot('sys-dot', 'error'); }
+}
+
+async function loadCacheHealth() {
+  try {
+    const d = await api('/admin/cache-health');
+    setDot('cache-dot', d.connected ? 'ok' : 'error');
+    document.getElementById('cache-body').innerHTML = [
+      row('Status', d.connected ? `<span class="green">${d.status}</span>` : `<span class="red">${d.status}</span>`),
+      row('Connected', d.connected ? 'Yes' : 'No'),
+      row('Keys', fmt(d.keys, '0')),
+      d.error ? row('Error', `<span class="red">${d.error}</span>`) : '',
+    ].join('');
+  } catch(e) { document.getElementById('cache-body').innerHTML = `<div class="error-msg">${e.message}</div>`; setDot('cache-dot', 'error'); }
+}
+
+async function loadActiveIncidents() {
+  try {
+    const d = await api('/dashboard/active-incidents?limit=50');
+    const incs = d.incidents || [];
+    document.getElementById('inc-count').textContent = incs.length + ' active';
+    if (!incs.length) { document.getElementById('incidents-body').innerHTML = '<div style="color:var(--text2);padding:10px">No active incidents</div>'; return; }
+    let html = '<table><thead><tr><th>ID</th><th>Status</th><th>Priority</th><th>Complaint</th><th>Unit</th><th>Created</th></tr></thead><tbody>';
+    for (const i of incs) {
+      html += `<tr><td title="${i.incident_id}">${i.incident_id.substring(0,8)}...</td><td>${i.status}</td><td>${fmt(i.priority_code)}</td><td>${fmt(i.chief_complaint).substring(0,30)}</td><td>${fmt(i.assigned_unit_id, 'unassigned')}</td><td>${timeAgo(i.created_at)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('incidents-body').innerHTML = html;
+  } catch(e) { document.getElementById('incidents-body').innerHTML = `<div class="error-msg">${e.message}</div>`; }
+}
+
+async function loadProtocols() {
+  try {
+    const d = await api('/admin/protocols/detail');
+    const dispatch = d.dispatch || {};
+    let html = '<div style="margin-bottom:12px;font-size:13px;color:var(--text2)"><b>Dispatch:</b> ' + (dispatch.active?.length || 0) + ' active, ' + (dispatch.rejected?.length || 0) + ' rejected</div>';
+    if (dispatch.active?.length) {
+      html += '<table><thead><tr><th>Protocol ID</th><th>Version</th><th>Approved By</th><th>Questions</th><th>Status</th></tr></thead><tbody>';
+      for (const p of dispatch.active) {
+        html += `<tr><td>${p.protocol_id}</td><td>${p.version}</td><td>${fmt(p.approved_by)}</td><td>${p.question_count}</td><td><span class="tag active">active</span></td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    if (dispatch.rejected?.length) {
+      html += '<div style="margin-top:12px;font-size:13px;color:var(--text2);margin-bottom:6px"><b>Rejected:</b></div>';
+      html += '<table><thead><tr><th>File</th><th>Reason</th><th>Status</th></tr></thead><tbody>';
+      for (const r of dispatch.rejected) {
+        html += `<tr><td>${r.file}</td><td>${r.reason}</td><td><span class="tag rejected">rejected</span></td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    document.getElementById('protocols-body').innerHTML = html;
+  } catch(e) { document.getElementById('protocols-body').innerHTML = `<div class="error-msg">${e.message}</div>`; }
+}
+
+async function loadAuditLog() {
+  try {
+    const limit = document.getElementById('auditLimit').value;
+    const d = await api(`/admin/audit-log?limit=${limit}`);
+    const events = d.events || [];
+    if (!events.length) { document.getElementById('audit-body').innerHTML = '<div style="color:var(--text2);padding:10px">No audit events</div>'; return; }
+    let html = '<div id="audit-log-container"><table><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Incident</th><th>Details</th></tr></thead><tbody>';
+    for (const e of events) {
+      const det = e.details && Object.keys(e.details).length ? JSON.stringify(e.details).substring(0,60) : '—';
+      html += `<tr><td title="${e.timestamp}">${timeAgo(e.timestamp)}</td><td><span class="tag pending">${e.action}</span></td><td>${fmt(e.actor_id)}</td><td title="${e.incident_id || ''}">${e.incident_id ? e.incident_id.substring(0,8)+'...' : '—'}</td><td title="${det}">${det}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    document.getElementById('audit-body').innerHTML = html;
+  } catch(e) { document.getElementById('audit-body').innerHTML = `<div class="error-msg">${e.message}</div>`; }
+}
+
+async function loadFacilities() {
+  try {
+    const d = await api('/admin/facilities');
+    setDot('fac-dot', d.status === 'connected' ? 'ok' : d.status === 'unavailable' ? 'warn' : 'error');
+    let html = [
+      row('Status', d.status === 'connected' ? `<span class="green">${d.status}</span>` : `<span class="yellow">${d.status}</span>`),
+      row('Facility Count', fmt(d.count, '0')),
+    ].join('');
+    if (d.facilities?.length) {
+      html += '<table style="margin-top:10px"><thead><tr><th>ID</th><th>Name</th><th>Services</th></tr></thead><tbody>';
+      for (const f of d.facilities.slice(0, 10)) {
+        html += `<tr><td>${f.facility_id}</td><td>${f.name}</td><td>${(f.services||[]).join(', ')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    document.getElementById('facility-body').innerHTML = html;
+  } catch(e) { document.getElementById('facility-body').innerHTML = `<div class="error-msg">${e.message}</div>`; setDot('fac-dot', 'error'); }
+}
+
+function row(label, value) { return `<div class="row"><span class="label">${label}</span><span class="value">${value}</span></div>`; }
+
+async function reloadProtocols() {
+  try {
+    await api('/admin/reload-protocols');
+    loadProtocols();
+    loadSystemStatus();
+  } catch(e) { alert('Reload failed: ' + e.message); }
+}
+
+async function refreshAll() {
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  await Promise.all([loadSystemStatus(), loadCacheHealth(), loadActiveIncidents(), loadProtocols(), loadAuditLog(), loadFacilities()]);
+  document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+}
+
+function updateClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }
+
+refreshAll();
+setInterval(refreshAll, 30000);
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+</body>
+</html>

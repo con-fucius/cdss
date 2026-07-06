@@ -1,0 +1,73 @@
+ASSESSMENT
+---
+What's broken, missing, or disconnected — grounded in the code:
+---
+1. 'dispatcher-ui/app.js' has duplicate 'processTranscript' function body
+Lines ~280–320 define the suggestions rendering logic inside 'processTranscript', then the exact same block appears again after. This causes a JS syntax error — the second function body is orphaned code after the first function's closing brace. The UI will not load at all in a strict JS environment.
+2. 'POST /incidents/{id}/transcript' does not exist in 'main.py'
+The dispatcher UI calls 'PATCH /incidents/{id}/transcript' every 30 seconds to auto-save transcript. That endpoint is not in 'main.py'. Every auto-save call fails silently. The transcript is never persisted outside the in-memory locked-script log.
+3. 'GET /incidents/{id}/stream' does not exist in 'main.py'
+'receiving-ui/app.js' connects to 'GET /incidents/{id}/stream?token=...' for SSE. That endpoint does not exist. The receiving UI connects, fails, then exponential-backoff retries indefinitely. The ER doctor sees no live updates.
+4. 'POST /auth/dispatcher-login' does not exist in 'main.py'
+Both 'dispatcher-ui/app.js' and 'field-ui/app.js' call this on login. The endpoint does not exist. Neither UI can log in. Both are completely unusable.
+5. 'POST /incidents/{id}/select-protocol' does not exist in 'main.py'
+The manual protocol selector in the dispatcher UI calls this. No such endpoint. The dispatcher is stuck when protocol matching fails.
+6. 'GET /incidents/{id}/unit-location/latest' does not exist in 'main.py'
+Both dispatcher and receiving UIs poll this. Not implemented — only 'POST /incidents/{id}/unit-location' exists. The unit tracking map never updates.
+7. 'POST /triage/extract-entities' does not exist in either 'ambulance-cdss/main.py' or 'triage-ranker/main.py'
+The dispatcher speech listener calls this after each final transcript result. The endpoint does not exist. All entity extraction suggestions silently fail.
+8. 'handoff_link.py' uses 'hmac.new' which does not exist — should be 'hmac.new'
+'hmac.new' is not the correct Python API. It should be 'hmac.new(key, msg, digestmod)'. Actually Python's HMAC is 'hmac.new(key, msg, digestmod)' — but checking: 'hmac.new' IS the correct call in Python. The issue is: 'generate_handoff_token' creates a token but 'main.py' has 'GET /incidents/{id}/handoff-link' endpoint. Let me check — yes, 'handoff-link' endpoint calls 'generate_handoff_token' and returns a URL. But the receiving-ui injects '__INCIDENT_ID__' and '__TOKEN__' as literal placeholder strings — there is no server-side template rendering that replaces them. The receiving UI will always have 'INCIDENT_ID = "__INCIDENT_ID__"' and will immediately show the error screen.
+9. 'receiving-ui/app.js' references 'data.eta_minutes' but 'HandoffSummary' has no 'eta_minutes' field
+The handoff endpoint returns the 'HandoffSummary' dataclass which does not include 'eta_minutes'. The ETA countdown never starts.
+10. 'receiving-ui' references 'el("sse-banner")', 'el("handoff-page")', 'el("error-screen")', 'el("clinical-alerts")', 'el("news2-alert")', 'el("news2-sparkline")' etc — none of these IDs exist in 'receiving-ui/index.html'
+The receiving-ui HTML and JS are completely mismatched. Every 'el()' call in 'receiving-ui/app.js' returns 'null'. The entire receiving UI throws immediately on load.
+11. 'dispatcher-ui/app.js' calls 'el("caller-lat")' and 'el("caller-lon")' in 'route-facility-btn' handler after the map was added — but the Leaflet map now writes these via 'placeIntakeMarker'. However the map uses 'reverseGeocode' which calls Nominatim directly from the browser, violating Nominatim's terms of service for bulk/production use without prior permission.
+12. 'facility-mapper/app/geocoding.py' also calls Nominatim directly. Two separate services making unauthenticated Nominatim requests with the same User-Agent string will be rate-limited or blocked.
+
+---
+The complete list of everything to implement, fix or wire:
+---
+Backend — 'ambulance-cdss/app/main.py'
+- [ ] 'POST /auth/dispatcher-login' — accepts '{username, pin}', returns '{session_token, dispatcher_id}'. For now: validate against a hardcoded or env-configured list of 'DISPATCHER_CREDENTIALS' (format: '"unitid:pin"' comma-separated in env var). No full auth system. No database. Returns 401 on mismatch. Token is an HMAC-signed '"dispatcher_id:expiry"' string using 'HANDOFF_SIGNING_KEY' — reuse 'handoff_link.py''s pattern. Add 'DISPATCHER_CREDENTIALS' to '.env.example'.
+- [ ] 'PATCH /incidents/{id}/transcript' — accepts '{speaker: str, text: str}'. Appends '[{timestamp, speaker, text}]' to a 'transcript_log JSONB' column on 'Incident'. Add migration '0007_transcript_log'. Return the appended entry. No external call, no LLM.
+- [ ] 'GET /incidents/{id}/unit-location/latest' — returns '{location: {lat, lon, recorded_at, recorded_by}}' or '{location: null}'. Reads from 'incident_unit_location' table, most recent row. Simple SELECT, no logic.
+- [ ] 'POST /incidents/{id}/select-protocol' — accepts '{protocol_id, dispatcher_id}'. Checks that the incident exists and has no protocol yet ('dispatch_protocol_id IS NULL' — if already set, return 409 with '"Protocol already assigned"'). Calls 'registry.get(protocol_id)', validates it exists and is active. Calls 'set_dispatch_protocol', then gets entry question and returns same shape as 'create_incident' response. Add 'dispatcher_id' to the dispatch log row.
+- [ ] 'GET /incidents/{id}/stream' — SSE endpoint. Accepts '?token=' query param. Validates via 'verify_handoff_token'. Returns 'text/event-stream'. Polls 'get_incident_full' every 10 seconds and emits changed fields as typed events: 'vitals_added', 'medication_added', 'status_changed', 'field_log_added', 'unit_location_updated'. Closes stream when status is 'closed' or 'handoff_complete'. Use 'asyncio.sleep' between polls — no WebSocket dependency.
+- [ ] 'POST /triage/extract-entities' — proxy to triage-ranker's entity extraction, or implement inline if triage-ranker is unconfigured. Accepts '{transcript: str}'. Returns '{chief_complaint_suggestion, location_text, vitals, entities: [{label, category, negated, severity_weight}], confidence, degraded_mode}'. If 'TRIAGE_RANKER_BASE_URL' is set, call 'POST {TRIAGE_RANKER_BASE_URL}/extract-entities'. Otherwise use a minimal inline regex fallback (extract numbers as vitals, match known clinical keywords from a short hardcoded list). Never returns an error — always returns a partial result.
+- [ ] 'GET /incidents/{id}/handoff-link' — fix token injection into receiving UI URL. Currently returns '{handoff_url: "http://host/handoff?id=X&token=Y"}' where the receiving UI is expected to be served. But the receiving UI has hardcoded placeholder strings '"__INCIDENT_ID__"' and '"__TOKEN__"'. Two options: (a) serve 'receiving-ui/index.html' from the backend with '__INCIDENT_ID__' and '__TOKEN__' replaced at serve time — add 'GET /handoff' endpoint that reads the HTML file and does string replacement before serving; (b) have the receiving-ui read 'id' and 'token' from URL query params instead of hardcoded constants. Option (b) is simpler and correct — fix 'receiving-ui/app.js' to use 'new URLSearchParams(window.location.search).get('id')' and '.get('token')'.
+- [ ] 'HandoffSummary' — add 'eta_minutes' field. Read from 'incident.eta_minutes'. Surfaced in 'GET /incidents/{id}/handoff' response.
+- [ ] Migration '0007_transcript_log' — 'op.add_column("incidents", sa.Column("transcript_log", JSONB, nullable=True, server_default="'[]'"))'
+
+---
+'triage-ranker/app/main.py'
+- [ ] 'POST /extract-entities' — new endpoint that runs Stage 1 only (no UMLS resolution, no ranking). Accepts '{transcript: str}'. Returns '{entities: [...], chief_complaint_suggestion: str|null, location_text: str|null, vitals: dict, confidence: float, degraded_mode: bool}'. Thin wrapper over 'extract_keywords'. Chief complaint suggestion: the highest-weighted non-negated entity's canonical name. Location text: any match against a location-pattern regex (e.g. "near X", "at X", "X road"). Vitals: regex extraction of numbers with units (BP "120/80", HR "90 bpm", SpO2 "98%", RR "18"). This must complete in < 200ms — Stage 1 only, no network calls.
+
+---
+'receiving-ui/index.html' and 'app.js'
+
+- [ ] Fix 'INCIDENT_ID' and 'TOKEN' to read from URL params — replace 'const INCIDENT_ID = "__INCIDENT_ID__"' with 'const INCIDENT_ID = new URLSearchParams(window.location.search).get('id') || ''' and same for 'TOKEN'. This makes the receiving UI work from any browser without server-side template rendering.
+- [ ] Audit all 'el()' calls against actual HTML IDs — 'receiving-ui/app.js' references 'el("sse-banner")', 'el("handoff-page")', 'el("error-screen")', 'el("error-message")', 'el("priority-banner")', 'el("priority-code")', 'el("incident-id")', 'el("status-value")', 'el("unit-value")', 'el("chief-complaint")', 'el("facility-name")', 'el("facility-detail")', 'el("protocol-info")', 'el("dispatch-qa")', 'el("triage-section")', 'el("triage-data")', 'el("clinical-alerts")', 'el("news2-alert")', 'el("news2-value")', 'el("news2-detail")', 'el("gcs-alert")', 'el("gcs-value")', 'el("gcs-detail")', 'el("vitals-timeline")', 'el("medications")', 'el("field-actions")', 'el("generated-at")', 'el("loading-screen")', 'el("news2-sparkline")', 'el("eta-countdown")', 'el("receiving-map")'. Every one of these IDs must exist in the HTML. Add any that are missing.
+
+- [ ] Triage enrichment — 'renderTriageEnrichment' is currently a no-op — it calls 'hide(section)' unconditionally. Wire it to display 'data.triage_enrichment' from the handoff response once 'HandoffSummary' includes it.
+
+---
+'dispatcher-ui/app.js'
+
+- [ ] Remove duplicate 'processTranscript' function body — the second block starting with 'if (data.location_text)' around line 320 is orphaned code from a copy-paste. Delete everything from that duplicate 'if (data.location_text)' block to the closing brace of the duplicate.
+---
+
+'field-ui/index.html'
+
+- [ ] Add 'id="gcs-trend-alert"' div — 'field-ui/app.js' calls 'el("gcs-trend-alert")' but the element may not exist in the HTML (cannot confirm without reading the HTML, but it was added in 'receiving-ui' not 'field-ui'). Verify it exists; add it if not.
+---
+Nominatim usage
+
+- [ ] Both the dispatcher map and 'facility-mapper/geocoding.py' call Nominatim directly from production services. Nominatim's usage policy prohibits heavy use from production applications without explicit permission. Replace with a self-hosted Nominatim instance (via Docker) or switch to a geocoding provider that permits commercial/production use (OpenRouteService, Geoapify free tier, or Photon which is OSM-based and self-hostable). Add 'GEOCODING_BASE_URL' env var to both services. The geocoding abstraction in 'geocoding.py' already isolates this — only the base URL needs to change.
+- [ ] Add 'GEOCODING_BASE_URL' to 'facility-mapper/.env.example' and 'ambulance-cdss/.env.example'. Default to 'https://nominatim.openstreetmap.org' for development. Document in 'RUNBOOK.md' that production deployments must use a self-hosted or permitted geocoding service.
+
+---
+'RUNBOOK.md' and 'PHASE_STATUS.md'
+
+- [ ] Update 'PHASE_STATUS.md' to reflect: receiving UI SSE ('GET /incidents/{id}/stream') as NOT DONE, auth endpoints as NOT DONE, transcript logging as NOT DONE, entity extraction proxy as NOT DONE.
+- [ ] Add to 'RUNBOOK.md': how to configure 'DISPATCHER_CREDENTIALS', how to access the receiving UI (URL format: 'receiving-ui/index.html?id={incident_id}&token={token}'), Nominatim production usage warning.

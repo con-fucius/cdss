@@ -154,7 +154,7 @@ body.offline .app-header {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 12px 16px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
@@ -163,12 +163,12 @@ body.offline .app-header {
 .app-header__title { font-weight: 700; font-size: 14px; }
 
 .app-header__status {
-  font-size: 11px;
-  color: var(--text-dim);
-  padding: 3px 8px;
+  font-size: 12px;
+  padding: 4px 10px;
   border-radius: var(--radius);
-  background: var(--bg-card);
   border: 1px solid var(--border);
+  white-space: nowrap;
+  margin-left: auto;
 }
 .app-header__status.ok { color: var(--success); border-color: var(--success); }
 .app-header__status.degraded { color: var(--warning); border-color: var(--warning); }
@@ -204,7 +204,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 label { font-size: 14px; font-weight: 600; color: var(--text-dim); }
 .required { color: var(--danger); }
 
-input[type="text"], input[type="number"], select {
+input[type="text"], input[type="number"], input[type="password"], textarea, select {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -215,7 +215,13 @@ input[type="text"], input[type="number"], select {
   width: 100%;
   min-height: var(--touch-min);
 }
-input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+textarea {
+  resize: vertical;
+  min-height: 44px;
+  max-height: 200px;
+  width: 100%;
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .field-row { display: flex; gap: 12px; align-items: flex-end; }
 .field-row > * { flex: 1; }
@@ -244,9 +250,13 @@ button {
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn--large { font-size: 1.15rem; padding: 14px 24px; min-height: 56px; }
 
 .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { border-color: var(--accent); }
+
+.btn-danger { background: var(--danger); color: #fff; border: 1px solid var(--danger); }
+.btn-danger:hover { background: #e04a3a; }
 
 .btn-tertiary {
   background: transparent;
@@ -406,6 +416,312 @@ button {
   font-family: ui-monospace, monospace;
 }
 
+/* ── EPIC 3.3: Quick action buttons — fat-finger, haptic ─── */
+
+.quick-actions {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.quick-actions__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.quick-actions__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-action-btn {
+  flex: 1 1 auto;
+  min-width: 100px;
+  min-height: 52px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-action-btn:hover {
+  border-color: var(--accent);
+  background: rgba(47, 125, 225, 0.08);
+}
+
+.quick-action-btn:active {
+  transform: scale(0.96);
+  background: rgba(47, 125, 225, 0.15);
+}
+
+.quick-action-btn.logged {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.quick-action-btn.error-flash {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+@media (max-width: 768px) {
+  .quick-actions__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .quick-action-btn {
+    min-height: 56px;
+  }
+}
+
+/* ── EPIC 3.4: Voice-assisted log entry ─────────────────────── */
+
+.voice-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+/* ── Small button variant (logout) ─────────────────────────── */
+
+.btn--small {
+  padding: 6px 12px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+/* ── Gap 3a: Voice control toggle & pulsing dot ────────────── */
+
+.voice-control-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.voice-control-dot.active {
+  background: var(--danger);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
+}
+
+.mobile-nav__btn--voice {
+  position: relative;
+}
+
+/* ── Gap 3b: Voice vitals input & preview ──────────────────── */
+
+.voice-vitals-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.voice-vitals-preview {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.voice-vitals-preview__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.voice-vitals-preview__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.voice-vitals-preview__item {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.voice-vitals-preview__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Gap 3c: Decision overlay ──────────────────────────────── */
+
+.decision-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.decision-overlay__content {
+  width: 100%;
+  max-width: 480px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.decision-overlay__question {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.4;
+  margin-bottom: 16px;
+  white-space: pre-line;
+}
+
+.decision-overlay__btn {
+  width: 100%;
+  min-height: 120px;
+  font-size: 28px;
+  font-weight: 800;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.decision-overlay__btn--yes {
+  background: var(--success);
+  color: #fff;
+}
+
+.decision-overlay__btn--yes:active {
+  background: #248a55;
+}
+
+.decision-overlay__btn--no {
+  background: var(--danger);
+  color: #fff;
+}
+
+.decision-overlay__btn--no:active {
+  background: #b5332a;
+}
+
+.decision-overlay__skip {
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  font-size: 14px;
+  padding: 8px;
+  text-align: center;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.decision-overlay__skip:hover {
+  color: var(--text);
+}
+
+/* ── Gap 3d: NEWS2 score badge ─────────────────────────────── */
+
+.news2-score-badge {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.news2-score-badge.score-flag {
+  margin-bottom: 12px;
+}
+
+.news2-alert {
+  border-color: var(--danger) !important;
+  background: var(--danger-bg) !important;
+  color: #f4a89e !important;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+/* ── Gap 3e: Offline queue collapsible section ─────────────── */
+
+.offline-queue-section {
+  position: fixed;
+  bottom: 60px;
+  left: 0;
+  right: 0;
+  z-index: 99;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+}
+
+.offline-queue-section__toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border: none;
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.offline-queue-section__arrow {
+  font-size: 12px;
+  transition: transform 0.15s;
+}
+
+.offline-queue-section__list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0 16px 8px;
+}
+
 /* ── Checklist steps ────────────────────────────────────────── */
 
 .step-list {
@@ -518,6 +834,29 @@ button {
   padding: 10px 0;
 }
 
+.card-hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.action-result {
+  display: inline-block;
+  font-size: 13px;
+  margin-left: 8px;
+  color: var(--text-dim);
+}
+.action-result.error { color: var(--danger); }
+.action-result.success { color: var(--success); }
+
+.facility-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
 .score-flag {
   display: inline-block;
   padding: 2px 8px;
@@ -599,7 +938,7 @@ button:focus-visible {
   }
 
   /* Make all inputs taller for touch */
-  input[type="text"], input[type="number"], select {
+input[type="text"], input[type="number"], input[type="password"], select {
     padding: 14px 12px;
     font-size: 16px;
     min-height: 52px;
@@ -656,6 +995,21 @@ button:focus-visible {
   /* Protocol select card */
   #field-protocol-select { min-height: 52px; }
   #select-protocol-btn { min-height: 52px; }
+
+  /* Feature 1: Status bar mobile */
+  .incident-status-bar { padding: 10px 12px; }
+  .status-bar__badge { font-size: 11px; }
+
+  /* Feature 2: Status actions mobile */
+  .status-actions { flex-direction: column; }
+  .status-action-btn { min-width: auto; width: 100%; }
+
+  /* Feature 4: Vitals trend chart mobile */
+  .vitals-trend-chart__bars { height: 100px; }
+  .vitals-trend-chart__bar { min-width: 12px; }
+
+  /* Feature 7: Chronometer mobile */
+  .chronometer-bar__time { font-size: 16px; }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -664,6 +1018,7 @@ button:focus-visible {
 
 @media (min-width: 769px) {
   .mobile-nav { display: none; }
+  .offline-queue-section { bottom: 0; }
   .tab-bar {
     display: flex;
     gap: 4px;
@@ -697,9 +1052,442 @@ button:focus-visible {
   }
 }
 
+/* ── Inline style replacements ────────────────────────────── */
+
+.label-inline-flex {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.field-margin-top {
+  margin-top: 6px;
+}
+
+/* ── Suggestions dropdown ─────────────────────────────────────── */
+
+.input-with-suggestions {
+  position: relative;
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  z-index: 100;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.suggestions-dropdown .suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.suggestions-dropdown .suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestions-dropdown .suggestion-item:hover,
+.suggestions-dropdown .suggestion-item.active {
+  background: var(--bg-panel);
+}
+
+.voice-status-text {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.facility-btn-spacing {
+  margin-bottom: 12px;
+}
+
 /* ══════════════════════════════════════════════════════════════
-   LARGE DESKTOP (1025px+)
+   FEATURE 1: Incident Status Bar
    ══════════════════════════════════════════════════════════════ */
+
+.incident-status-bar {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.status-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.status-bar__row--detail {
+  gap: 16px;
+}
+
+.status-bar__badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-bar__badge.status-received { background: var(--accent); color: #fff; }
+.status-bar__badge.status-dispatched { background: var(--guidance); color: #fff; }
+.status-bar__badge.status-on_scene { background: var(--warning); color: #1a1400; }
+.status-bar__badge.status-transporting { background: var(--danger); color: #fff; }
+.status-bar__badge.status-handoff_complete { background: var(--success); color: #fff; }
+
+.status-bar__elapsed {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+}
+
+.status-bar__detail {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 2: Quick Status Actions
+   ══════════════════════════════════════════════════════════════ */
+
+.status-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.status-action-btn {
+  flex: 1 1 auto;
+  min-width: 140px;
+  min-height: 48px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+
+.status-action-btn:hover {
+  background: var(--accent-hover);
+}
+
+.status-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 3: Dispatch Updates Panel
+   ══════════════════════════════════════════════════════════════ */
+
+.dispatch-updates {
+  background: var(--bg-panel);
+  border: 1px solid var(--guidance);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.dispatch-updates__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--guidance-bg);
+  border-bottom: 1px solid var(--guidance);
+}
+
+.dispatch-updates__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--guidance);
+}
+
+.dispatch-updates__indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.dispatch-updates__indicator.has-new {
+  background: var(--success);
+  animation: dispatch-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dispatch-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.dispatch-updates__list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 14px;
+}
+
+.dispatch-updates__item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.dispatch-updates__item:last-child {
+  border-bottom: none;
+}
+
+.dispatch-updates__item-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.dispatch-updates__item-note {
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.dispatch-updates__empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 4: Vitals Trend Chart (NEWS2 bar chart)
+   ══════════════════════════════════════════════════════════════ */
+
+.vitals-trend-chart {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.vitals-trend-chart__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.vitals-trend-chart__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.vitals-trend-chart__arrow {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.vitals-trend-chart__arrow.trend-up { color: var(--danger); }
+.vitals-trend-chart__arrow.trend-down { color: var(--success); }
+.vitals-trend-chart__arrow.trend-stable { color: var(--text-dim); }
+
+.vitals-trend-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 120px;
+  padding: 4px 0;
+}
+
+.vitals-trend-chart__bar {
+  flex: 1;
+  min-width: 16px;
+  border-radius: 3px 3px 0 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  transition: opacity 0.2s;
+}
+
+.vitals-trend-chart__bar:hover {
+  opacity: 0.85;
+}
+
+.vitals-trend-chart__bar-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+  text-align: center;
+}
+
+.vitals-trend-chart__bar-time {
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.vitals-trend-chart__legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  justify-content: center;
+}
+
+.vitals-trend-chart__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.vitals-trend-chart__swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.vitals-trend-chart__swatch.swatch--low { background: var(--success); }
+.vitals-trend-chart__swatch.swatch--medium { background: var(--warning); }
+.vitals-trend-chart__swatch.swatch--high { background: var(--danger); }
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 5: Medication Interaction Warning
+   ══════════════════════════════════════════════════════════════ */
+
+.med-interaction-banner {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  color: #f0c98a;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.med-interaction-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 6: Enhanced GPS Status (additional display area)
+   ══════════════════════════════════════════════════════════════ */
+
+.gps-detail {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 7: Chronometer Bar
+   ══════════════════════════════════════════════════════════════ */
+
+.chronometer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-family: ui-monospace, monospace;
+}
+
+.chronometer-bar__label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-family: var(--font);
+}
+
+.chronometer-bar__time {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+
+.chronometer-bar__time.timer-green { color: var(--success); }
+.chronometer-bar__time.timer-yellow { color: var(--warning); }
+.chronometer-bar__time.timer-red { color: var(--danger); }
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE 8: Checklist step highlight animation
+   ══════════════════════════════════════════════════════════════ */
+
+.step-item.step-just-completed {
+  animation: step-flash 1.2s ease-out;
+}
+
+@keyframes step-flash {
+  0% { background: var(--success-bg); border-color: var(--success); }
+  100% { background: var(--bg-card); border-color: var(--success); }
+}
+
+.step-progress-bar {
+  height: 4px;
+  background: var(--bg-card);
+  border-radius: 2px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.step-progress-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.step-eta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+/* ── Reduced motion preference ────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-pulse { animation: none !important; }
+  .quick-action-btn:active { transform: none !important; }
+}
 
 @media (min-width: 1025px) {
   .app-main {

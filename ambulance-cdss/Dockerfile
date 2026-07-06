@@ -1,44 +1,18 @@
-# ambulance-cdss/Dockerfile
-# Multi-stage build: builder installs deps, runtime copies only what's needed.
-
-FROM python:3.11-slim AS builder
-
+FROM python:3.12-slim AS builder
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv for fast dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --frozen --no-dev
-
-# Copy application code
+RUN pip install uv && uv sync --frozen --no-dev
 COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini ./
+COPY dispatcher-ui/ dispatcher-ui/
+COPY field-ui/ field-ui/
+COPY receiving-ui/ receiving-ui/
 
-FROM python:3.11-slim AS runtime
-
+FROM python:3.12-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy application code and migrations
-COPY --from=builder /app/app /app/app
-COPY --from=builder /app/alembic /app/alembic
-COPY --from=builder /app/alembic.ini /app/alembic.ini
-
-# Ensure uv-managed venv is on PATH
-ENV PATH="/app/.venv/bin:$PATH"
-
+COPY --from=builder /app /app
 EXPOSE 8000
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8000/health || exit 1
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

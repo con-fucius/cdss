@@ -31,6 +31,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Enum,
     Float,
@@ -137,6 +138,22 @@ class Incident(Base):
     # the enrichment may not have resolved when the incident is first queried.
     triage_enrichment: Mapped[dict | None] = mapped_column(JSONB)
 
+    # Epic 1.4 — Call transcription persistence.
+    # Append-only text field storing the verbatim call transcript with
+    # timestamps and speaker labels. Null when no audio transcription
+    # was captured (manual-entry calls).
+    transcript_text: Mapped[str | None] = mapped_column(Text)
+
+    # Epic 1.5 — E911/AML location accuracy.
+    # Stores the reported accuracy of the location pin from an external
+    # push (e.g. E911, AML). Null when location was entered manually.
+    location_accuracy_m: Mapped[float | None] = mapped_column(Float)
+
+    # Next-of-kin contact information for family notification.
+    next_of_kin_name: Mapped[str | None] = mapped_column(String(256))
+    next_of_kin_phone: Mapped[str | None] = mapped_column(String(32))
+    next_of_kin_relationship: Mapped[str | None] = mapped_column(String(64))
+
 
 class IncidentDispatchLog(Base):
     """Append-only Mode 1 locked-script transcript. Never updated, never deleted."""
@@ -205,7 +222,7 @@ class IncidentVitals(Base):
     bp_systolic: Mapped[int | None] = mapped_column(Integer)
     bp_diastolic: Mapped[int | None] = mapped_column(Integer)
     heart_rate: Mapped[int | None] = mapped_column(Integer)
-    consciousness: Mapped[str | None] = mapped_column(String(4))  # A/V/P/U
+    consciousness: Mapped[str | None] = mapped_column(String(20))  # A/V/P/U or full words
     temperature: Mapped[float | None] = mapped_column(Float)
 
     gcs_eye: Mapped[int | None] = mapped_column(Integer)
@@ -270,6 +287,20 @@ class GuidanceLookupLog(Base):
     )
 
 
+class AuditEvent(Base):
+    __tablename__ = 'audit_events'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(100))
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    details: Mapped[dict | None] = mapped_column(JSONB)
+    ip_address: Mapped[str | None] = mapped_column(String(45))
+
+
 class IncidentUnitLocation(Base):
     """Improvement 4.3 — lightweight location pings from the field unit
     during an active incident. Two data columns (lat, lon) per row,
@@ -290,3 +321,57 @@ class IncidentUnitLocation(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class IncidentCasualty(Base):
+    """Multi-casualty incident sub-table. Each row represents one casualty
+    within an incident. The incident itself remains the root record —
+    casualties are a child collection, not a replacement for the incident model.
+    """
+
+    __tablename__ = "incident_casualties"
+    __table_args__ = (Index("ix_casualties_incident", "incident_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("incidents.incident_id"), nullable=False
+    )
+    casualty_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    chief_complaint: Mapped[str | None] = mapped_column(String(500))
+    triage_score: Mapped[str | None] = mapped_column(String(10))  # START: Immediate/Delayed/Minor/Deceased
+    age_estimate: Mapped[int | None] = mapped_column(Integer)
+    gender: Mapped[str | None] = mapped_column(String(10))
+    vitals_summary: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(50), server_default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class IncidentNote(Base):
+    """Structured incident notes — replaces the plain-text blob in Incident.notes.
+    Each note is individually trackable with author, role, type, and audit timestamps.
+    Supports soft-delete for audit trail preservation.
+    """
+
+    __tablename__ = "incident_notes"
+    __table_args__ = (
+        Index("ix_notes_incident", "incident_id"),
+        Index("ix_notes_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("incidents.incident_id"), nullable=False
+    )
+    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    author_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    author_role: Mapped[str] = mapped_column(String(20), nullable=False)  # 'dispatcher', 'field', 'system'
+    note_type: Mapped[str] = mapped_column(String(50), nullable=False)    # 'dispatcher_note', 'field_log', 'correction', 'system'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

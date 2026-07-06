@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ambulance CDSS — Dispatcher Console</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   </head>
   <body>
     <!-- Phase 5.1: Offline detection banner — full-width, position:fixed, cannot be missed -->
@@ -30,43 +32,54 @@
       <div class="app-header__status" id="connection-status">
         checking connection…
       </div>
+      <button id="logout-btn" class="btn-tertiary btn-sm" style="margin-left:auto;">Logout</button>
     </header>
 
     <main class="app-main">
+      <!-- ── EPIC 6.1: Dispatcher Login Gate ─────────────────────────── -->
+      <section id="login-screen" class="screen">
+        <h1>Dispatcher Login</h1>
+        <form id="login-form">
+          <label for="login-username">Username <span class="required">*</span></label>
+          <input type="text" id="login-username" required placeholder="dispatcher username" />
+          <label for="login-pin">PIN <span class="required">*</span></label>
+          <input type="password" id="login-pin" required placeholder="4-digit PIN" minlength="4" inputmode="numeric" />
+          <button type="submit" class="btn-primary">Login</button>
+        </form>
+        <div id="login-error" class="error-banner hidden" role="alert" aria-live="assertive"></div>
+      </section>
+
       <!-- ── Call intake ───────────────────────────────────────────────── -->
-      <section id="intake-screen" class="screen">
+      <section id="intake-screen" class="screen hidden">
         <h1>New call</h1>
         <form id="intake-form">
           <label for="chief-complaint"
             >Chief complaint <span class="required">*</span></label
           >
-          <input
-            type="text"
+          <div class="input-with-suggestions">
+          <textarea
             id="chief-complaint"
             name="chief_complaint"
             required
             placeholder="e.g. not breathing, choking, car accident"
-          />
+            rows="2"
+          ></textarea>
+            <div id="complaint-suggestions" class="suggestions-dropdown hidden"></div>
+          </div>
 
-          <div class="field-row">
-            <div>
-              <label for="caller-lat">Caller latitude</label>
-              <input
-                type="number"
-                id="caller-lat"
-                step="any"
-                placeholder="optional"
-              />
+          <!-- EPIC 2.1: Leaflet.js map for caller location -->
+          <label>Caller location</label>
+          <div id="intake-map" class="intake-map"></div>
+          <input type="hidden" id="caller-lat" />
+          <input type="hidden" id="caller-lon" />
+          <div class="map-controls">
+            <label for="address-search" class="hidden">Search address</label>
+            <div class="input-with-suggestions" style="flex:1">
+              <input type="text" id="address-search" placeholder="Search address..." class="address-search-input" autocomplete="off" />
+              <div id="address-suggestions" class="suggestions-dropdown hidden"></div>
             </div>
-            <div>
-              <label for="caller-lon">Caller longitude</label>
-              <input
-                type="number"
-                id="caller-lon"
-                step="any"
-                placeholder="optional"
-              />
-            </div>
+            <button type="button" id="clear-location-btn" class="btn-secondary btn-sm">Clear</button>
+            <span id="map-status" class="map-status"></span>
           </div>
 
           <label for="caller-location-text"
@@ -88,9 +101,25 @@
             placeholder="your operator ID"
           />
 
+          <!-- Epic 1.1: Streaming audio capture toggle -->
+          <div class="audio-capture-row">
+            <button type="button" id="start-listening-btn" class="btn-secondary">
+              🎙 Start listening
+            </button>
+            <span id="listening-status" class="listening-status hidden">Listening…</span>
+          </div>
+          <div id="live-transcript" class="live-transcript hidden"></div>
+          <div id="suggestion-cards" class="suggestion-cards hidden"></div>
+
+          <!-- Gap 1: Protocol match banner shown after entity extraction -->
+          <div id="protocol-match-banner" class="info-banner hidden">
+            <span id="protocol-match-text"></span>
+            <button id="protocol-match-confirm-btn" class="btn-primary btn-sm protocol-match-btn-gap">Use this protocol</button>
+          </div>
+
           <button type="submit" class="btn-primary">Start call</button>
         </form>
-        <div id="intake-error" class="error-banner hidden"></div>
+        <div id="intake-error" class="error-banner hidden" role="alert" aria-live="assertive"></div>
       </section>
 
       <!-- ── Locked script ─────────────────────────────────────────────── -->
@@ -126,6 +155,8 @@
                 <span
                   id="guidance-badge"
                   class="guidance-badge hidden"
+                  role="button"
+                  tabindex="0"
                   title="Mode 2 guidance available"
                   >Guidance available</span
                 >
@@ -189,9 +220,8 @@
                   ></span>
                 </div>
                 <div
-                  class="triage-enrichment-row"
+                  class="triage-enrichment-row hidden"
                   id="triage-shock-index-row"
-                  class="hidden"
                 >
                   <span class="triage-enrichment-label">Shock index:</span>
                   <span
@@ -209,7 +239,7 @@
               </div>
             </div>
 
-            <div id="out-of-script-error" class="error-banner hidden"></div>
+            <div id="out-of-script-error" class="error-banner hidden" role="alert" aria-live="assertive"></div>
 
             <div id="terminal-card" class="terminal-card hidden">
               <div class="terminal-priority" id="terminal-priority"></div>
@@ -228,7 +258,21 @@
               <div class="terminal-instructions-label">
                 Pre-arrival instructions — read to caller now
               </div>
+              <!-- Gap 7: Relay mode — instructions shown one at a time -->
+              <div id="relay-progress" class="relay-progress hidden">
+                <span id="relay-progress-text">Instruction 1 of 5</span>
+                <span id="relay-elapsed" class="relay-elapsed">00:00</span>
+              </div>
+              <div id="relay-current-instruction" class="relay-current-instruction hidden"></div>
               <ol class="terminal-instructions" id="terminal-instructions"></ol>
+              <div id="relay-controls" class="relay-controls hidden">
+                <button id="relay-confirm-btn" class="btn-secondary">Caller Confirmed</button>
+                <button id="relay-next-btn" class="btn-primary">Next Instruction</button>
+                <span id="relay-status" class="action-result"></span>
+              </div>
+              <div id="relay-complete-banner" class="info-banner hidden">
+                All instructions delivered and confirmed.
+              </div>
 
               <div class="terminal-actions">
                 <button id="confirm-pre-arrival-btn" class="btn-secondary">
@@ -252,6 +296,8 @@
                 <span id="facility-result" class="action-result"></span>
               </div>
               <div id="facility-list" class="facility-list"></div>
+
+              <div id="unit-tracking-map" class="unit-tracking-map hidden"></div>
 
               <div
                 id="handoff-delivery-card"
@@ -319,6 +365,17 @@
           <aside class="script-sidebar">
             <h2>Call transcript</h2>
             <div id="transcript" class="transcript"></div>
+
+            <!-- Gap 8: Dispatcher notes during call -->
+            <div class="dispatcher-notes-section">
+              <h2>Dispatcher Notes</h2>
+              <textarea id="dispatcher-notes-input" class="dispatcher-notes-textarea" placeholder="Type notes during the call…" rows="4"></textarea>
+              <div class="dispatcher-notes-actions">
+                <button id="save-note-btn" class="btn-secondary btn-sm">Save Note</button>
+                <span id="save-note-result" class="action-result"></span>
+              </div>
+              <div id="dispatcher-notes-list" class="dispatcher-notes-list"></div>
+            </div>
           </aside>
         </div>
       </section>

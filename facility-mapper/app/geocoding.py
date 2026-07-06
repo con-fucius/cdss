@@ -20,7 +20,7 @@ import logging
 import httpx
 from cachetools import TTLCache
 
-from .config import get_geocoding_timeout_seconds, get_geocoding_user_agent
+from .config import get_geocoding_base_url, get_geocoding_timeout_seconds, get_geocoding_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,10 @@ async def geocode(location_text: str) -> tuple[float, float] | None:
 
     try:
         timeout = get_geocoding_timeout_seconds()
+        base_url = get_geocoding_base_url()
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
-                "https://nominatim.openstreetmap.org/search",
+                f"{base_url}/search",
                 params={
                     "q": normalised,
                     "format": "json",

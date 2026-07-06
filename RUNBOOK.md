@@ -1,149 +1,102 @@
-# RUNBOOK — Ambulance CDSS Ecosystem
+# Ambulance CDSS — Operational Runbook
 
-## Architecture
-
-```
-D:\Projects\CDSS\
-├── ambulance-cdss/          ← Authoritative incident record + dispatch engine (port 8000)
-├── facility-mapper/         ← Geospatial facility routing service (port 8001)
-├── triage-ranker/           ← NLP clinical enrichment service (port 8100)
-├── shared/                  ← Shared Pydantic contract schemas
-└── compose.yaml             ← Docker Compose orchestration
-```
-
-## Startup Sequence
+## Quick Start (Docker Compose)
 
 ```bash
 # 1. Start all services
 docker compose up -d
 
 # 2. Verify health
-curl http://localhost:8000/health    # Ambulance CDSS
-curl http://localhost:8001/health    # Facility Mapper
-curl http://localhost:8100/health    # Triage Ranker
-
-# 3. Check readiness (facility mapper may return 503 until BallTree built)
-curl http://localhost:8001/ready
+curl http://localhost:8000/health    # ambulance-cdss
+curl http://localhost:8100/health    # triage-ranker
+curl http://localhost:8001/health    # facility-mapper
 ```
 
-## Facility Data Load
+## Service URLs
 
-The Facility Mapper starts empty. Load facility data after first run:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Ambulance CDSS API | `http://localhost:8000` | Main incident record + dispatch engine |
+| Dispatcher Console | `http://localhost:5500` | Dispatcher static UI (open dispatcher-ui/index.html) |
+| Field Console | `http://localhost:5501` | Paramedic field UI (open field-ui/index.html) |
+| Triage Ranker | `http://localhost:8100` | Clinical triage enrichment |
+| Facility Mapper | `http://localhost:8001` | Geospatial facility routing |
+| PostgreSQL | `localhost:5432` | Shared database |
 
+## First-Time Setup
+
+### Load Facility Data
 ```bash
-# Copy facility data into the container
-docker compose cp data/facilities.csv facility-mapper:/data/facilities.csv
-
-# Load facilities (idempotent — second run produces same count, no duplicates)
-docker compose exec facility-mapper \
-  python -m scripts.load_facilities \
-  --source /data/facilities.csv \
-  --source-name KMHFL_2024_02
-
-# Verify loaded count
-curl http://localhost:8001/health
-# Should show: {"facility_count": N, "data_as_of": "KMHFL_2024_02", ...}
+# After first docker compose up, load Kenya health facility data:
+docker compose exec facility-mapper python -m scripts.load_facilities --source /path/to/data.csv
 ```
 
-### Data Source
-- Kenya Master Health Facility List (KMHFL) is the recommended source for Kenya
-- Data currency cadence: quarterly refresh recommended
-- Invalid coordinates (outside Kenya/Uganda/DRC bounds) are rejected with a count in the log
-
-## Protocol Reload
-
-Hot-reload both dispatch and field protocol registries without server restart:
-
+### Reload Protocols
 ```bash
-# Reload all protocols
+# Hot-reload dispatch and field protocol registries without restart:
 curl -X POST http://localhost:8000/admin/reload-protocols \
   -H "X-Admin-Key: your-admin-key"
-
-# Check protocol status
-curl http://localhost:8000/admin/protocol-status \
-  -H "X-Admin-Key: your-admin-key"
 ```
 
-**Important:** Existing in-progress incidents are unaffected — their `dispatch_protocol_snapshot` (taken at incident creation) is the source of truth, not the live registry.
-
-## Clinical Rules Reload
-
-Reload clinical_rules.yaml in the Triage Ranker without restart:
-
+### Reload Clinical Rules (Triage Ranker)
 ```bash
-# Reload rules
+# Reload clinical_rules.yaml without restart:
 curl -X POST http://localhost:8100/admin/rules/reload \
   -H "X-Admin-Key: your-admin-key"
-
-# Purge UMLS caches (if needed)
-curl -X DELETE http://localhost:8100/admin/cache \
-  -H "X-Admin-Key: your-admin-key"
 ```
 
-## Manual Purge Trigger
+## Manual Operations
 
-Trigger the PII retention purge (default: 30 days after incident closure):
-
+### Run PII Purge Manually
 ```bash
 curl -X POST http://localhost:8000/admin/purge-expired-incidents \
   -H "X-Admin-Key: your-admin-key"
 ```
 
-This is not wired to a scheduler — call manually or from an external cron job.
-
-## Running Tests
-
-### Ambulance CDSS unit tests
+### Check Purge Status
 ```bash
-cd ambulance-cdss
-uv run pytest tests/ -v
+curl http://localhost:8000/admin/purge-status \
+  -H "X-Admin-Key: your-admin-key"
 ```
 
-### Facility Mapper tests (requires seeded DB)
+### Protocol Audit (Sign-Off Status)
 ```bash
-cd facility-mapper
-uv run pytest tests/ -v
+curl http://localhost:8000/admin/protocol-audit \
+  -H "X-Admin-Key: your-admin-key"
 ```
-
-### Triage Ranker tests (requires spaCy model)
-```bash
-cd triage-ranker
-uv run pytest tests/ -v
-```
-
-### Integration tests (requires DATABASE_URL)
-```bash
-cd ambulance-cdss
-DATABASE_URL=postgresql+asyncpg://... uv run pytest tests/integration/ -v
-```
-
-## Service URLs (Docker Compose)
-
-| Service | Internal URL | External URL |
-|---------|-------------|-------------|
-| Ambulance CDSS | http://ambulance-cdss:8000 | http://localhost:8000 |
-| Facility Mapper | http://facility-mapper:8001 | http://localhost:8001 |
-| Triage Ranker | http://triage-ranker:8100 | http://localhost:8100 |
-| PostgreSQL | postgres:5432 | localhost:5432 |
 
 ## Troubleshooting
 
+### Service won't start
+1. Check `docker compose logs <service-name>` for errors
+2. Verify `.env` files are configured (copy from `.env.example`)
+3. Ensure PostgreSQL is healthy: `docker compose ps postgres`
+
+### Protocols not loading
+- Check `GET /admin/protocol-status` — rejected protocols show rejection reasons
+- Ensure `approved_by` is not a placeholder value ("Dev Setup", "TBD", etc.)
+- See `docs/SIGN_OFF_CHECKLIST.md` for the sign-off process
+
 ### Facility Mapper returns empty results
-1. Check `/health` — is `facility_count` > 0?
-2. If 0, run the data loader (see "Facility Data Load" above)
-3. If BallTree not ready, check `/ready` endpoint
+- Verify facility data has been loaded: `GET /data-currency`
+- Check BallTree is built: `GET /ready` should return 200
+- Reload if needed: `POST /admin/reload-facilities`
 
-### Triage Ranker in degraded mode
-1. Check `/health` — is `spacy_model_loaded` true?
-2. If false, the spaCy model was not downloaded in the Docker build
-3. Rebuild: `docker compose build triage-ranker`
+### Triage Ranker degraded mode
+- This is normal when UMLS API is not configured
+- System falls back to local regex + clinical rules extraction
+- Check `GET /health` for UMLS reachability status
 
-### Protocol reload shows rejections
-1. Check `/admin/protocol-status` for rejection reasons
-2. Common causes: missing governance fields, PLACEHOLDER approval names
-3. Fix the protocol JSON file, then reload
+## Environment Variables
 
-### Incidents not matching any protocol
-1. Check `/protocols` — is the expected protocol in `active`?
-2. If in `rejected`, fix the protocol file
-3. Check `chief_complaint_trigger` — does it include the caller's language?
+See `postgres.env.example` for database credentials.
+Each service has its own `.env.example` — copy to `.env` and configure.
+
+### Key Variables
+- `DATABASE_URL` — PostgreSQL connection string
+- `ENVIRONMENT` — `development` or `production`
+- `DISPATCHER_CREDENTIALS` — JSON of dispatcher username:pin_hash pairs
+- `ADMIN_API_KEY` — API key for /admin/* endpoints
+- `PURGE_SCHEDULE_ENABLED` — Enable automatic PII purge scheduler
+- `TRIAGE_RANKER_BASE_URL` — URL of the triage-ranker service
+- `FACILITY_REGISTRY_BASE_URL` — URL of the facility-mapper service

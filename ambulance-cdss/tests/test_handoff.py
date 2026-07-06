@@ -27,6 +27,7 @@ def _minimal_summary(**kwargs) -> HandoffSummary:
         field_protocol_version="1.0.0",
         routed_facility_id="FAC-001",
         routed_facility_name="Kenyatta National Hospital",
+        eta_minutes=12.0,
     )
     defaults.update(kwargs)
     return HandoffSummary(**defaults)

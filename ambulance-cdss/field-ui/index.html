@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ambulance CDSS — Field Console</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0c0f12" />
   </head>
   <body>
     <!-- Phase 6.5: Offline mode indicator — full-width amber banner -->
@@ -14,7 +16,7 @@
       role="alert"
       aria-live="assertive"
     >
-      <span class="offline-banner__icon">⚠</span>
+      <span class="offline-banner__icon">[OFFLINE]</span>
       <span class="offline-banner__text"
         >API unreachable — working offline. Actions will sync when connection is
         restored.</span
@@ -28,11 +30,33 @@
         checking connection…
       </div>
       <span id="gps-status" class="gps-status"></span>
+      <button id="logout-btn" class="btn-tertiary btn--small" title="Logout">Logout</button>
     </header>
 
+    <!-- Feature 7: Timer/Chronometer — visible in header bar area -->
+    <div id="chronometer-bar" class="chronometer-bar hidden">
+      <span class="chronometer-bar__label">Elapsed</span>
+      <span id="chronometer-display" class="chronometer-bar__time">00:00</span>
+    </div>
+
     <main class="app-main">
+      <!-- ── Epic 6.2: Paramedic Login Gate ────────────────────────────── -->
+      <section id="login-screen" class="screen">
+        <h1>Paramedic Login</h1>
+        <form id="login-form">
+          <label for="login-unit-id">Unit ID <span class="required">*</span></label>
+          <input type="text" id="login-unit-id" required placeholder="e.g. AMB-042" />
+
+          <label for="login-pin">PIN <span class="required">*</span></label>
+          <input type="password" id="login-pin" required placeholder="4-digit PIN" minlength="4" inputmode="numeric" />
+
+          <button type="submit" class="btn-primary">Login</button>
+        </form>
+        <div id="login-error" class="error-banner hidden"></div>
+      </section>
+
       <!-- ── Incident lookup ───────────────────────────────────────────── -->
-      <section id="lookup-screen" class="screen">
+      <section id="lookup-screen" class="screen hidden">
         <h1>Open incident</h1>
         <form id="lookup-form">
           <label for="incident-id-input">Incident ID</label>
@@ -60,6 +84,46 @@
 
       <!-- ── Incident workspace ────────────────────────────────────────── -->
       <section id="workspace-screen" class="screen hidden">
+
+        <!-- Feature 1: Incident Status Visibility — prominent status bar -->
+        <div id="incident-status-bar" class="incident-status-bar">
+          <div class="status-bar__row">
+            <span id="status-bar-status" class="status-bar__badge"></span>
+            <span id="status-bar-elapsed" class="status-bar__elapsed"></span>
+          </div>
+          <div class="status-bar__row status-bar__row--detail">
+            <span id="status-bar-protocol" class="status-bar__detail"></span>
+            <span id="status-bar-unit" class="status-bar__detail"></span>
+          </div>
+          <div class="status-bar__row status-bar__row--detail">
+            <span id="status-bar-progress" class="status-bar__detail"></span>
+          </div>
+        </div>
+
+        <!-- Feature 2: Quick Status Actions — contextual transition buttons -->
+        <div id="status-actions" class="status-actions hidden">
+          <button id="status-action-transporting" class="status-action-btn hidden" type="button">
+            Departing Scene → Transporting
+          </button>
+          <button id="status-action-arrived" class="status-action-btn hidden" type="button">
+            Arrived at Facility
+          </button>
+          <button id="status-action-handoff" class="status-action-btn hidden" type="button">
+            Complete Handoff
+          </button>
+        </div>
+
+        <!-- Feature 3: Dispatch Updates panel -->
+        <div id="dispatch-updates-panel" class="dispatch-updates hidden">
+          <div class="dispatch-updates__header">
+            <span class="dispatch-updates__title">Dispatch Updates</span>
+            <span id="dispatch-updates-indicator" class="dispatch-updates__indicator"></span>
+          </div>
+          <div id="dispatch-updates-list" class="dispatch-updates__list">
+            <div class="dispatch-updates__empty">No dispatch updates yet.</div>
+          </div>
+        </div>
+
         <div class="incident-banner" id="incident-banner"></div>
         <div class="dispatch-summary" id="dispatch-summary"></div>
 
@@ -97,6 +161,19 @@
           <button class="tab-btn" data-tab="summary">Incident summary</button>
         </nav>
 
+        <!-- EPIC 3.3: Quick action buttons — fat-finger, haptic, debounce -->
+        <div class="quick-actions" id="quick-actions">
+          <span class="quick-actions__label">Quick actions</span>
+          <div class="quick-actions__grid">
+            <button class="quick-action-btn" data-action="CPR started" type="button"> CPR started </button>
+            <button class="quick-action-btn" data-action="Defibrillation" type="button"> Defibrillation </button>
+            <button class="quick-action-btn" data-action="ROSC" type="button"> ROSC </button>
+            <button class="quick-action-btn" data-action="Airway secured" type="button"> Airway secured </button>
+            <button class="quick-action-btn" data-action="IV access" type="button"> IV access </button>
+            <button class="quick-action-btn" data-action="Patient moved" type="button"> Patient moved </button>
+          </div>
+        </div>
+
         <!-- Checklist tab -->
         <div class="tab-panel tab-panel--active" id="tab-checklist">
           <div id="protocol-select-card" class="card">
@@ -124,6 +201,16 @@
               proceeds.
             </div>
           </div>
+
+          <!-- Notify & Route — one-tap disposition action -->
+          <div class="card" id="notify-route-card">
+            <h2>Notify receiving &amp; route</h2>
+            <p class="card-hint">One-tap action: finds nearest facility using your GPS, routes the patient, and transitions to transporting.</p>
+            <button id="notify-route-btn" class="btn-primary btn--large">
+              Notify &amp; Route
+            </button>
+            <div id="notify-route-result" class="action-result"></div>
+          </div>
         </div>
 
         <!-- Vitals tab -->
@@ -134,6 +221,10 @@
             id="news2-missing-fields-banner"
             class="info-banner hidden"
           ></div>
+          <!-- NEWS2 score badge — Gap 3d -->
+          <div id="news2-score-badge" class="news2-score-badge hidden"></div>
+          <!-- NEWS2 critical alert banner — Gap 3d -->
+          <div id="news2-alert-banner" class="error-banner news2-alert hidden"></div>
           <div class="card">
             <h2>Record vitals</h2>
             <!-- Phase 6.3: Vitals pre-population indicator -->
@@ -141,18 +232,25 @@
               Pre-filled from last recording at
               <span id="vitals-prefill-timestamp"></span>
             </div>
+            <!-- Gap 3b: Voice input for vitals -->
+            <div class="voice-vitals-row">
+              <button type="button" id="voice-vitals-btn" class="btn-secondary" title="Speak vitals to auto-fill">
+                Voice Input
+              </button>
+              <span id="voice-vitals-status" class="hidden voice-status-text">Listening…</span>
+            </div>
             <form id="vitals-form">
               <div class="field-grid">
                 <div>
-                  <label>Respiratory rate (/min)</label>
+                  <label for="v-rr">Respiratory rate (/min)</label>
                   <input type="number" id="v-rr" />
                 </div>
                 <div>
-                  <label>SpO2 (%)</label>
+                  <label for="v-spo2">SpO2 (%)</label>
                   <input type="number" id="v-spo2" />
                 </div>
                 <div>
-                  <label>SpO2 scale</label>
+                  <label for="v-spo2-scale">SpO2 scale</label>
                   <select id="v-spo2-scale">
                     <option value="">—</option>
                     <option value="1">Scale 1</option>
@@ -160,7 +258,7 @@
                   </select>
                 </div>
                 <div>
-                  <label>On supplemental O2</label>
+                  <label for="v-supp-o2">On supplemental O2</label>
                   <select id="v-supp-o2">
                     <option value="">—</option>
                     <option value="true">Yes</option>
@@ -168,19 +266,19 @@
                   </select>
                 </div>
                 <div>
-                  <label>Systolic BP</label>
+                  <label for="v-bp-sys">Systolic BP</label>
                   <input type="number" id="v-bp-sys" />
                 </div>
                 <div>
-                  <label>Diastolic BP</label>
+                  <label for="v-bp-dia">Diastolic BP</label>
                   <input type="number" id="v-bp-dia" />
                 </div>
                 <div>
-                  <label>Heart rate (bpm)</label>
+                  <label for="v-hr">Heart rate (bpm)</label>
                   <input type="number" id="v-hr" />
                 </div>
                 <div>
-                  <label>Consciousness (AVPU)</label>
+                  <label for="v-consciousness">Consciousness (AVPU)</label>
                   <select id="v-consciousness">
                     <option value="">—</option>
                     <option value="A">Alert</option>
@@ -190,35 +288,59 @@
                   </select>
                 </div>
                 <div>
-                  <label>Temperature (°C)</label>
+                  <label for="v-temp">Temperature (°C)</label>
                   <input type="number" step="0.1" id="v-temp" />
                 </div>
                 <div>
-                  <label>GCS eye (1-4)</label>
+                  <label for="v-gcs-eye">GCS eye (1-4)</label>
                   <input type="number" min="1" max="4" id="v-gcs-eye" />
                 </div>
                 <div>
-                  <label>GCS verbal (1-5)</label>
+                  <label for="v-gcs-verbal">GCS verbal (1-5)</label>
                   <input type="number" min="1" max="5" id="v-gcs-verbal" />
                 </div>
                 <div>
-                  <label>GCS motor (1-6)</label>
+                  <label for="v-gcs-motor">GCS motor (1-6)</label>
                   <input type="number" min="1" max="6" id="v-gcs-motor" />
                 </div>
               </div>
               <button type="submit" class="btn-primary">Record vitals</button>
             </form>
+            <!-- Gap 3b: Voice-parsed vitals confirmation -->
+            <div id="voice-vitals-preview" class="voice-vitals-preview hidden">
+              <div class="voice-vitals-preview__title">Parsed from voice:</div>
+              <div id="voice-vitals-preview-items" class="voice-vitals-preview__items"></div>
+              <div class="voice-vitals-preview__actions">
+                <button type="button" id="voice-vitals-apply" class="btn-primary">Apply</button>
+                <button type="button" id="voice-vitals-dismiss" class="btn-secondary">Dismiss</button>
+              </div>
+            </div>
             <div id="vitals-error" class="error-banner hidden"></div>
           </div>
 
           <div class="card">
             <h2>Vitals history</h2>
+            <!-- Feature 4: NEWS2 Trend Chart -->
+            <div id="vitals-trend-chart" class="vitals-trend-chart hidden">
+              <div class="vitals-trend-chart__header">
+                <span class="vitals-trend-chart__title">NEWS2 Trend</span>
+                <span id="vitals-trend-arrow" class="vitals-trend-chart__arrow"></span>
+              </div>
+              <div id="vitals-trend-bars" class="vitals-trend-chart__bars"></div>
+              <div class="vitals-trend-chart__legend">
+                <span class="vitals-trend-chart__legend-item"><span class="vitals-trend-chart__swatch swatch--low"></span>Low</span>
+                <span class="vitals-trend-chart__legend-item"><span class="vitals-trend-chart__swatch swatch--medium"></span>Medium</span>
+                <span class="vitals-trend-chart__legend-item"><span class="vitals-trend-chart__swatch swatch--high"></span>High</span>
+              </div>
+            </div>
             <div id="vitals-history" class="record-list"></div>
           </div>
         </div>
 
         <!-- Medications tab -->
         <div class="tab-panel" id="tab-medications">
+          <!-- Feature 5: Medication Interaction Warning -->
+          <div id="med-interaction-banner" class="med-interaction-banner hidden"></div>
           <div class="card">
             <h2>Record medication given</h2>
             <div id="formulary-unavailable" class="warning-banner hidden">
@@ -229,29 +351,34 @@
             <form id="medication-form">
               <div class="field-row">
                 <div>
-                  <label>Drug name (select suggestion or type)</label>
-                  <select id="m-drug">
-                    <option value="">Loading suggestions…</option>
-                  </select>
-                  <input
-                    type="text"
-                    id="m-drug-text"
-                    placeholder="Or type drug / item name"
-                    style="margin-top: 6px"
-                  />
+                  <label for="m-drug">Drug name (select suggestion or type)</label>
+                  <div class="input-with-suggestions">
+                    <select id="m-drug">
+                      <option value="">Loading suggestions…</option>
+                    </select>
+                    <div id="drug-suggestions" class="suggestions-dropdown hidden"></div>
+                  </div>
+                  <div class="input-with-suggestions">
+                    <input
+                      type="text"
+                      id="m-drug-text"
+                      placeholder="Or type drug / item name"
+                      class="field-margin-top"
+                      autocomplete="off"
+                    />
+                    <div id="drug-text-suggestions" class="suggestions-dropdown hidden"></div>
+                  </div>
                 </div>
-                <input type="text" id="m-dose" placeholder="Dose (or N/A)" />
-                <input type="text" id="m-route" placeholder="Route (or N/A)" />
+                <div>
+                  <label for="m-dose">Dose</label>
+                  <input type="text" id="m-dose" placeholder="Dose (or N/A)" />
+                </div>
+                <div>
+                  <label for="m-route">Route</label>
+                  <input type="text" id="m-route" placeholder="Route (or N/A)" />
+                </div>
               </div>
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  font-weight: 400;
-                  color: var(--text);
-                "
-              >
+              <label for="m-not-administered" class="label-inline-flex">
                 <input type="checkbox" id="m-not-administered" />
                 Not administered (carried / considered / declined)
               </label>
@@ -275,15 +402,22 @@
         <div class="tab-panel" id="tab-log">
           <div class="card">
             <h2>Add field log entry</h2>
+            <!-- EPIC 3.4: Voice-assisted log entry -->
+            <div class="voice-log-row">
+              <button type="button" id="voice-log-btn" class="btn-secondary" title="Dictate note via microphone">
+                Dictate
+              </button>
+              <span id="voice-log-status" class="hidden voice-status-text">Listening...</span>
+            </div>
             <form id="field-log-form">
-              <label>Action type</label>
+              <label for="fl-action-type">Action type</label>
               <select id="fl-action-type" required>
                 <option value="assessment">Assessment</option>
                 <option value="intervention">Intervention</option>
                 <option value="vitals">Vitals</option>
                 <option value="disposition">Disposition</option>
               </select>
-              <label>Note</label>
+              <label for="fl-note">Note</label>
               <input
                 type="text"
                 id="fl-note"
@@ -302,6 +436,17 @@
 
         <!-- Summary tab -->
         <div class="tab-panel" id="tab-summary">
+          <!-- Facility routing card -->
+          <div class="card">
+            <h2>Nearest facility</h2>
+            <p class="card-hint">Route to the nearest appropriate hospital. Uses your current GPS location if available.</p>
+            <button id="route-facility-btn" class="btn-primary facility-btn-spacing">
+              Find nearest facility
+            </button>
+            <span id="facility-route-result" class="action-result"></span>
+            <div id="facility-route-list" class="record-list"></div>
+          </div>
+
           <div class="card">
             <div class="card-header">
               <h2>Full incident record</h2>
@@ -318,6 +463,25 @@
         </button>
       </section>
     </main>
+
+    <!-- Gap 3c: Full-screen binary decision overlay -->
+    <div id="decision-overlay" class="decision-overlay hidden">
+      <div class="decision-overlay__content">
+        <div class="decision-overlay__question" id="decision-question"></div>
+        <button class="decision-overlay__btn decision-overlay__btn--yes" id="decision-yes">YES</button>
+        <button class="decision-overlay__btn decision-overlay__btn--no" id="decision-no">NO</button>
+        <button class="decision-overlay__skip" id="decision-skip">Skip</button>
+      </div>
+    </div>
+
+    <!-- Gap 3e: Offline queue collapsible section -->
+    <div id="offline-queue-section" class="offline-queue-section hidden">
+      <button class="offline-queue-section__toggle" id="offline-queue-toggle">
+        <span>Queued actions</span>
+        <span class="offline-queue-section__arrow" id="offline-queue-arrow">▸</span>
+      </button>
+      <div class="offline-queue-section__list hidden" id="offline-queue-list"></div>
+    </div>
 
     <!-- Mobile bottom navigation bar (hidden on desktop via CSS) -->
     <nav class="mobile-nav" id="mobile-nav">
@@ -356,9 +520,25 @@
       >
         <span>Summary</span>
       </button>
+      <button
+        class="mobile-nav__btn mobile-nav__btn--voice"
+        id="voice-control-toggle"
+        title="Toggle voice commands"
+      >
+        <span class="voice-control-dot" id="voice-control-dot"></span>
+        <span>Voice</span>
+      </button>
     </nav>
 
     <script src="config.js"></script>
     <script src="app.js"></script>
+    <script>
+      // EPIC 3.5: Register service worker for PWA offline support
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>

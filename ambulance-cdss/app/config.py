@@ -9,6 +9,7 @@ lookup is a narrow bounded feature added later — see docs/PHASE_STATUS.md).
 
 from __future__ import annotations
 
+import json as _json
 import os
 from pathlib import Path
 
@@ -135,10 +136,13 @@ def get_allowed_origins() -> list[str]:
     Defaults to ['*'] when not set (development only).
     Set ALLOWED_ORIGINS to a comma-separated list of specific origins
     before production deployment.
+
+    Note: Browsers opening file:// URLs send 'Origin: null', so we
+    include 'null' in the allowed list for development mode.
     """
     raw = os.getenv("ALLOWED_ORIGINS", "").strip()
     if not raw:
-        return ["*"]
+        return ["*", "null"]
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
@@ -190,3 +194,42 @@ def validate_startup_config() -> None:
                 "HANDOFF_BASE_URL must not contain localhost before running "
                 "in production. See docs/OPERATIONAL MATURITY.txt item 7.5."
             )
+        if not get_dispatcher_credentials():
+            raise RuntimeError(
+                "DISPATCHER_CREDENTIALS must be set before running in production. "
+                "See docs/OPERATIONAL MATURITY.txt Epic 6."
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 6 — Authentication & session management
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_dispatcher_credentials() -> dict[str, dict]:
+    """Dispatcher credentials for login. JSON string from env var:
+    {"dispatcher1": {"pin_hash": "sha256:salt:hash", "role": "dispatcher"}}
+    Empty dict in development (auth bypassed).
+    """
+    raw = os.getenv("DISPATCHER_CREDENTIALS", "").strip()
+    if not raw:
+        return {}
+    try:
+        return _json.loads(raw)
+    except _json.JSONDecodeError:
+        return {}
+
+
+def get_handoff_signing_key() -> str:
+    """HMAC signing key for session and handoff tokens."""
+    return os.getenv("HANDOFF_SIGNING_KEY", "dev-signing-key-not-for-production").strip()
+
+
+def get_session_token_expiry_hours() -> int:
+    """Hours before a session token expires. Default 8 per Epic 6.1."""
+    return int(os.getenv("SESSION_TOKEN_EXPIRY_HOURS", "8"))
+
+
+def get_purge_schedule_enabled() -> bool:
+    """Whether the PII purge scheduler should run. Default false in dev."""
+    return os.getenv("PURGE_SCHEDULE_ENABLED", "false").strip().lower() == "true"

@@ -92,8 +92,16 @@ def get_geocoding_user_agent() -> str:
 
 
 def get_geocoding_timeout_seconds() -> float:
-    """Timeout in seconds for Nominatim geocoding HTTP requests."""
+    """Timeout in seconds for geocoding HTTP requests."""
     return float(os.getenv("GEOCODING_TIMEOUT_SECONDS", "5"))
+
+
+def get_geocoding_base_url() -> str:
+    """Base URL for geocoding service. Defaults to public Nominatim.
+    Production deployments MUST use a self-hosted or permitted service —
+    see RUNBOOK.md for details.
+    """
+    return os.getenv("GEOCODING_BASE_URL", "https://nominatim.openstreetmap.org").rstrip("/")
 
 
 def validate_startup_config() -> None:

@@ -29,11 +29,14 @@ from sqlalchemy import select, update
 from .config import get_incident_retention_days
 from .db import get_session
 from .models import (
+    AuditEvent,
     GuidanceLookupLog,
     Incident,
+    IncidentCasualty,
     IncidentDispatchLog,
     IncidentFieldLog,
     IncidentMedicationGiven,
+    IncidentNote,
     IncidentStatus,
     IncidentUnitLocation,
     IncidentVitals,
@@ -72,6 +75,9 @@ async def create_incident(
     caller_location_lat: float | None = None,
     caller_location_lon: float | None = None,
     caller_location_text: str | None = None,
+    next_of_kin_name: str | None = None,
+    next_of_kin_phone: str | None = None,
+    next_of_kin_relationship: str | None = None,
 ) -> dict[str, Any]:
     async with get_session() as session:
         incident = Incident(
@@ -79,6 +85,9 @@ async def create_incident(
             caller_location_lat=caller_location_lat,
             caller_location_lon=caller_location_lon,
             caller_location_text=caller_location_text,
+            next_of_kin_name=next_of_kin_name,
+            next_of_kin_phone=next_of_kin_phone,
+            next_of_kin_relationship=next_of_kin_relationship,
             status=IncidentStatus.RECEIVED,
         )
         session.add(incident)
@@ -404,6 +413,16 @@ async def add_vitals(
     new_news2_score = news2_result.score if news2_result else None
     new_news2_risk = news2_result.risk_level if news2_result else None
 
+    # Normalize consciousness input to AVPU single-letter codes
+    consciousness = vitals.get("consciousness")
+    if consciousness:
+        consciousness_map = {
+            'alert': 'A', 'confused': 'C', 'voice': 'V', 'pain': 'P',
+            'unresponsive': 'U', 'unconscious': 'U',
+        }
+        if consciousness.lower() in consciousness_map:
+            consciousness = consciousness_map[consciousness.lower()]
+
     async with get_session() as session:
         row = IncidentVitals(
             incident_id=uuid.UUID(incident_id),
@@ -415,7 +434,7 @@ async def add_vitals(
             bp_systolic=vitals.get("bp_systolic"),
             bp_diastolic=vitals.get("bp_diastolic"),
             heart_rate=vitals.get("heart_rate"),
-            consciousness=vitals.get("consciousness"),
+            consciousness=consciousness,
             temperature=vitals.get("temperature"),
             gcs_eye=vitals.get("gcs_eye"),
             gcs_verbal=vitals.get("gcs_verbal"),
@@ -730,6 +749,74 @@ async def append_incident_note(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Structured incident notes (replaces plain-text blob)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def add_note(
+    incident_id: str,
+    note_text: str,
+    author_id: str,
+    author_role: str,
+    note_type: str,
+) -> dict[str, Any]:
+    """Insert a structured note into incident_notes. Each note is individually
+    trackable with author, role, type, and audit timestamps.
+    """
+    cleaned_text = note_text.strip()
+    if not cleaned_text:
+        raise ValueError("Note text cannot be empty")
+    cleaned_author = author_id.strip()
+    if not cleaned_author:
+        raise ValueError("Author ID cannot be empty")
+    if author_role not in ("dispatcher", "field", "system"):
+        raise ValueError(f"Invalid author_role: {author_role!r}")
+    if note_type not in ("dispatcher_note", "field_log", "correction", "system"):
+        raise ValueError(f"Invalid note_type: {note_type!r}")
+
+    async with get_session() as session:
+        note = IncidentNote(
+            incident_id=uuid.UUID(incident_id),
+            note_text=cleaned_text,
+            author_id=cleaned_author,
+            author_role=author_role,
+            note_type=note_type,
+        )
+        session.add(note)
+        await session.commit()
+        await session.refresh(note)
+    return _note_to_dict(note)
+
+
+async def get_notes(
+    incident_id: str,
+    include_deleted: bool = False,
+) -> list[dict[str, Any]]:
+    """Return all structured notes for an incident, ordered by created_at ascending."""
+    async with get_session() as session:
+        stmt = select(IncidentNote).where(
+            IncidentNote.incident_id == uuid.UUID(incident_id)
+        ).order_by(IncidentNote.created_at.asc())
+        if not include_deleted:
+            stmt = stmt.where(IncidentNote.is_deleted == False)
+        rows = (await session.execute(stmt)).scalars().all()
+    return [_note_to_dict(r) for r in rows]
+
+
+def _note_to_dict(row: IncidentNote) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "incident_id": str(row.incident_id),
+        "note_text": row.note_text,
+        "author_id": row.author_id,
+        "author_role": row.author_role,
+        "note_type": row.note_type,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Full incident assembly (Phase 1.8 exit criterion — used by Phase 5 handoff)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -949,6 +1036,118 @@ async def get_latest_unit_location(incident_id: str) -> dict[str, Any] | None:
         "lon": row.lon,
         "recorded_by": row.recorded_by,
         "recorded_at": row.recorded_at.isoformat() if row.recorded_at else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-casualty incident support
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def add_casualty(
+    incident_id: str,
+    chief_complaint: str | None = None,
+    triage_score: str | None = None,
+    age_estimate: int | None = None,
+    gender: str | None = None,
+    vitals_summary: dict | None = None,
+    status: str = "pending",
+) -> dict[str, Any]:
+    """Add a casualty slot to a multi-casualty incident. Auto-assigns the
+    next casualty_number based on existing count.
+    """
+    async with get_session() as session:
+        existing_count = await session.scalar(
+            select(IncidentCasualty)
+            .where(IncidentCasualty.incident_id == uuid.UUID(incident_id))
+            .order_by(IncidentCasualty.casualty_number.desc())
+            .limit(1)
+        )
+        next_number = (existing_count.casualty_number + 1) if existing_count else 1
+
+        row = IncidentCasualty(
+            incident_id=uuid.UUID(incident_id),
+            casualty_number=next_number,
+            chief_complaint=chief_complaint,
+            triage_score=triage_score,
+            age_estimate=age_estimate,
+            gender=gender,
+            vitals_summary=vitals_summary,
+            status=status,
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+    return _casualty_to_dict(row)
+
+
+async def list_casualties(incident_id: str) -> list[dict[str, Any]]:
+    async with get_session() as session:
+        rows = (
+            await session.scalars(
+                select(IncidentCasualty)
+                .where(IncidentCasualty.incident_id == uuid.UUID(incident_id))
+                .order_by(IncidentCasualty.casualty_number.asc())
+            )
+        ).all()
+    return [_casualty_to_dict(r) for r in rows]
+
+
+async def update_casualty(
+    incident_id: str,
+    casualty_id: int,
+    **fields,
+) -> dict[str, Any] | None:
+    """Update specific fields on a casualty. Returns the updated casualty
+    dict, or None if not found.
+    """
+    async with get_session() as session:
+        row = await session.scalar(
+            select(IncidentCasualty).where(
+                IncidentCasualty.id == casualty_id,
+                IncidentCasualty.incident_id == uuid.UUID(incident_id),
+            )
+        )
+        if row is None:
+            return None
+        for key, value in fields.items():
+            if value is not None and hasattr(row, key):
+                setattr(row, key, value)
+        await session.commit()
+        await session.refresh(row)
+    return _casualty_to_dict(row)
+
+
+async def delete_casualty(incident_id: str, casualty_id: int) -> bool:
+    """Remove a casualty from a multi-casualty incident. Returns True if
+    deleted, False if not found.
+    """
+    async with get_session() as session:
+        row = await session.scalar(
+            select(IncidentCasualty).where(
+                IncidentCasualty.id == casualty_id,
+                IncidentCasualty.incident_id == uuid.UUID(incident_id),
+            )
+        )
+        if row is None:
+            return False
+        await session.delete(row)
+        await session.commit()
+    return True
+
+
+def _casualty_to_dict(row: IncidentCasualty) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "incident_id": str(row.incident_id),
+        "casualty_number": row.casualty_number,
+        "chief_complaint": row.chief_complaint,
+        "triage_score": row.triage_score,
+        "age_estimate": row.age_estimate,
+        "gender": row.gender,
+        "vitals_summary": row.vitals_summary,
+        "status": row.status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
 
@@ -1241,6 +1440,92 @@ async def get_dashboard_stats(window_hours: int = 24) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Weekly incident pattern report
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def get_weekly_report(
+    county: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> dict[str, Any]:
+    """Aggregates incident statistics over a date range. Filters by county
+    via caller_location_text substring match (since the model does not have
+    a dedicated county column). Returns aggregate dicts ready for the API.
+    """
+    if start_date is None:
+        start_date = datetime.now(UTC) - timedelta(days=7)
+    if end_date is None:
+        end_date = datetime.now(UTC)
+
+    async with get_session() as session:
+        stmt = select(Incident).where(
+            Incident.created_at >= start_date,
+            Incident.created_at < end_date,
+        )
+        if county:
+            stmt = stmt.where(Incident.caller_location_text.ilike(f"%{county}%"))
+        rows = (await session.scalars(stmt)).all()
+
+    total = len(rows)
+    by_sub_county: dict[str, int] = {}
+    by_complaint: dict[str, int] = {}
+    by_hour: dict[str, int] = {f"{h:02d}": 0 for h in range(24)}
+    response_times: list[float] = []
+
+    for row in rows:
+        # Sub-county: extract from caller_location_text if present
+        loc = row.caller_location_text or ""
+        sub_county = loc.strip() or "unknown"
+        by_sub_county[sub_county] = by_sub_county.get(sub_county, 0) + 1
+
+        # Complaint
+        complaint = (row.chief_complaint or "unknown").lower().strip()
+        by_complaint[complaint] = by_complaint.get(complaint, 0) + 1
+
+        # Hour bucket
+        if row.created_at:
+            hour_key = f"{row.created_at.hour:02d}"
+            by_hour[hour_key] = by_hour.get(hour_key, 0) + 1
+
+        # Response time (dispatched_at - created_at)
+        if row.dispatched_at and row.created_at:
+            delta = (row.dispatched_at - row.created_at).total_seconds() / 60.0
+            response_times.append(delta)
+
+    avg_response = round(sum(response_times) / len(response_times), 1) if response_times else None
+
+    # Busiest hours: top 3 by count
+    sorted_hours = sorted(by_hour.items(), key=lambda x: x[1], reverse=True)
+    busiest_hours = [h for h, c in sorted_hours[:3] if c > 0]
+
+    # Top presentations
+    sorted_complaints = sorted(by_complaint.items(), key=lambda x: x[1], reverse=True)
+    top_presentations = [
+        {
+            "complaint": c,
+            "count": n,
+            "pct": round(n / total * 100, 1) if total else 0,
+        }
+        for c, n in sorted_complaints[:10]
+    ]
+
+    return {
+        "period": {
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+        },
+        "total_incidents": total,
+        "by_sub_county": by_sub_county,
+        "by_complaint": by_complaint,
+        "by_hour": by_hour,
+        "avg_response_time_minutes": avg_response,
+        "busiest_hours": busiest_hours,
+        "top_presentations": top_presentations,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Serialisation helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1284,6 +1569,11 @@ def _incident_to_dict(row: Incident) -> dict[str, Any]:
         "pii_purged_at": row.pii_purged_at.isoformat() if row.pii_purged_at else None,
         "notes": row.notes,
         "triage_enrichment": getattr(row, "triage_enrichment", None),
+        "transcript_text": getattr(row, "transcript_text", None),
+        "location_accuracy_m": getattr(row, "location_accuracy_m", None),
+        "next_of_kin_name": getattr(row, "next_of_kin_name", None),
+        "next_of_kin_phone": getattr(row, "next_of_kin_phone", None),
+        "next_of_kin_relationship": getattr(row, "next_of_kin_relationship", None),
         "eta_minutes": eta_minutes,
         "estimated_on_scene_at": estimated_on_scene_at.isoformat()
         if estimated_on_scene_at
@@ -1370,6 +1660,80 @@ def _unit_location_to_dict(row: IncidentUnitLocation) -> dict[str, Any]:
         "lon": row.lon,
         "recorded_by": row.recorded_by,
         "recorded_at": row.recorded_at.isoformat() if row.recorded_at else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Audit events (admin logging)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def insert_audit_event(
+    action: str,
+    actor_id: str | None = None,
+    incident_id: str | None = None,
+    details: dict[str, Any] | None = None,
+    ip_address: str | None = None,
+) -> None:
+    async with get_session() as session:
+        row = AuditEvent(
+            action=action,
+            actor_id=actor_id,
+            incident_id=uuid.UUID(incident_id) if incident_id else None,
+            details=details or {},
+            ip_address=ip_address,
+        )
+        session.add(row)
+        await session.commit()
+
+
+async def get_audit_events(
+    limit: int = 100,
+    offset: int = 0,
+    incident_id: str | None = None,
+) -> list[dict[str, Any]]:
+    async with get_session() as session:
+        stmt = select(AuditEvent).order_by(AuditEvent.timestamp.desc())
+        if incident_id:
+            stmt = stmt.where(AuditEvent.incident_id == uuid.UUID(incident_id))
+        stmt = stmt.limit(limit).offset(offset)
+        rows = (await session.scalars(stmt)).all()
+    return [
+        {
+            "id": row.id,
+            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+            "action": row.action,
+            "actor_id": row.actor_id,
+            "incident_id": str(row.incident_id) if row.incident_id else None,
+            "details": row.details,
+            "ip_address": row.ip_address,
+        }
+        for row in rows
+    ]
+
+
+async def get_incident_counts_by_status() -> dict[str, int]:
+    async with get_session() as session:
+        rows = (await session.scalars(select(Incident))).all()
+    counts: dict[str, int] = {}
+    for row in rows:
+        s = str(row.status)
+        counts[s] = counts.get(s, 0) + 1
+    return counts
+
+
+async def get_db_pool_stats() -> dict[str, Any]:
+    """Returns database pool stats if the engine is available."""
+    from .db import _engine
+    if _engine is None:
+        return {"status": "not_configured"}
+    pool = _engine.pool
+    return {
+        "status": "ok",
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
     }
 
 

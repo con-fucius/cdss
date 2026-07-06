@@ -6,9 +6,11 @@ __pycache__/
 *.db
 *.sqlite
 *.log
+logs/
 .pytest_cache/
 .ruff_cache/
 dist/
 build/
 *.egg-info/
 .DS_Store
+postgres.env

@@ -54,6 +54,7 @@ class HandoffSummary:
     field_protocol_version: str | None
     routed_facility_id: str | None
     routed_facility_name: str | None
+    eta_minutes: float | None = None
 
     dispatch_qa: list[dict[str, Any]] = field(default_factory=list)
     field_actions: list[dict[str, Any]] = field(default_factory=list)
@@ -64,6 +65,9 @@ class HandoffSummary:
     latest_vitals: dict[str, Any] | None = None
     highest_news2: dict[str, Any] | None = None
     lowest_gcs: dict[str, Any] | None = None
+
+    casualties: list[dict[str, Any]] = field(default_factory=list)
+    is_multi_casualty: bool = False
 
     text_rendering: str = ""
 
@@ -80,6 +84,9 @@ async def build_handoff_summary(incident_id: str) -> HandoffSummary | None:
     highest_news2 = _max_by(vitals_history, "news2_score")
     lowest_gcs = _min_by(vitals_history, "gcs_total")
 
+    # Fetch casualties for multi-casualty incidents
+    casualties = await repo.list_casualties(incident_id)
+
     summary = HandoffSummary(
         incident_id=incident["incident_id"],
         status=incident["status"],
@@ -93,6 +100,7 @@ async def build_handoff_summary(incident_id: str) -> HandoffSummary | None:
         field_protocol_version=incident["field_protocol_version"],
         routed_facility_id=incident["routed_facility_id"],
         routed_facility_name=incident["routed_facility_name"],
+        eta_minutes=incident.get("eta_minutes"),
         dispatch_qa=full["dispatch_log"],
         field_actions=full["field_log"],
         vitals_timeline=vitals_history,
@@ -101,6 +109,8 @@ async def build_handoff_summary(incident_id: str) -> HandoffSummary | None:
         latest_vitals=latest_vitals,
         highest_news2=highest_news2,
         lowest_gcs=lowest_gcs,
+        casualties=casualties,
+        is_multi_casualty=len(casualties) > 1,
     )
     summary.text_rendering = _render_text(summary)
     return summary
@@ -141,6 +151,8 @@ def _render_text(s: HandoffSummary) -> str:
     lines.append(
         f"Routed facility: {s.routed_facility_name or s.routed_facility_id or 'not recorded'}"
     )
+    if s.eta_minutes is not None:
+        lines.append(f"Estimated time of arrival: {s.eta_minutes:.0f} minutes")
     lines.append("")
 
     lines.append("DISPATCH INTERVIEW (locked script, verbatim)")
@@ -239,6 +251,31 @@ def _render_text(s: HandoffSummary) -> str:
                 f"  {a['timestamp']} — [{a['action_type']}] {detail} "
                 f"(recorded by {a['recorded_by']})"
             )
+    lines.append("")
+
+    # Multi-casualty section
+    if s.casualties:
+        lines.append(f"CASUALTIES ({len(s.casualties)} total)")
+        for c in s.casualties:
+            lines.append(
+                f"  #{c['casualty_number']}: {c.get('chief_complaint') or 'unknown'} "
+                f"| triage: {c.get('triage_score') or 'N/A'} "
+                f"| status: {c.get('status', 'pending')}"
+            )
+            if c.get("age_estimate") or c.get("gender"):
+                lines.append(
+                    f"    Age estimate: {c.get('age_estimate') or 'unknown'}, "
+                    f"Gender: {c.get('gender') or 'unknown'}"
+                )
+        lines.append("")
+
+    # EPIC 1.4: Call transcript
+    lines.append("CALL TRANSCRIPT")
+    transcript = s.text_rendering if hasattr(s, '_transcript_text') else None
+    if not transcript:
+        lines.append("  (no transcript recorded)")
+    else:
+        lines.append(transcript)
 
     return "\n".join(lines)
 
@@ -260,6 +297,9 @@ def render_audit_text(full: dict[str, Any]) -> str:
     """
     incident = full["incident"]
     lines: list[str] = []
+
+    # EPIC 1.4: Include transcript in audit export
+    transcript_text = incident.get("transcript_text")
 
     # Header block
     lines.append("=" * 72)

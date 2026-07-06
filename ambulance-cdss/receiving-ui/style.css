@@ -145,25 +145,49 @@ body {
   background: #333;
 }
 
+.btn-close {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.btn-close:hover {
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
 /* ── Priority Banner ────────────────────────────────────────────── */
 
 .priority-banner {
   padding: 16px 20px;
   border: 2px solid var(--danger);
   border-radius: 6px;
-  background: var(--danger-bg);
+  background: var(--danger);
+  color: #fff;
   margin-bottom: 24px;
 }
 
 .priority-banner.priority-p2 {
   border-color: var(--warning);
-  background: var(--warning-bg);
+  background: var(--warning);
 }
 
-.priority-banner.priority-p3,
+.priority-banner.priority-p3 {
+  border-color: #ffc107;
+  background: #ffc107;
+  color: #000;
+}
+
 .priority-banner.priority-p4 {
-  border-color: var(--success);
-  background: var(--success-bg);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 .priority-banner__code {
@@ -237,7 +261,7 @@ body {
   padding: 10px 14px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .qa-item__question {
@@ -403,7 +427,7 @@ body {
   padding: 8px 12px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   margin-bottom: 4px;
   font-size: 14px;
   display: flex;
@@ -432,7 +456,7 @@ body {
   padding: 8px 12px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   margin-bottom: 4px;
   font-size: 13px;
 }
@@ -487,4 +511,139 @@ body {
 .generated-at {
   font-family: var(--mono);
   font-size: 11px;
+}
+
+/* ── SSE Connection Banner (Epic 4.2) ─────────────────────────── */
+
+.sse-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 10px 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sse-banner--warning {
+  background: var(--warning-bg);
+  color: #664d03;
+  border-bottom: 2px solid var(--warning);
+}
+
+.sse-banner--error {
+  background: var(--danger-bg);
+  color: #842029;
+  border-bottom: 2px solid var(--danger);
+}
+
+/* ── ETA Countdown (Epic 4.2) ────────────────────────────────── */
+
+.eta-countdown {
+  font-family: var(--mono);
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--text);
+  padding: 16px 0;
+}
+
+.eta-countdown--soon {
+  color: var(--success);
+}
+
+.eta-countdown--arrived {
+  color: var(--success);
+  font-size: 24px;
+}
+
+/* ── NEWS2 Sparkline (Epic 4.2) ───────────────────────────────── */
+
+.sparkline-container {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.news2-sparkline {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+
+@media print {
+  .sse-banner { display: none !important; }
+  .eta-countdown { font-size: 24px; }
+}
+
+/* ── Textarea & accessibility ──────────────────────────────────── */
+
+textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: var(--font);
+  resize: vertical;
+  min-height: 44px;
+  width: 100%;
+}
+textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Copy Summary Button ─────────────────────────────────────── */
+
+.btn-copy {
+  padding: 8px 16px;
+  border: 1px solid #6c757d;
+  border-radius: 4px;
+  background: #f8f9fa;
+  color: #333;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  margin-left: 8px;
+}
+
+.btn-copy:hover { background: #e2e6ea; }
+
+/* ── Receiving Map ──────────────────────────────────────────── */
+
+.receiving-map {
+  height: 200px;
+  width: 100%;
+  border-radius: 6px;
+  margin-top: 12px;
+}
+
+/* ── Vitals Table Wrapper ───────────────────────────────────── */
+
+.vitals-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .handoff-header { flex-wrap: wrap; }
+  .eta-countdown__value { font-size: 28px; }
+  .vitals-table-wrapper { overflow-x: auto; display: block; }
+  .clinical-alerts { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 14px; }
+  .priority-banner { padding: 12px; }
+  .eta-countdown { font-size: 28px; }
 }

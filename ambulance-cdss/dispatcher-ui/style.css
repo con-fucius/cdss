@@ -100,7 +100,7 @@ select:focus-visible {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 14px 24px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
@@ -113,12 +113,12 @@ select:focus-visible {
 }
 
 .app-header__status {
-  font-size: 13px;
-  color: var(--text-dim);
+  font-size: 12px;
   padding: 4px 10px;
   border-radius: var(--radius);
-  background: var(--bg-card);
   border: 1px solid var(--border);
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 .app-header__status.ok { color: var(--success); border-color: var(--success); }
@@ -138,19 +138,26 @@ select:focus-visible {
   margin: 0 0 18px;
 }
 
-/* ── Forms ───────────────────────────────────────────────────────── */
+/* ── EPIC 2.1: Leaflet map in intake ─────────────────────────── */
 
-form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
-
-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
+.intake-map {
+  height: 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  z-index: 1;
 }
 
-.required { color: var(--danger); }
+.map-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  position: relative;
+}
 
-input[type="text"], input[type="number"] {
+.address-search-input {
+  flex: 1;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -160,7 +167,93 @@ input[type="text"], input[type="number"] {
   font-family: var(--font);
 }
 
-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* ── Suggestions dropdown ─────────────────────────────────────── */
+
+.input-with-suggestions {
+  position: relative;
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  z-index: 100;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.suggestions-dropdown .suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.suggestions-dropdown .suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestions-dropdown .suggestion-item:hover,
+.suggestions-dropdown .suggestion-item.active {
+  background: var(--bg-panel);
+}
+
+.btn-sm { padding: 8px 12px; font-size: 13px; }
+
+.map-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* EPIC 2.2: Unit tracking map in script screen */
+.unit-tracking-map {
+  height: 250px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.unit-tracking-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────── */
+
+form { display: flex; flex-direction: column; gap: 12px; max-width: 100%; }
+
+label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.required { color: var(--danger); }
+
+input[type="text"], input[type="number"], input[type="password"], textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: var(--font);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 44px;
+  max-height: 200px;
+  width: 100%;
+}
+
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 select {
   background: var(--bg-card);
@@ -171,8 +264,6 @@ select {
   font-size: 15px;
   font-family: var(--font);
 }
-
-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .field-row {
   display: grid;
@@ -203,6 +294,9 @@ button {
   border: 1px solid var(--border);
 }
 .btn-secondary:hover { border-color: var(--accent); }
+
+.btn-danger { background: var(--danger); color: #fff; border: 1px solid var(--danger); }
+.btn-danger:hover { background: #e04a3a; }
 
 .btn-tertiary {
   background: transparent;
@@ -707,7 +801,7 @@ button {
 
 .stats-bar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 24px;
   flex-wrap: wrap;
 }
@@ -718,17 +812,17 @@ button {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 10px 12px;
   text-align: center;
 }
 
-.stat-card--active { border-left: 3px solid var(--accent); }
-.stat-card--p1 { border-left: 3px solid var(--danger); }
-.stat-card--p2 { border-left: 3px solid var(--warning); }
-.stat-card--p3 { border-left: 3px solid var(--success); }
+.stat-card--active { background: rgba(47, 125, 225, 0.08); }
+.stat-card--p1 { background: rgba(211, 64, 47, 0.08); }
+.stat-card--p2 { background: rgba(217, 137, 32, 0.08); }
+.stat-card--p3 { background: rgba(47, 168, 106, 0.08); }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 800;
   line-height: 1.1;
   color: var(--text);
@@ -739,7 +833,7 @@ button {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* ── Dashboard sections ─────────────────────────────────────────── */
@@ -749,7 +843,7 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 24px;
-  overflow: hidden;
+  padding: 16px;
 }
 
 .dashboard-section__header {
@@ -770,6 +864,12 @@ button {
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* ── Incident controls ─────────────────────────────────────────── */
+
+.incident-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.incident-search-input { flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; }
+.incident-filter { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
 
 /* ── Incident table ─────────────────────────────────────────────── */
 
@@ -886,6 +986,86 @@ button {
   font-family: ui-monospace, monospace;
 }
 
+/* ── Audio capture & auto-suggestion (EPIC 1.1, 1.3) ────────── */
+
+.audio-capture-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.listening-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+  animation: pulse-listening 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-listening {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-transcript {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 13px;
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-style: italic;
+}
+
+.suggestion-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.suggestion-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--guidance-bg);
+  border: 1px dashed var(--guidance);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.suggestion-card__text { color: var(--text); flex: 1; }
+
+.suggestion-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.suggestion-card__accept {
+  background: var(--success);
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.suggestion-card__dismiss {
+  background: transparent;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
 .handover-controls .field-row {
   margin-bottom: 14px;
 }
@@ -904,4 +1084,196 @@ button {
   font-size: 15px;
   font-family: var(--font);
   width: 100%;
+}
+
+.datetime-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  font-style: italic;
+}
+
+/* ── Gap 1: Protocol match banner (intake) ───────────────────── */
+
+#protocol-match-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.protocol-match-btn-gap { margin-left: 12px; }
+
+/* ── Gap 7: Pre-arrival relay mode ─────────────────────────── */
+
+.relay-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.relay-elapsed {
+  font-family: ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.relay-current-instruction {
+  background: var(--bg-card);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.relay-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* ── Gap 8: Dispatcher notes ────────────────────────────────── */
+
+.dispatcher-notes-section {
+  margin-top: 20px;
+}
+
+.dispatcher-notes-section h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
+.dispatcher-notes-textarea {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: var(--font);
+  resize: vertical;
+  min-height: 80px;
+  margin-bottom: 8px;
+}
+
+.dispatcher-notes-textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dispatcher-notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dispatcher-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dispatcher-note-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.dispatcher-note-item__time {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.dispatcher-note-item__text {
+  color: var(--text);
+}
+
+/* ── Dashboard P1 overdue alert banner ─────────────────────── */
+
+.p1-alert-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.p1-alert-banner__icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.p1-alert-banner__text {
+  flex: 1;
+}
+
+body.p1-alert-active .app-header {
+  margin-top: 48px;
+}
+
+/* ── Chief complaint column truncation ──────────────────────── */
+
+.incident-table td:nth-child(3),
+.incident-table th:nth-child(3) {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Pagination ──────────────────────────────────────────────── */
+
+.pagination-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  padding: 8px 0;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+@media (max-width: 768px) {
+  .app-main { padding: 12px; }
+  input[type="text"], input[type="number"], input[type="password"] { padding: 14px 12px; font-size: 16px; }
+  .btn-primary { padding: 16px; font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

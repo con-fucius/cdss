@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .schema import DispatchProtocol, ProtocolQuestion, TerminalOutcome
+from . import semantic_matcher
+from .protocol_rag import protocol_rag
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +217,39 @@ class ProtocolRegistry:
                 logger.error("Protocol file unparseable: %s — %s", path.name, exc)
                 self._rejected.append({"file": path.name, "reason": str(exc)})
 
+    def build_semantic_index(self) -> None:
+        """Build the TF-IDF semantic matcher and RAG index from loaded protocols."""
+        protocol_dicts: list[dict] = []
+        for p in self._active.values():
+            # Build a description from the protocol's terminal outcomes
+            description_parts: list[str] = []
+            for outcome in p.terminal_outcomes.values():
+                description_parts.append(outcome.priority_code.replace("_", " ").lower())
+                description_parts.append(outcome.recommended_unit_type.replace("_", " ").lower())
+            # Build keywords list from triggers + outcome codes
+            keywords: list[str] = []
+            for outcome in p.terminal_outcomes.values():
+                keywords.append(outcome.priority_code.replace("_", " ").lower())
+                keywords.append(outcome.recommended_unit_type.replace("_", " ").lower())
+            protocol_dicts.append({
+                "protocol_id": p.protocol_id,
+                "triggers": p.chief_complaint_trigger,
+                "description": " ".join(description_parts),
+                "name": p.protocol_id,
+                "version": p.version,
+                "keywords": keywords,
+            })
+        semantic_matcher.build_index(protocol_dicts)
+        protocol_rag.index(protocol_dicts)
+
+    def match_by_rag(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        """Return hybrid RAG matches with scores from keyword+BM25+TF-IDF."""
+        return protocol_rag.match(query, top_k=top_k)
+
+    def match_by_semantic(self, query: str) -> list[dict[str, Any]]:
+        """Return semantic matches with similarity scores."""
+        return semantic_matcher.find_best_match(query)
+
     def get(self, protocol_id: str) -> DispatchProtocol | None:
         return self._active.get(protocol_id)
 
@@ -338,6 +373,46 @@ class ProtocolRegistry:
             )
 
         if not all_matches:
+            # Secondary: try protocol RAG (MedSpaCy + TF-IDF) when trigger words fail
+            if protocol_rag.is_available():
+                rag_results = protocol_rag.match(cc_lower, top_k=3)
+                if rag_results and rag_results[0]["score"] > 0.3:
+                    best = rag_results[0]
+                    best_proto = self._active.get(best["protocol_id"])
+                    if best_proto is not None:
+                        logger.info(
+                            "Chief complaint %r fell back to RAG match: "
+                            "%s (score %.3f, methods: %s)",
+                            chief_complaint,
+                            best["protocol_id"],
+                            best["score"],
+                            best["methods"],
+                        )
+                        return ProtocolMatchResult(
+                            protocol=best_proto,
+                            matched_triggers=[],
+                            confidence=best["score"],
+                        )
+
+            # Tertiary: try TF-IDF semantic matching
+            if semantic_matcher.is_available():
+                sem_results = semantic_matcher.find_best_match(cc_lower, top_k=3)
+                if sem_results:
+                    best_id = sem_results[0]["protocol_id"]
+                    best_proto = self._active.get(best_id)
+                    if best_proto is not None:
+                        logger.info(
+                            "Chief complaint %r fell back to TF-IDF match: "
+                            "%s (similarity %.3f)",
+                            chief_complaint,
+                            best_id,
+                            sem_results[0]["similarity"],
+                        )
+                        return ProtocolMatchResult(
+                            protocol=best_proto,
+                            matched_triggers=[],
+                            confidence=sem_results[0]["similarity"],
+                        )
             return None
 
         # Select the winner: longest matching trigger wins (most specific).

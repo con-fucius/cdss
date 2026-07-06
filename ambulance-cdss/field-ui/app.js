@@ -24,6 +24,7 @@
 
 const API_BASE = window.AMBULANCE_CDSS_API_BASE || "http://localhost:8000";
 const QUEUE_KEY = "ambulance_cdss_write_queue";
+const SESSION_KEY = window.AMBULANCE_CDSS_SESSION_KEY || "ambulance_cdss_field_session";
 const MAX_QUEUE_SIZE = 50;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ const MAX_QUEUE_SIZE = 50;
 const state = {
   incidentId: null,
   recordedBy: null,
+  sessionToken: null,
   fieldProtocolId: null,
   checklistState: null,
   lastVitals: null, // Phase 6.3: last vitals for pre-population
@@ -39,6 +41,15 @@ const state = {
   gpsWatchId: null, // Epic 3.1: geolocation watch ID
   gpsTimer: null, // Epic 3.1: interval timer for GPS pings
   incidentStatus: null, // Epic 3.1: track status to stop pings
+  incidentOpenedAt: null, // Feature 7: timestamp when incident was opened
+  chronometerInterval: null, // Feature 7: interval for chronometer
+  lastNotes: null, // Feature 3: last known notes for dispatch polling
+  lastNoteCount: null, // Structured notes count for change detection
+  dispatchPollInterval: null, // Feature 3: interval for dispatch polling
+  gpsCoords: null, // Feature 6: current GPS coordinates
+  gpsLastPing: null, // Feature 6: timestamp of last GPS ping
+  routedFacility: null, // Feature 6: routed facility info
+  protocolStepTimes: [], // Feature 8: timestamps of step completions for ETA
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -81,37 +92,239 @@ function addToWriteQueue(endpoint, method, body) {
   return true;
 }
 
-function updateOfflineQueueDisplay() {
-  const queue = getWriteQueue();
-  const countEl = el("offline-queue-count");
-  if (queue.length > 0) {
-    countEl.textContent = `${queue.length} action(s) pending sync`;
-    countEl.classList.remove("hidden");
-  } else {
-    countEl.textContent = "";
-    countEl.classList.add("hidden");
-  }
-}
+// updateOfflineQueueDisplay is defined later in the Gap 3e section
 
 async function drainWriteQueue() {
   const queue = getWriteQueue();
   if (queue.length === 0) return;
 
+  // Show syncing status with count
+  const statusEl = el("connection-status");
+  const origText = statusEl.textContent;
+  const origClass = statusEl.className;
+  const totalCount = queue.length;
+  statusEl.textContent = `Syncing... (${totalCount} remaining)`;
+  statusEl.className = "app-header__status degraded";
+
+  // Sort queue chronologically before syncing
+  queue.sort((a, b) => new Date(a.queued_at) - new Date(b.queued_at));
+
   const remaining = [];
+  let syncedCount = 0;
+
   for (const entry of queue) {
+    // Update sync progress display
+    const left = totalCount - syncedCount;
+    statusEl.textContent = `Syncing... (${left} remaining)`;
+
     try {
       await apiCall(entry.endpoint, {
         method: entry.method,
         body: JSON.stringify(entry.body),
       });
-    } catch {
-      // If it fails again, keep it in the queue
+      syncedCount++;
+    } catch (err) {
+      // 409 Conflict: log warning, skip this write, continue with others
+      if (err.status === 409) {
+        console.warn(`[Sync] Conflict (409) for ${entry.method} ${entry.endpoint} — skipping`);
+        syncedCount++;
+        continue;
+      }
+      // Network error: stop syncing, leave remaining in queue
+      if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+        console.warn("[Sync] Network error — stopping sync, remaining actions stay queued");
+        remaining.push(entry);
+        break;
+      }
+      // Other errors: keep in queue for retry
+      remaining.push(entry);
+    }
+
+    // 1 second delay between writes to avoid overwhelming the server
+    if (syncedCount < totalCount) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  // Add any entries we didn't process (from the break)
+  for (const entry of queue.slice(syncedCount)) {
+    if (!remaining.includes(entry)) {
       remaining.push(entry);
     }
   }
 
   saveWriteQueue(remaining);
   updateOfflineQueueDisplay();
+
+  // Show sync complete
+  if (remaining.length === 0 && queue.length > 0) {
+    statusEl.textContent = "All actions synced";
+    statusEl.className = "app-header__status ok";
+    setTimeout(() => {
+      statusEl.textContent = "connected";
+      statusEl.className = "app-header__status ok";
+    }, 3000);
+  } else if (remaining.length > 0) {
+    statusEl.textContent = `Sync paused — ${remaining.length} remaining`;
+    statusEl.className = "app-header__status degraded";
+  } else {
+    statusEl.textContent = origText;
+    statusEl.className = origClass;
+  }
+}
+
+// ── Item 1: syncQueue() — explicit sync function for offline queue ────────
+
+async function syncQueue() {
+  const queue = getWriteQueue();
+  if (queue.length === 0) {
+    return { synced: 0, failed: 0, remaining: 0 };
+  }
+
+  // Sort chronologically
+  queue.sort((a, b) => new Date(a.queued_at) - new Date(b.queued_at));
+
+  const statusEl = el("connection-status");
+  const origText = statusEl?.textContent;
+  const origClass = statusEl?.className;
+  if (statusEl) {
+    statusEl.textContent = `Syncing... (${queue.length} remaining)`;
+    statusEl.className = "app-header__status degraded";
+  }
+
+  const remaining = [];
+  let synced = 0;
+  let failed = 0;
+
+  for (const entry of queue) {
+    const left = queue.length - synced - failed;
+    if (statusEl) statusEl.textContent = `Syncing... (${left} remaining)`;
+
+    try {
+      await apiCall(entry.endpoint, {
+        method: entry.method,
+        body: JSON.stringify(entry.body),
+      });
+      synced++;
+    } catch (err) {
+      if (err.status === 409) {
+        console.warn(`[syncQueue] Conflict (409) for ${entry.method} ${entry.endpoint} — skipping`);
+        failed++;
+        continue;
+      }
+      if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+        console.warn("[syncQueue] Network error — stopping sync");
+        remaining.push(entry);
+        break;
+      }
+      remaining.push(entry);
+      failed++;
+    }
+
+    // 1 second delay between writes
+    if (synced + failed < queue.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  // Add unprocessed entries
+  for (const entry of queue.slice(synced + failed)) {
+    if (!remaining.find(r => r.queued_at === entry.queued_at && r.endpoint === entry.endpoint)) {
+      remaining.push(entry);
+    }
+  }
+
+  saveWriteQueue(remaining);
+  updateOfflineQueueDisplay();
+
+  if (statusEl) {
+    if (remaining.length === 0 && queue.length > 0) {
+      statusEl.textContent = "All actions synced";
+      statusEl.className = "app-header__status ok";
+      setTimeout(() => {
+        statusEl.textContent = "connected";
+        statusEl.className = "app-header__status ok";
+      }, 3000);
+    } else if (remaining.length > 0) {
+      statusEl.textContent = `Sync paused — ${remaining.length} remaining`;
+      statusEl.className = "app-header__status degraded";
+    } else {
+      statusEl.textContent = origText || "connected";
+      statusEl.className = origClass || "app-header__status ok";
+    }
+  }
+
+  return { synced, failed, remaining: remaining.length };
+}
+
+// ── Item 1: mergeProtocolState — reconcile local steps with server ────────
+
+async function mergeProtocolState() {
+  if (!state.incidentId || !state.fieldProtocolId) return;
+
+  try {
+    // Fetch fresh state from server
+    const serverState = await apiCall(
+      `/incidents/${state.incidentId}/field-protocol/state`,
+    );
+
+    // Get local state
+    const localState = state.checklistState;
+    if (!localState || !localState.steps) {
+      // No local state, just use server state
+      state.checklistState = serverState;
+      renderChecklist(serverState);
+      return;
+    }
+
+    // Build maps of step statuses
+    const localStepMap = {};
+    for (const step of localState.steps) {
+      localStepMap[step.step_id] = step.status;
+    }
+
+    const serverStepMap = {};
+    for (const step of serverState.steps) {
+      serverStepMap[step.step_id] = step.status;
+    }
+
+    // Find steps that are done locally but not on server (need re-send)
+    const stepsToResend = [];
+    for (const step of localState.steps) {
+      if (step.status !== "pending" && serverStepMap[step.step_id] === "pending") {
+        stepsToResend.push(step);
+      }
+    }
+
+    // Re-send locally-completed steps that server doesn't have
+    for (const step of stepsToResend) {
+      try {
+        await apiCallWithQueue(
+          `/incidents/${state.incidentId}/field-protocol/step`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              step_id: step.step_id,
+              status: step.status,
+              recorded_by: state.recordedBy,
+            }),
+          },
+        );
+        console.log(`[Merge] Re-sent step ${step.step_id} (${step.status})`);
+      } catch (err) {
+        console.warn(`[Merge] Failed to re-send step ${step.step_id}:`, err.message);
+      }
+    }
+
+    // Refresh state after merge
+    const mergedState = await apiCall(
+      `/incidents/${state.incidentId}/field-protocol/state`,
+    );
+    state.checklistState = mergedState;
+    renderChecklist(mergedState);
+  } catch (err) {
+    console.warn("[Merge] Protocol state merge failed:", err.message);
+  }
 }
 
 // ── Phase 6.5: Offline mode indicator ──────────────────────────────────────
@@ -144,28 +357,17 @@ function setOfflineBanner(offline) {
 const GPS_PING_INTERVAL_MS = 30000;
 const GPS_TERMINAL_STATUSES = new Set(["handoff_complete", "closed"]);
 
-function updateGpsStatus(status) {
-  const gpsEl = el("gps-status");
-  if (!gpsEl) return;
-  if (status === "active") {
-    gpsEl.textContent = "GPS active";
-    gpsEl.className = "gps-status ok";
-  } else if (status === "unavailable") {
-    gpsEl.textContent = "GPS unavailable";
-    gpsEl.className = "gps-status error";
-  } else if (status === "paused") {
-    gpsEl.textContent = "GPS paused (offline)";
-    gpsEl.className = "gps-status warning";
-  } else {
-    gpsEl.textContent = "GPS off";
-    gpsEl.className = "gps-status";
-  }
-}
+// updateGpsStatus is defined in the Feature 6 section below
 
 async function sendGpsPing(position) {
   // Don't ping if no incident open or incident has reached terminal status
   if (!state.incidentId || GPS_TERMINAL_STATUSES.has(state.incidentStatus)) return;
   const coords = position.coords;
+
+  // Feature 6: Store coordinates and last ping time
+  state.gpsCoords = { lat: coords.latitude, lon: coords.longitude };
+  state.gpsLastPing = Date.now();
+
   const body = {
     lat: coords.latitude,
     lon: coords.longitude,
@@ -241,6 +443,8 @@ async function checkConnection() {
     if (state.isOffline) {
       setOfflineBanner(false);
       await drainWriteQueue();
+      // Item 1: merge protocol state after reconnection
+      await mergeProtocolState();
     }
   } catch (err) {
     statusEl.textContent = "cannot reach API — check connection";
@@ -271,36 +475,168 @@ function scrollToSection(sectionId) {
   switchTab(tabName);
 }
 
-// ── Query-param auto-open: ?incident_id=XXX&recorder=YYY ─────────────────
+// ── Epic 6.2: Paramedic Login & Session ──────────────────────────────────────
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const sess = JSON.parse(raw);
+    if (Date.now() - (sess.issued_at || 0) > 8 * 3600 * 1000) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return sess;
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionData(sessionToken, unitId) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    session_token: sessionToken,
+    unit_id: unitId,
+    issued_at: Date.now(),
+  }));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function initLoginScreen() {
+  const existing = loadSession();
+  if (existing) {
+    state.sessionToken = existing.session_token;
+    state.recordedBy = existing.unit_id;
+    const recorderInput = el("recorder-id");
+    if (recorderInput) recorderInput.value = existing.unit_id;
+    hide(el("login-screen"));
+    show(el("lookup-screen"));
+    return;
+  }
+  show(el("login-screen"));
+  hide(el("lookup-screen"));
+}
+
+el("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hide(el("login-error"));
+  const unitId = el("login-unit-id").value.trim();
+  const pin = el("login-pin").value.trim();
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const data = await apiCall("/auth/dispatcher-login", {
+      method: "POST",
+      body: JSON.stringify({ username: unitId, pin }),
+    });
+    state.sessionToken = data.session_token;
+    state.recordedBy = unitId;
+    saveSessionData(data.session_token, unitId);
+    const recorderInput = el("recorder-id");
+    if (recorderInput) recorderInput.value = unitId;
+    hide(el("login-screen"));
+    show(el("lookup-screen"));
+  } catch (err) {
+    el("login-error").textContent = err.message;
+    show(el("login-error"));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+el("logout-btn").addEventListener("click", () => {
+  stopGpsTracking();
+  stopChronometer();
+  stopDispatchPolling();
+  clearSession();
+  state.sessionToken = null;
+  state.recordedBy = null;
+  state.incidentId = null;
+  state.incidentStatus = null;
+  state.fieldProtocolId = null;
+  state.checklistState = null;
+  state.lastVitals = null;
+  state.triageEnrichment = null;
+  state.lastNotes = null;
+  state.lastNoteCount = null;
+  state.gpsCoords = null;
+  state.gpsLastPing = null;
+  state.routedFacility = null;
+  state.protocolStepTimes = [];
+  hide(el("workspace-screen"));
+  hide(el("lookup-screen"));
+  show(el("login-screen"));
+});
+
+initLoginScreen();
+
+// ── EPIC 3.3: Quick action buttons (fat-finger, haptic, debounce) ──────
+
+let lastQuickActionTime = 0;
+const QUICK_ACTION_DEBOUNCE_MS = 2000;
+
+document.querySelectorAll(".quick-action-btn").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const now = Date.now();
+    if (now - lastQuickActionTime < QUICK_ACTION_DEBOUNCE_MS) return;
+    lastQuickActionTime = now;
+
+    const action = btn.dataset.action;
+    if (!action || !state.incidentId) return;
+
+    // Haptic feedback for mobile devices
+    if (navigator.vibrate) navigator.vibrate(50);
+
+    btn.disabled = true;
+    try {
+      await apiCallWithQueue(`/incidents/${state.incidentId}/field-log`, {
+        method: "POST",
+        body: JSON.stringify({
+          step_id: "quick_action",
+          action_type: action.toLowerCase().replace(/\s+/g, "_"),
+          recorded_by: state.recordedBy,
+          data: { note: action, source: "quick_action" },
+        }),
+      });
+      btn.classList.add("logged");
+      setTimeout(() => btn.classList.remove("logged"), 3000);
+    } catch (err) {
+      btn.classList.add("error-flash");
+      setTimeout(() => btn.classList.remove("error-flash"), 2000);
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, QUICK_ACTION_DEBOUNCE_MS);
+    }
+  });
+});
+
+// ── Query-param auto-open: ?incident_id=XXX&unit_id=YYY ─────────────────
 
 (function autoOpenFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const incidentId = params.get("incident_id");
-  const recorder = params.get("recorder") || params.get("unit_id");
   if (!incidentId) return;
-
-  // Pre-fill the lookup form and submit it
   const incidentInput = el("incident-id-input");
-  const recorderInput = el("recorder-id");
   if (incidentInput) incidentInput.value = incidentId;
-  if (recorderInput && recorder) recorderInput.value = recorder;
-
-  // Auto-submit if both fields are filled
-  if (incidentId && recorder) {
-    // Small delay to ensure DOM is ready
+  if (state.sessionToken && incidentId) {
     setTimeout(() => {
       el("lookup-form").dispatchEvent(
         new Event("submit", { cancelable: true }),
       );
-    }, 100);
+    }, 200);
   }
 })();
 
 // ── API helper ─────────────────────────────────────────────────────────────
 
 async function apiCall(path, options = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (state.sessionToken) {
+    headers["Authorization"] = `Bearer ${state.sessionToken}`;
+  }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
   const data = await res.json().catch(() => ({}));
@@ -366,6 +702,9 @@ el("lookup-form").addEventListener("submit", async (e) => {
     // Phase 6.4: Display triage context if available
     renderTriageContext(incident.triage_enrichment);
 
+    // Feature 1: Render status bar
+    renderStatusBar(incident);
+
     await Promise.all([loadFieldProtocols(), loadMedicationSuggestions()]);
 
     if (incident.field_protocol_id) {
@@ -387,6 +726,15 @@ el("lookup-form").addEventListener("submit", async (e) => {
     if (!GPS_TERMINAL_STATUSES.has(incident.status)) {
       startGpsTracking();
     }
+
+    // Feature 7: Start chronometer
+    const callTime = incident.call_received_at || incident.created_at;
+    startChronometer(callTime ? new Date(callTime) : new Date());
+
+    // Feature 3: Start dispatch polling
+    state.lastNotes = incident.notes || null;
+    state.lastNoteCount = null;
+    startDispatchPolling();
   } catch (err) {
     el("lookup-error").textContent = err.message;
     show(el("lookup-error"));
@@ -398,6 +746,8 @@ el("lookup-form").addEventListener("submit", async (e) => {
 function renderIncidentBanner(incident) {
   el("incident-banner").textContent =
     `Incident ${incident.incident_id} — status: ${incident.status}`;
+  // Feature 1: Also update the status bar
+  renderStatusBar(incident);
 }
 
 function renderDispatchSummary(incident) {
@@ -465,6 +815,484 @@ function switchTab(tabName) {
   if (tabName === "vitals") prefillVitalsFromLastRecording();
 }
 
+// ── Feature 1: Incident Status Bar ────────────────────────────────────────
+
+const STATUS_LABELS = {
+  received: "Received",
+  dispatched: "Dispatched",
+  on_scene: "On Scene",
+  transporting: "Transporting",
+  handoff_complete: "Handoff Complete",
+};
+
+function renderStatusBar(incident) {
+  const statusBar = el("incident-status-bar");
+  if (!statusBar) return;
+
+  // Status badge
+  const statusBadge = el("status-bar-status");
+  const statusText = STATUS_LABELS[incident.status] || incident.status;
+  statusBadge.textContent = statusText;
+  statusBadge.className = `status-bar__badge status-${incident.status}`;
+
+  // Elapsed time (from call_received_at or created_at)
+  const callTime = incident.call_received_at || incident.created_at;
+  if (callTime) {
+    const elapsed = formatElapsedShort(Date.now() - new Date(callTime).getTime());
+    el("status-bar-elapsed").textContent = elapsed;
+  }
+
+  // Protocol and step progress
+  const protocolEl = el("status-bar-protocol");
+  if (incident.field_protocol_id) {
+    protocolEl.textContent = `Protocol: ${incident.field_protocol_id}`;
+  } else {
+    protocolEl.textContent = "No protocol selected";
+  }
+
+  // Unit info
+  const unitEl = el("status-bar-unit");
+  const parts = [];
+  if (incident.assigned_unit_id) parts.push(`Unit: ${incident.assigned_unit_id}`);
+  if (state.recordedBy) parts.push(`Recorder: ${state.recordedBy}`);
+  unitEl.textContent = parts.join(" · ") || "";
+
+  // Step progress
+  const progressEl = el("status-bar-progress");
+  if (state.checklistState && state.checklistState.steps) {
+    const steps = state.checklistState.steps;
+    const done = steps.filter((s) => s.status !== "pending").length;
+    progressEl.textContent = `Steps: ${done}/${steps.length} completed`;
+  } else {
+    progressEl.textContent = "";
+  }
+
+  // Feature 2: Update contextual status actions
+  renderStatusActions(incident.status);
+}
+
+function updateStatusBarElapsed() {
+  if (!state.incidentOpenedAt) return;
+  const elapsed = formatElapsedShort(Date.now() - state.incidentOpenedAt.getTime());
+  const elapsedEl = el("status-bar-elapsed");
+  if (elapsedEl) elapsedEl.textContent = elapsed;
+
+  // Also update chronometer (Feature 7)
+  const chronoDisplay = el("chronometer-display");
+  if (chronoDisplay) {
+    const totalSeconds = Math.floor((Date.now() - state.incidentOpenedAt.getTime()) / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    chronoDisplay.textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
+    // Feature 7: Color coding
+    chronoDisplay.classList.remove("timer-green", "timer-yellow", "timer-red");
+    if (totalSeconds < 15 * 60) {
+      chronoDisplay.classList.add("timer-green");
+    } else if (totalSeconds < 30 * 60) {
+      chronoDisplay.classList.add("timer-yellow");
+    } else {
+      chronoDisplay.classList.add("timer-red");
+    }
+  }
+}
+
+function formatElapsedShort(ms) {
+  if (ms < 0) return "0:00";
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+// ── Feature 2: Quick Status Actions ────────────────────────────────────────
+
+function renderStatusActions(status) {
+  const container = el("status-actions");
+  const btnTransporting = el("status-action-transporting");
+  const btnArrived = el("status-action-arrived");
+  const btnHandoff = el("status-action-handoff");
+
+  // Hide all, then show contextual ones
+  hide(container);
+  hide(btnTransporting);
+  hide(btnArrived);
+  hide(btnHandoff);
+
+  if (status === "on_scene") {
+    show(container);
+    show(btnTransporting);
+  } else if (status === "transporting") {
+    show(container);
+    show(btnArrived);
+    show(btnHandoff);
+  } else if (status === "dispatched" || status === "received") {
+    show(container);
+    // On scene button could go here but on_scene is set by a different flow
+  }
+}
+
+el("status-action-transporting").addEventListener("click", async () => {
+  const btn = el("status-action-transporting");
+  btn.disabled = true;
+  try {
+    await apiCallWithQueue(`/incidents/${state.incidentId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status: "transporting" }),
+    });
+    state.incidentStatus = "transporting";
+    renderStatusBar({ status: "transporting", call_received_at: state.incidentOpenedAt?.toISOString() });
+    await loadFieldLog();
+  } catch (err) {
+    alert(`Status update failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+el("status-action-arrived").addEventListener("click", async () => {
+  const btn = el("status-action-arrived");
+  btn.disabled = true;
+  try {
+    // Route to facility first if not already routed
+    await apiCallWithQueue(`/incidents/${state.incidentId}/field-log`, {
+      method: "POST",
+      body: JSON.stringify({
+        step_id: "facility_arrival",
+        action_type: "disposition",
+        data: { note: "Arrived at facility" },
+        recorded_by: state.recordedBy,
+      }),
+    });
+    renderStatusBar({ status: "transporting", call_received_at: state.incidentOpenedAt?.toISOString() });
+    await loadFieldLog();
+  } catch (err) {
+    alert(`Status update failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+el("status-action-handoff").addEventListener("click", async () => {
+  const btn = el("status-action-handoff");
+  btn.disabled = true;
+  try {
+    await apiCallWithQueue(`/incidents/${state.incidentId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status: "handoff_complete" }),
+    });
+    state.incidentStatus = "handoff_complete";
+    stopGpsTracking();
+    renderStatusBar({ status: "handoff_complete", call_received_at: state.incidentOpenedAt?.toISOString() });
+    await loadFieldLog();
+  } catch (err) {
+    alert(`Status update failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── Feature 3: Dispatch Updates Polling ────────────────────────────────────
+
+const DISPATCH_POLL_MS = 15000;
+
+function startDispatchPolling() {
+  stopDispatchPolling();
+  state.dispatchPollInterval = setInterval(pollDispatchUpdates, DISPATCH_POLL_MS);
+  pollDispatchUpdates(); // immediate first poll
+}
+
+function stopDispatchPolling() {
+  if (state.dispatchPollInterval) {
+    clearInterval(state.dispatchPollInterval);
+    state.dispatchPollInterval = null;
+  }
+}
+
+async function pollDispatchUpdates() {
+  if (!state.incidentId) return;
+  try {
+    // Load structured notes for cross-visibility
+    const notesData = await apiCall(`/incidents/${state.incidentId}/notes`);
+    const notes = notesData.notes || [];
+
+    // Also check incident status for status bar updates
+    const incident = await apiCall(`/incidents/${state.incidentId}`);
+
+    const panel = el("dispatch-updates-panel");
+    const indicator = el("dispatch-updates-indicator");
+
+    if (notes.length > 0) {
+      panel.classList.remove("hidden");
+      renderStructuredNotes(notes);
+      // Flash indicator on new notes
+      const noteCount = notes.length;
+      if (state.lastNoteCount && noteCount > state.lastNoteCount) {
+        indicator.classList.add("has-new");
+        setTimeout(() => indicator.classList.remove("has-new"), 3000);
+      }
+      state.lastNoteCount = noteCount;
+    }
+
+    // Update status bar if status changed
+    if (incident.status !== state.incidentStatus) {
+      state.incidentStatus = incident.status;
+      renderStatusBar(incident);
+    }
+  } catch {
+    // Silent fail for polling — don't spam the UI
+  }
+}
+
+function renderStructuredNotes(notes) {
+  const list = el("dispatch-updates-list");
+  if (!list) return;
+
+  // Remove empty message if present
+  const empty = list.querySelector(".dispatch-updates__empty");
+  if (empty) empty.remove();
+
+  list.innerHTML = "";
+
+  notes.forEach((note) => {
+    const item = document.createElement("div");
+    const roleClass = note.author_role === "field" ? "dispatch-updates__item--field"
+      : note.note_type === "correction" ? "dispatch-updates__item--correction"
+      : note.author_role === "system" ? "dispatch-updates__item--system"
+      : "dispatch-updates__item--dispatch";
+    item.className = `dispatch-updates__item ${roleClass}`;
+
+    const time = note.created_at
+      ? new Date(note.created_at).toLocaleTimeString()
+      : "";
+    const roleLabel = note.author_role === "field" ? "Field"
+      : note.author_role === "system" ? "System"
+      : "Dispatch";
+    const typeLabel = note.note_type === "correction" ? " [Correction]"
+      : note.note_type === "field_log" ? " [Field Log]"
+      : note.note_type === "dispatcher_note" ? " [Note]"
+      : "";
+
+    item.innerHTML = `
+      <span class="dispatch-updates__item-time">${escapeHtml(time)}</span>
+      <span class="dispatch-updates__item-role">${roleLabel}${typeLabel} — ${escapeHtml(note.author_id)}</span>
+      <span class="dispatch-updates__item-note">${escapeHtml(note.note_text)}</span>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ── Feature 6: Enhanced GPS Status ────────────────────────────────────────
+
+function updateGpsStatus(status) {
+  const gpsEl = el("gps-status");
+  if (!gpsEl) return;
+  if (status === "active") {
+    const ago = state.gpsLastPing ? `${Math.round((Date.now() - state.gpsLastPing) / 1000)}s ago` : "";
+    gpsEl.textContent = `GPS: Active${ago ? " - last ping " + ago : ""}`;
+    gpsEl.className = "gps-status ok";
+  } else if (status === "unavailable") {
+    gpsEl.textContent = "GPS: Inactive";
+    gpsEl.className = "gps-status error";
+  } else if (status === "paused") {
+    gpsEl.textContent = "GPS: Inactive (offline)";
+    gpsEl.className = "gps-status warning";
+  } else {
+    gpsEl.textContent = "GPS: Inactive";
+    gpsEl.className = "gps-status";
+  }
+}
+
+// ── Feature 7: Chronometer ────────────────────────────────────────────────
+
+function startChronometer(openedAt) {
+  stopChronometer();
+  state.incidentOpenedAt = openedAt;
+  state.chronometerInterval = setInterval(updateStatusBarElapsed, 1000);
+  updateStatusBarElapsed();
+  show(el("chronometer-bar"));
+}
+
+function stopChronometer() {
+  if (state.chronometerInterval) {
+    clearInterval(state.chronometerInterval);
+    state.chronometerInterval = null;
+  }
+  state.incidentOpenedAt = null;
+  hide(el("chronometer-bar"));
+}
+
+// ── Feature 5: Medication Interaction Warning ──────────────────────────────
+
+const MED_INTERACTIONS = [
+  {
+    drugs: ["adrenaline", "epinephrine"],
+    condition: () => {
+      // Check if beta-blockers were given (search medication history)
+      const history = el("medication-history");
+      if (!history) return false;
+      return /beta.?blocker|propranolol|atenolol|metoprolol|bisoprolol|carvedilol/i.test(history.textContent);
+    },
+    warning: "Caution: beta-blocker interaction — adrenaline effect may be reduced",
+  },
+  {
+    drugs: ["aspirin"],
+    condition: () => {
+      // Check if there's an active bleeding note
+      const log = el("field-log-history");
+      if (!log) return false;
+      return /active bleed|hemorrhag|bleeding/i.test(log.textContent);
+    },
+    warning: "Caution: aspirin may worsen active bleeding",
+  },
+  {
+    drugs: ["morphine"],
+    condition: () => {
+      // Check if respiratory rate < 12 from last vitals
+      if (state.lastVitals && state.lastVitals.respiratory_rate !== null) {
+        return state.lastVitals.respiratory_rate < 12;
+      }
+      return false;
+    },
+    warning: "Caution: respiratory depression risk — RR < 12",
+  },
+];
+
+function checkMedicationInteraction(drugName) {
+  const banner = el("med-interaction-banner");
+  if (!banner || !drugName) return;
+
+  const lower = drugName.toLowerCase();
+  for (const interaction of MED_INTERACTIONS) {
+    if (interaction.drugs.some((d) => lower.includes(d))) {
+      if (interaction.condition()) {
+        banner.innerHTML = `<span class="med-interaction-banner__icon">⚠</span> ${interaction.warning}`;
+        show(banner);
+        return;
+      }
+    }
+  }
+  hide(banner);
+}
+
+// ── Feature 4: Vitals Trend Chart ─────────────────────────────────────────
+
+function renderVitalsTrendChart(history) {
+  const chartContainer = el("vitals-trend-chart");
+  const barsContainer = el("vitals-trend-bars");
+  const arrowEl = el("vitals-trend-arrow");
+
+  if (!history || history.length < 2) {
+    hide(chartContainer);
+    return;
+  }
+
+  // Filter to readings with NEWS2 scores
+  const withScores = history.filter((v) => v.news2_score !== null && v.news2_score !== undefined);
+  if (withScores.length < 2) {
+    hide(chartContainer);
+    return;
+  }
+
+  show(chartContainer);
+  barsContainer.innerHTML = "";
+
+  const maxScore = Math.max(...withScores.map((v) => v.news2_score), 12);
+
+  withScores.forEach((v) => {
+    const bar = document.createElement("div");
+    bar.className = "vitals-trend-chart__bar";
+
+    const score = v.news2_score;
+    const heightPct = Math.max((score / maxScore) * 100, 5);
+    bar.style.height = `${heightPct}%`;
+
+    // Color by risk level
+    let color = "var(--success)";
+    if (score >= 7) color = "var(--danger)";
+    else if (score >= 4) color = "var(--warning)";
+    bar.style.background = color;
+
+    const label = document.createElement("span");
+    label.className = "vitals-trend-chart__bar-label";
+    label.textContent = score;
+    bar.appendChild(label);
+
+    const timeLabel = document.createElement("span");
+    timeLabel.className = "vitals-trend-chart__bar-time";
+    const d = new Date(v.recorded_at);
+    timeLabel.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    bar.appendChild(timeLabel);
+
+    barsContainer.appendChild(bar);
+  });
+
+  // Trend arrow
+  const first = withScores[0].news2_score;
+  const last = withScores[withScores.length - 1].news2_score;
+  const delta = last - first;
+
+  arrowEl.classList.remove("trend-up", "trend-down", "trend-stable");
+  if (delta > 0) {
+    arrowEl.textContent = `↑ +${delta}`;
+    arrowEl.classList.add("trend-up");
+  } else if (delta < 0) {
+    arrowEl.textContent = `↓ ${delta}`;
+    arrowEl.classList.add("trend-down");
+  } else {
+    arrowEl.textContent = "→ Stable";
+    arrowEl.classList.add("trend-stable");
+  }
+}
+
+// ── Feature 8: Checklist Enhancements ─────────────────────────────────────
+
+function renderChecklistEnhancements(data) {
+  if (!data || !data.steps) return;
+
+  // Progress bar
+  const checklistCard = el("checklist-card");
+  if (!checklistCard) return;
+
+  let progressBar = checklistCard.querySelector(".step-progress-bar");
+  if (!progressBar) {
+    progressBar = document.createElement("div");
+    progressBar.className = "step-progress-bar";
+    progressBar.innerHTML = '<div class="step-progress-bar__fill"></div>';
+    checklistCard.querySelector(".card-header").after(progressBar);
+  }
+
+  const total = data.steps.length;
+  const done = data.steps.filter((s) => s.status !== "pending").length;
+  const fill = progressBar.querySelector(".step-progress-bar__fill");
+  fill.style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+
+  // ETA based on average step completion time
+  let etaEl = checklistCard.querySelector(".step-eta");
+  if (!etaEl) {
+    etaEl = document.createElement("div");
+    etaEl.className = "step-eta";
+    progressBar.after(etaEl);
+  }
+
+  if (state.protocolStepTimes.length >= 2) {
+    const times = state.protocolStepTimes;
+    const intervals = [];
+    for (let i = 1; i < times.length; i++) {
+      intervals.push(times[i] - times[i - 1]);
+    }
+    const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const remaining = total - done;
+    const etaMs = avgMs * remaining;
+    const etaMin = Math.round(etaMs / 60000);
+    etaEl.textContent = remaining > 0 ? `Est. ${etaMin} min remaining (${remaining} steps left)` : "All steps completed";
+  } else {
+    const remaining = total - done;
+    etaEl.textContent = remaining > 0 ? `${remaining} steps remaining` : "All steps completed";
+  }
+}
+
 // ── Field protocol selection ───────────────────────────────────────────────
 
 async function loadFieldProtocols() {
@@ -506,6 +1334,7 @@ el("select-protocol-btn").addEventListener("click", async () => {
       state.checklistState = data;
       renderChecklist(data);
       showProtocolSelected();
+      checkForDecisionStep();
     }
   } catch (err) {
     el("protocol-select-error").textContent = err.message;
@@ -529,13 +1358,14 @@ async function refreshChecklist() {
   );
   state.checklistState = data;
   renderChecklist(data);
+  checkForDecisionStep();
 }
 
 function renderChecklist(data) {
   el("checklist-protocol-name").textContent = state.fieldProtocolId;
   const doneCount = data.steps.filter((s) => s.status !== "pending").length;
   el("checklist-progress").textContent =
-    `${doneCount} / ${data.steps.length} addressed`;
+    `${doneCount} / ${data.steps.length} completed`;
 
   const list = el("step-list");
   list.innerHTML = "";
@@ -582,6 +1412,9 @@ function renderChecklist(data) {
   } else {
     hide(el("checklist-complete-banner"));
   }
+
+  // Feature 8: Checklist enhancements — progress bar, ETA
+  renderChecklistEnhancements(data);
 }
 
 function makeStepActionButton(label, extraClass, handler) {
@@ -645,6 +1478,30 @@ async function markStep(stepId, status) {
 
     state.checklistState = data;
     renderChecklist(data);
+    checkForDecisionStep();
+
+    // Feature 8: Track step completion time for ETA calculation
+    if (status === "done" || status === "skipped") {
+      state.protocolStepTimes.push(Date.now());
+      renderChecklistEnhancements(data);
+    }
+
+    // Feature 8: Highlight the completed step briefly
+    if (stepElement && (status === "done" || status === "skipped")) {
+      const newStepEl = document.querySelector(`[data-step-id="${stepId}"]`);
+      if (newStepEl) {
+        newStepEl.classList.add("step-just-completed");
+        setTimeout(() => newStepEl.classList.remove("step-just-completed"), 1200);
+      }
+    }
+
+    // Feature 1: Update status bar after step change
+    if (state.incidentId) {
+      try {
+        const inc = await apiCall(`/incidents/${state.incidentId}`);
+        renderStatusBar(inc);
+      } catch { /* non-fatal */ }
+    }
 
     // When a disposition step is marked done, automatically transition
     // the incident status to handoff_complete so the dispatcher dashboard
@@ -776,6 +1633,8 @@ el("vitals-form").addEventListener("submit", async (e) => {
       renderTrendAlert(data.trend_alert);
       renderGcsTrendAlert(data.gcs_trend_alert);
       renderNews2MissingFields(data.news2_missing_fields);
+      // Gap 3d: Show NEWS2 badge
+      displayNews2Badge(data);
     }
   } catch (err) {
     el("vitals-error").textContent = err.message;
@@ -822,6 +1681,9 @@ async function loadVitalsHistory() {
         container.appendChild(div);
       });
     renderMedicationHistoryFromFull(full);
+
+    // Feature 4: Render vitals trend chart
+    renderVitalsTrendChart(history);
   } catch (err) {
     container.innerHTML = `<div class="record-empty">Could not load vitals history: ${escapeHtml(err.message)}</div>`;
   }
@@ -973,6 +1835,85 @@ async function loadMedicationSuggestions() {
     select.innerHTML =
       '<option value="">Suggestions unavailable — enter name below</option>';
   }
+
+  setupMedicationAutocomplete();
+}
+
+// ── Medication free-text autocomplete ─────────────────────────────────
+
+const MEDICATION_SUGGESTIONS = [
+  'Salbutamol', 'Adrenaline', 'Aspirin', 'Nitroglycerin', 'Morphine',
+  'Midazolam', 'Diazepam', 'Tranexamic acid', 'Ondansetron',
+  'Paracetamol', 'Ibuprofen', 'Amoxicillin', 'Ceftriaxone',
+  'Ringers Lactate', 'Normal Saline', 'Plasma-Lyte',
+  'Naloxone', 'Flumazenil', 'Atropine', 'Lidocaine',
+  'Amiodarone', 'Fentanyl', 'Ketamine', 'Propofol',
+  'Epinephrine', 'Chlorpheniramine', 'Dexamethasone',
+  'Oxygen', 'Glucose gel', 'Oral rehydration salts',
+];
+
+function setupMedicationAutocomplete() {
+  const input = el("m-drug-text");
+  const dropdown = el("drug-text-suggestions");
+  if (!input || !dropdown) return;
+
+  let activeIndex = -1;
+
+  function showDrugSuggestions(query) {
+    if (!query) { hide(dropdown); return; }
+    const lower = query.toLowerCase();
+    const matches = MEDICATION_SUGGESTIONS.filter(s => s.toLowerCase().includes(lower));
+    if (matches.length === 0) { hide(dropdown); return; }
+
+    dropdown.innerHTML = "";
+    activeIndex = -1;
+    matches.forEach((text, i) => {
+      const item = document.createElement("div");
+      item.className = "suggestion-item";
+      item.textContent = text;
+      item.dataset.index = i;
+      item.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        input.value = text;
+        // Clear the select so the text input takes precedence
+        const select = el("m-drug");
+        if (select) select.value = "";
+        hide(dropdown);
+      });
+      dropdown.appendChild(item);
+    });
+    show(dropdown);
+  }
+
+  input.addEventListener("input", () => showDrugSuggestions(input.value.trim()));
+
+  input.addEventListener("keydown", (e) => {
+    if (dropdown.classList.contains("hidden")) return;
+    const items = dropdown.querySelectorAll(".suggestion-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, items.length - 1);
+      items.forEach((it, i) => it.classList.toggle("active", i === activeIndex));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      items.forEach((it, i) => it.classList.toggle("active", i === activeIndex));
+    } else if (e.key === "Enter" && activeIndex >= 0) {
+      e.preventDefault();
+      input.value = items[activeIndex].textContent;
+      const select = el("m-drug");
+      if (select) select.value = "";
+      hide(dropdown);
+    } else if (e.key === "Escape") {
+      hide(dropdown);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      hide(dropdown);
+    }
+  });
 }
 
 // ── Medications ────────────────────────────────────────────────────────────
@@ -1011,6 +1952,8 @@ el("medication-form").addEventListener("submit", async (e) => {
     });
     e.target.reset();
     el("m-drug").value = "";
+    hide(el("drug-text-suggestions"));
+    hide(el("med-interaction-banner"));
     await loadFieldLog();
   } catch (err) {
     el("medication-error").textContent = err.message;
@@ -1133,6 +2076,128 @@ async function loadFieldLog() {
   }
 }
 
+// ── Facility routing ──────────────────────────────────────────────────────
+
+el("route-facility-btn").addEventListener("click", () => {
+  const resultEl = el("facility-route-result");
+  const listEl = el("facility-route-list");
+  listEl.innerHTML = "";
+  resultEl.textContent = "Locating…";
+
+  if (!navigator.geolocation) {
+    resultEl.textContent = "Geolocation not available on this device.";
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      resultEl.textContent = "Searching for nearest facility…";
+      try {
+        const data = await apiCall(
+          `/incidents/${state.incidentId}/route-facility`,
+          {
+            method: "POST",
+            body: JSON.stringify({ lat, lon }),
+          },
+        );
+        if (!data.facilities || data.facilities.length === 0) {
+          resultEl.textContent = data.message || "No facilities found.";
+        } else {
+          resultEl.textContent = `${data.facilities.length} facility(ies) found:`;
+          data.facilities.forEach((f) => {
+            const div = document.createElement("div");
+            div.className = "facility-item";
+            div.innerHTML =
+              `<strong>${escapeHtml(f.name)}</strong><br>` +
+              `${f.distance_km.toFixed(1)} km` +
+              (f.services ? ` — ${f.services.join(", ")}` : "") +
+              (f.capacity_status ? ` — ${f.capacity_status}` : "");
+            listEl.appendChild(div);
+          });
+        }
+      } catch (err) {
+        resultEl.textContent = `Error: ${err.message}`;
+      }
+    },
+    () => {
+      resultEl.textContent = "GPS location unavailable. Cannot route to facility.";
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
+});
+
+// ── Notify & Route — one-tap disposition action ─────────────────────────────
+
+el("notify-route-btn").addEventListener("click", () => {
+  const resultEl = el("notify-route-result");
+  const btn = el("notify-route-btn");
+  btn.disabled = true;
+  resultEl.textContent = "Locating…";
+
+  if (!navigator.geolocation) {
+    resultEl.textContent = "Geolocation not available.";
+    btn.disabled = false;
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      resultEl.textContent = "Routing to nearest facility…";
+
+      // Step 1: Route to nearest facility
+      let facilityName = "unknown";
+      try {
+        const routeData = await apiCall(
+          `/incidents/${state.incidentId}/route-facility`,
+          {
+            method: "POST",
+            body: JSON.stringify({ lat, lon }),
+          },
+        );
+        if (routeData.facilities && routeData.facilities.length > 0) {
+          facilityName = routeData.facilities[0].name;
+        }
+      } catch (routeErr) { /* best effort — continue with disposition even if routing fails */ }
+
+      // Step 2: Log disposition in field log
+      try {
+        await apiCall(`/incidents/${state.incidentId}/field-log`, {
+          method: "POST",
+          body: JSON.stringify({
+            step_id: "notify_and_route",
+            action_type: "disposition",
+            data: { routed_facility: facilityName, auto_route: true },
+            recorded_by: state.recordedBy || "field",
+          }),
+        });
+      } catch (logErr) {
+        console.warn("Disposition log failed:", logErr.message);
+      }
+
+      // Step 3: Transition status to transporting
+      try {
+        await apiCall(`/incidents/${state.incidentId}/status`, {
+          method: "POST",
+          body: JSON.stringify({ status: "transporting" }),
+        });
+        state.incidentStatus = "transporting";
+      } catch (statusErr) {
+        console.warn("Status update failed:", statusErr.message);
+      }
+
+      resultEl.textContent = `Routed to ${facilityName}. Status: transporting.`;
+      btn.disabled = false;
+    },
+    () => {
+      resultEl.textContent = "GPS unavailable. Cannot route.";
+      btn.disabled = false;
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
+});
+
 // ── Incident summary ───────────────────────────────────────────────────────
 
 el("refresh-summary-btn").addEventListener("click", refreshIncidentSummary);
@@ -1142,7 +2207,10 @@ async function refreshIncidentSummary() {
   pre.textContent = "Loading...";
   try {
     const summary = await apiCall(`/incidents/${state.incidentId}/handoff`);
-    pre.textContent = JSON.stringify(summary, null, 2);
+    // Prefer the backend's pre-rendered plain-text handoff over raw JSON.
+    // text_rendering is a deterministic, human-readable document assembled
+    // from the incident record — this is what the paramedic should see.
+    pre.textContent = summary.text_rendering || JSON.stringify(summary, null, 2);
   } catch (err) {
     try {
       const full = await apiCall(`/incidents/${state.incidentId}/full`);
@@ -1159,6 +2227,12 @@ el("close-incident-btn").addEventListener("click", () => {
   // Epic 3.1: Stop GPS tracking on incident close
   stopGpsTracking();
 
+  // Feature 7: Stop chronometer
+  stopChronometer();
+
+  // Feature 3: Stop dispatch polling
+  stopDispatchPolling();
+
   state.incidentId = null;
   state.recordedBy = null;
   state.fieldProtocolId = null;
@@ -1166,6 +2240,11 @@ el("close-incident-btn").addEventListener("click", () => {
   state.lastVitals = null;
   state.triageEnrichment = null;
   state.incidentStatus = null;
+  state.lastNotes = null;
+  state.lastNoteCount = null;
+  state.gpsCoords = null;
+  state.routedFacility = null;
+  state.protocolStepTimes = [];
   el("lookup-form").reset();
   hide(workspaceScreen);
   show(lookupScreen);
@@ -1173,6 +2252,10 @@ el("close-incident-btn").addEventListener("click", () => {
   // Hide triage context card
   el("triage-context-card").classList.add("hidden");
   el("vitals-prefill-banner").classList.add("hidden");
+
+  // Hide new feature panels
+  hide(el("dispatch-updates-panel"));
+  hide(el("med-interaction-banner"));
 
   updateGpsStatus("");
 });
@@ -1200,3 +2283,515 @@ function formatTimestamp(iso) {
     return iso;
   }
 }
+
+// ── EPIC 3.4: Voice-assisted log entry (SpeechRecognition) ─────────────
+
+let fieldRecognition = null;
+let fieldIsListening = false;
+let fieldVoiceTimeout = null;
+
+function setupVoiceLogEntry() {
+  const voiceBtn = el("voice-log-btn");
+  const statusEl = el("voice-log-status");
+  if (!voiceBtn) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    voiceBtn.textContent = "Dictate (unsupported)";
+    voiceBtn.disabled = true;
+    return;
+  }
+
+  fieldRecognition = new SpeechRecognition();
+  fieldRecognition.continuous = false;
+  fieldRecognition.interimResults = true;
+  fieldRecognition.lang = "en-US";
+
+  fieldRecognition.onresult = (event) => {
+    let text = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      text += event.results[i][0]. transcript;
+    }
+    const noteField = el("fl-note");
+    if (noteField) noteField.value = text;
+  };
+
+  fieldRecognition.onerror = () => {
+    fieldIsListening = false;
+    voiceBtn.textContent = "Dictate";
+    voiceBtn.classList.remove("btn-danger");
+    voiceBtn.classList.add("btn-secondary");
+    hide(statusEl);
+  };
+
+  fieldRecognition.onend = () => {
+    fieldIsListening = false;
+    voiceBtn.textContent = "Dictate";
+    voiceBtn.classList.remove("btn-danger");
+    voiceBtn.classList.add("btn-secondary");
+    hide(statusEl);
+    if (fieldVoiceTimeout) { clearTimeout(fieldVoiceTimeout); fieldVoiceTimeout = null; }
+  };
+
+  voiceBtn.addEventListener("click", () => {
+    if (fieldIsListening) {
+      fieldRecognition.stop();
+    } else {
+      fieldRecognition.start();
+      fieldIsListening = true;
+      voiceBtn.textContent = "⏹ Stop";
+      voiceBtn.classList.remove("btn-secondary");
+      voiceBtn.classList.add("btn-danger");
+      statusEl.textContent = "Listening...";
+      show(statusEl);
+      // Auto-stop after 10 seconds of silence
+      fieldVoiceTimeout = setTimeout(() => { if (fieldIsListening) fieldRecognition.stop(); }, 10000);
+    }
+  });
+}
+
+setupVoiceLogEntry();
+
+// ── Gap 3a: Global voice command listener ───────────────────────────────
+
+let globalRecognition = null;
+let globalVoiceActive = false;
+
+function setupGlobalVoiceCommands() {
+  const toggleBtn = el("voice-control-toggle");
+  const dotEl = el("voice-control-dot");
+  if (!toggleBtn) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    toggleBtn.disabled = true;
+    toggleBtn.querySelector("span:last-child").textContent = "Voice (n/a)";
+    return;
+  }
+
+  globalRecognition = new SpeechRecognition();
+  globalRecognition.continuous = true;
+  globalRecognition.interimResults = false;
+  globalRecognition.lang = "en-US";
+
+  globalRecognition.onresult = (event) => {
+    const last = event.results[event.results.length - 1];
+    if (!last.isFinal) return;
+    const transcript = last[0].transcript.toLowerCase().trim();
+    handleVoiceCommand(transcript);
+  };
+
+  globalRecognition.onerror = () => {
+    // Restart on error if still active
+    if (globalVoiceActive) {
+      try { globalRecognition.start(); } catch {}
+    }
+  };
+
+  globalRecognition.onend = () => {
+    // Auto-restart if still active (continuous mode)
+    if (globalVoiceActive) {
+      try { globalRecognition.start(); } catch {}
+    }
+  };
+
+  toggleBtn.addEventListener("click", () => {
+    if (globalVoiceActive) {
+      globalVoiceActive = false;
+      globalRecognition.stop();
+      toggleBtn.classList.remove("mobile-nav__btn--active");
+      dotEl.classList.remove("active");
+    } else {
+      globalVoiceActive = true;
+      try { globalRecognition.start(); } catch {}
+      toggleBtn.classList.add("mobile-nav__btn--active");
+      dotEl.classList.add("active");
+    }
+  });
+}
+
+function handleVoiceCommand(transcript) {
+  // Step completion commands
+  if (/next step|step complete|mark done/.test(transcript)) {
+    completeNextPendingStep();
+    return;
+  }
+  if (/mark skip/.test(transcript)) {
+    skipNextPendingStep();
+    return;
+  }
+  // Tab navigation commands
+  if (/vitals/.test(transcript)) {
+    scrollToSection("tab-vitals");
+    return;
+  }
+  if (/medications?/.test(transcript)) {
+    scrollToSection("tab-medications");
+    return;
+  }
+  if (/checklist/.test(transcript)) {
+    scrollToSection("tab-checklist");
+    return;
+  }
+  if (/log|field log/.test(transcript)) {
+    scrollToSection("tab-log");
+    return;
+  }
+  if (/summary/.test(transcript)) {
+    scrollToSection("tab-summary");
+    return;
+  }
+}
+
+function completeNextPendingStep() {
+  if (!state.checklistState || !state.checklistState.steps) return;
+  const next = state.checklistState.steps.find((s) => s.status === "pending");
+  if (next) markStep(next.step_id, "done");
+}
+
+function skipNextPendingStep() {
+  if (!state.checklistState || !state.checklistState.steps) return;
+  const next = state.checklistState.steps.find((s) => s.status === "pending");
+  if (next) markStep(next.step_id, "skipped");
+}
+
+setupGlobalVoiceCommands();
+
+// ── Gap 3b: Voice entry for vitals ─────────────────────────────────────
+
+let vitalsRecognition = null;
+let vitalsIsListening = false;
+
+const _VITALS_PATTERNS = {
+  bp: /(?:b\.?p\.?|blood pressure)\s+(\d{2,3})\s*(?:over|\/)\s*(\d{2,3})/i,
+  hr: /(?:heart rate|pulse|h\.?r\.?)\s+(\d{2,3})/i,
+  spo2: /(?:oxygen|sats?|s\.?p\.?o\.?2?)\s*(?:is\s+)?(\d{2,3})/i,
+  rr: /(?:respiratory rate|breaths?|r\.?r\.?)\s+(\d{2,3})/i,
+  temp: /(?:temperature|temp)\s+(\d{2,3}(?:\.\d)?)/i,
+  gcs: /(?:gcs|glasgow)\s+(\d{1,2})/i,
+};
+
+function setupVitalsVoiceEntry() {
+  const btn = el("voice-vitals-btn");
+  const statusEl = el("voice-vitals-status");
+  if (!btn) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    btn.textContent = "Voice Input (n/a)";
+    btn.disabled = true;
+    return;
+  }
+
+  vitalsRecognition = new SpeechRecognition();
+  vitalsRecognition.continuous = false;
+  vitalsRecognition.interimResults = true;
+  vitalsRecognition.lang = "en-US";
+
+  vitalsRecognition.onresult = (event) => {
+    let text = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      text += event.results[i][0].transcript;
+    }
+    if (event.results[event.results.length - 1].isFinal) {
+      parseAndPreviewVitals(text);
+    }
+  };
+
+  vitalsRecognition.onerror = () => {
+    vitalsIsListening = false;
+    btn.textContent = "Voice Input";
+    btn.classList.remove("btn-danger");
+    btn.classList.add("btn-secondary");
+    hide(statusEl);
+  };
+
+  vitalsRecognition.onend = () => {
+    vitalsIsListening = false;
+    btn.textContent = "Voice Input";
+    btn.classList.remove("btn-danger");
+    btn.classList.add("btn-secondary");
+    hide(statusEl);
+  };
+
+  btn.addEventListener("click", () => {
+    if (vitalsIsListening) {
+      vitalsRecognition.stop();
+    } else {
+      vitalsRecognition.start();
+      vitalsIsListening = true;
+      btn.textContent = "⏹ Stop";
+      btn.classList.remove("btn-secondary");
+      btn.classList.add("btn-danger");
+      statusEl.textContent = "Listening…";
+      show(statusEl);
+    }
+  });
+
+  // Wire up preview apply/dismiss
+  el("voice-vitals-apply").addEventListener("click", applyVitalsPreview);
+  el("voice-vitals-dismiss").addEventListener("click", () => {
+    hide(el("voice-vitals-preview"));
+  });
+}
+
+function parseAndPreviewVitals(text) {
+  const parsed = {};
+  const lower = text.toLowerCase();
+
+  for (const [key, pattern] of Object.entries(_VITALS_PATTERNS)) {
+    const m = lower.match(pattern);
+    if (m) {
+      if (key === "bp") {
+        parsed.bp_systolic = parseInt(m[1], 10);
+        parsed.bp_diastolic = parseInt(m[2], 10);
+      } else if (key === "gcs") {
+        // GCS total needs to be decomposed; fill all three fields with placeholder
+        // In practice, paramedic will adjust eye/verbal/motor manually
+        parsed.gcs_eye = parseInt(m[1], 10);
+      } else if (key === "hr") {
+        parsed.heart_rate = parseInt(m[1], 10);
+      } else if (key === "spo2") {
+        parsed.spo2 = parseInt(m[1], 10);
+      } else if (key === "rr") {
+        parsed.respiratory_rate = parseInt(m[1], 10);
+      } else if (key === "temp") {
+        parsed.temperature = parseFloat(m[1]);
+      }
+    }
+  }
+
+  if (Object.keys(parsed).length === 0) return;
+
+  const container = el("voice-vitals-preview-items");
+  container.innerHTML = "";
+  const labels = {
+    bp_systolic: "BP sys",
+    bp_diastolic: "BP dia",
+    heart_rate: "HR",
+    spo2: "SpO2",
+    respiratory_rate: "RR",
+    temperature: "Temp",
+    gcs_eye: "GCS",
+  };
+  for (const [key, val] of Object.entries(parsed)) {
+    const span = document.createElement("span");
+    span.className = "voice-vitals-preview__item";
+    span.textContent = `${labels[key] || key}: ${val}`;
+    container.appendChild(span);
+  }
+
+  // Store parsed values for apply
+  el("voice-vitals-preview").dataset.parsed = JSON.stringify(parsed);
+  show(el("voice-vitals-preview"));
+}
+
+function applyVitalsPreview() {
+  const previewEl = el("voice-vitals-preview");
+  const parsed = JSON.parse(previewEl.dataset.parsed || "{}");
+
+  const fieldMap = {
+    bp_systolic: "v-bp-sys",
+    bp_diastolic: "v-bp-dia",
+    heart_rate: "v-hr",
+    spo2: "v-spo2",
+    respiratory_rate: "v-rr",
+    temperature: "v-temp",
+    gcs_eye: "v-gcs-eye",
+  };
+
+  for (const [key, fieldId] of Object.entries(fieldMap)) {
+    if (parsed[key] !== undefined) {
+      const input = el(fieldId);
+      if (input) input.value = parsed[key];
+    }
+  }
+
+  hide(previewEl);
+}
+
+setupVitalsVoiceEntry();
+
+// ── Feature 5: Medication interaction check on drug input ────────────────
+
+function setupMedInteractionCheck() {
+  const select = el("m-drug");
+  const textInput = el("m-drug-text");
+  if (select) {
+    select.addEventListener("change", () => {
+      if (select.value) checkMedicationInteraction(select.value);
+    });
+  }
+  if (textInput) {
+    let debounce = null;
+    textInput.addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        if (textInput.value.trim()) checkMedicationInteraction(textInput.value.trim());
+      }, 500);
+    });
+  }
+}
+
+setupMedInteractionCheck();
+
+// ── Gap 3c: Large-target binary decision overlay ──────────────────────
+
+function showDecisionOverlay(step) {
+  const overlay = el("decision-overlay");
+  const questionEl = el("decision-question");
+
+  questionEl.textContent = step.title + (step.description ? "\n" + step.description : "");
+
+  overlay.classList.remove("hidden");
+
+  const yesBtn = el("decision-yes");
+  const noBtn = el("decision-no");
+  const skipBtn = el("decision-skip");
+
+  // Remove old listeners by cloning
+  const newYes = yesBtn.cloneNode(true);
+  const newNo = noBtn.cloneNode(true);
+  const newSkip = skipBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newYes, yesBtn);
+  noBtn.parentNode.replaceChild(newNo, noBtn);
+  skipBtn.parentNode.replaceChild(newSkip, skipBtn);
+
+  newYes.addEventListener("click", () => {
+    hideDecisionOverlay();
+    markStep(step.step_id, "done");
+  });
+
+  newNo.addEventListener("click", () => {
+    hideDecisionOverlay();
+    markStep(step.step_id, "skipped");
+  });
+
+  newSkip.addEventListener("click", () => {
+    hideDecisionOverlay();
+  });
+}
+
+function hideDecisionOverlay() {
+  el("decision-overlay").classList.add("hidden");
+}
+
+function isDecisionStep(step) {
+  if (step.step_type === "decision") return true;
+  const t = (step.title + " " + (step.description || "")).toLowerCase();
+  return /\bpresent\??|\bclear\??|\babnormal\??|\bpositive\??|\bconfirmed\??/.test(t);
+}
+
+function checkForDecisionStep() {
+  if (!state.checklistState || !state.checklistState.steps) return;
+  const pending = state.checklistState.steps.filter((s) => s.status === "pending");
+  if (pending.length > 0 && isDecisionStep(pending[0])) {
+    showDecisionOverlay(pending[0]);
+  }
+}
+
+// ── Gap 3d: Auto NEWS2 calculation display ─────────────────────────────
+
+let lastNews2Score = null;
+
+function displayNews2Badge(data) {
+  const badgeEl = el("news2-score-badge");
+  const alertEl = el("news2-alert-banner");
+
+  if (data.news2_score === null || data.news2_score === undefined) {
+    hide(badgeEl);
+    hide(alertEl);
+    return;
+  }
+
+  const score = data.news2_score;
+  const prevScore = lastNews2Score;
+  lastNews2Score = score;
+
+  let text = `NEWS2: ${score}`;
+  let level = "normal";
+  if (data.news2_risk_level) {
+    const rl = data.news2_risk_level.toLowerCase();
+    if (rl.includes("high")) level = "critical";
+    else if (rl.includes("medium")) level = "elevated";
+  }
+
+  if (prevScore !== null && prevScore !== undefined && prevScore !== score) {
+    const delta = score - prevScore;
+    const arrow = delta > 0 ? "↑" : "↓";
+    text += ` → ${score} ${arrow}${Math.abs(delta)}`;
+  }
+
+  badgeEl.textContent = text;
+  badgeEl.className = `news2-score-badge score-flag flag-${level}`;
+  show(badgeEl);
+
+  // Critical alert banner
+  if (score >= 7) {
+    alertEl.textContent = `NEWS2 ALERT: Score ${score} — patient at high risk. Requires immediate clinical review.`;
+    show(alertEl);
+  } else {
+    hide(alertEl);
+  }
+}
+
+// ── Gap 3e: Offline queue status surfacing ─────────────────────────────
+
+function setupOfflineQueueUI() {
+  const toggleBtn = el("offline-queue-toggle");
+  const listEl = el("offline-queue-list");
+  const arrowEl = el("offline-queue-arrow");
+  const sectionEl = el("offline-queue-section");
+
+  if (!toggleBtn) return;
+
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = listEl.classList.contains("hidden");
+    if (isHidden) {
+      renderOfflineQueueList();
+      show(listEl);
+      arrowEl.textContent = "▾";
+    } else {
+      hide(listEl);
+      arrowEl.textContent = "▸";
+    }
+  });
+}
+
+function renderOfflineQueueList() {
+  const listEl = el("offline-queue-list");
+  const queue = getWriteQueue();
+
+  if (queue.length === 0) {
+    listEl.innerHTML = '<div class="record-empty">No queued actions.</div>';
+    return;
+  }
+
+  listEl.innerHTML = "";
+  queue.forEach((entry, i) => {
+    const div = document.createElement("div");
+    div.className = "record-item";
+    div.innerHTML = `
+      <div class="record-item__meta">${formatTimestamp(entry.queued_at)} — ${escapeHtml(entry.method)} ${escapeHtml(entry.endpoint)}</div>
+    `;
+    listEl.appendChild(div);
+  });
+}
+
+function updateOfflineQueueDisplay() {
+  const queue = getWriteQueue();
+  const countEl = el("offline-queue-count");
+  const sectionEl = el("offline-queue-section");
+
+  if (queue.length > 0) {
+    countEl.textContent = `${queue.length} action(s) queued`;
+    countEl.classList.remove("hidden");
+    if (sectionEl) sectionEl.classList.remove("hidden");
+  } else {
+    countEl.textContent = "";
+    countEl.classList.add("hidden");
+    if (sectionEl) sectionEl.classList.add("hidden");
+  }
+}
+
+setupOfflineQueueUI();

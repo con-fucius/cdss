@@ -1,7 +1,11 @@
-// Field console configuration.
-// Edit this file to point at the real API server.
-// Do NOT commit credentials or internal URLs to version control.
-//
-// window.AMBULANCE_CDSS_API_BASE is read by app.js on startup.
-// If not set here, app.js defaults to http://localhost:8000.
-window.AMBULANCE_CDSS_API_BASE = "http://localhost:8000";
+/* Ambulance CDSS Field Console — config.js
+ *
+ * Runtime configuration. Override via window.AMBULANCE_CDSS_* before
+ * this script loads, or set the env vars in deployment.
+ */
+
+window.AMBULANCE_CDSS_API_BASE =
+  window.AMBULANCE_CDSS_API_BASE || "http://localhost:8000";
+
+// Epic 6.2: Paramedic session storage key
+window.AMBULANCE_CDSS_SESSION_KEY = "ambulance_cdss_field_session";

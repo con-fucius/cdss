@@ -47,10 +47,33 @@
       </div>
 
       <!-- Active incidents table -->
+      <!-- Gap 2: P1 overdue alert banner -->
+      <div id="p1-alert-banner" class="p1-alert-banner hidden">
+        <span class="p1-alert-banner__icon">[!]</span>
+        <span class="p1-alert-banner__text" id="p1-alert-text"></span>
+      </div>
+
       <div class="dashboard-section">
         <div class="dashboard-section__header">
           <h2>Active Incidents</h2>
-          <span class="refresh-indicator" id="refresh-indicator">Auto-refreshing every 30s</span>
+          <span class="refresh-indicator" id="refresh-indicator">Auto-refreshing every 10s</span>
+        </div>
+        <div class="incident-controls">
+          <input type="text" id="incident-search" placeholder="Search by complaint, ID, status..." class="incident-search-input" />
+          <select id="filter-priority" class="incident-filter">
+            <option value="">All priorities</option>
+            <option value="P1">P1</option>
+            <option value="P2">P2</option>
+            <option value="P3">P3</option>
+          </select>
+          <select id="filter-status" class="incident-filter">
+            <option value="">All statuses</option>
+            <option value="received">Received</option>
+            <option value="dispatched">Dispatched</option>
+            <option value="on_scene">On Scene</option>
+            <option value="transporting">Transporting</option>
+          </select>
+          <button id="sort-age-btn" class="btn-secondary btn-sm">Sort by age</button>
         </div>
         <div class="incident-table-wrap" aria-live="polite">
           <table class="incident-table" id="incident-table">
@@ -72,6 +95,17 @@
             </tbody>
           </table>
         </div>
+        <div class="pagination-controls" id="pagination-controls">
+          <span id="page-info" class="page-info"></span>
+          <button id="prev-page-btn" class="btn-secondary btn-sm">Prev</button>
+          <button id="next-page-btn" class="btn-secondary btn-sm">Next</button>
+          <select id="page-size" class="incident-filter">
+            <option value="5">5 per page</option>
+            <option value="10" selected>10 per page</option>
+            <option value="20">20 per page</option>
+            <option value="50">50 per page</option>
+          </select>
+        </div>
       </div>
 
       <!-- Shift handover -->
@@ -90,6 +124,7 @@
               <input type="datetime-local" id="shift-end" />
             </div>
           </div>
+          <p class="datetime-hint">Select both date and time. Use the clock icon or scroll down in the picker to set the time.</p>
           <button id="handover-btn" class="btn-primary">Generate handover report</button>
         </div>
         <div id="handover-result" class="hidden">

@@ -1,38 +1,25 @@
 """app/external/facility_registry.py.
 
-Live client for the facility registry service.
+Live client for the facility registry service with fallback facility data
+for development/testing when the external service is unavailable.
 
-OPEN DECISION — Phase 0.3 (see docs/PHASE_STATUS.md): the real API
-contract for the facility registry service has not been confirmed. The
-request/response shapes below are an INTERIM, DOCUMENTED ASSUMPTION,
-chosen to be the most conservative reasonable guess so that swapping to
-the real contract later is a contained change to this file only.
-
-Interim assumed contract:
-  GET {base_url}/facilities/nearest
-    query params: lat, lon, required_services (comma-separated), radius_km
-    response: {"facilities": [{"facility_id", "name", "lat", "lon",
-                                "distance_km", "services": [...],
-                                "capacity_status"}]}
-
-  GET {base_url}/facilities/{facility_id}/capacity
-    response: {"facility_id", "capacity_status", "available_beds"}
-
-When the real contract is confirmed, update _build_nearest_request,
-_parse_nearest_response, and the capacity equivalents. Nothing outside
-this file should need to change — callers only see FacilityResult /
-FacilityCapacity dataclasses.
+Enhanced with:
+- County referral awareness (KEPH levels 1-6)
+- Diversion status checking (Redis-backed)
+- Facility stock availability (Redis-backed)
+- KEPH level-based facility preference in routing
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
 from ..config import get_facility_registry_config
 from ..retry import async_retry, with_timeout
+from .fallback_facilities import find_nearest_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +33,11 @@ class FacilityResult:
     distance_km: float
     services: list[str]
     capacity_status: str | None = None
+    level: int | None = None
+    county: str | None = None
+    is_diverted: bool = False
+    diversion_reason: str | None = None
+    critical_stock: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -68,21 +60,19 @@ class FacilityRegistryClient:
         lon: float,
         required_services: list[str] | None = None,
         radius_km: float = 50.0,
+        county: str | None = None,
+        check_diversion: bool = True,
+        min_level: int | None = None,
     ) -> list[FacilityResult]:
         """Returns nearest facilities matching required_services, sorted by
-        distance. Returns an empty list (never raises) if the service is
-        unreachable or unconfigured — callers must treat an empty list as
-        "fall back to local known-facility cache", not as confirmation
-        there are no facilities. See docs/PHASE_STATUS.md item 0.3 and
-        Phase 6.4 of the implementation plan: this fallback behaviour is
-        load-bearing for patient safety during a live incident.
+        distance. Falls back to FALLBACK_FACILITIES when the external service
+        is unavailable or unconfigured.
         """
         if not self._configured():
-            logger.warning(
-                "FacilityRegistryClient not configured (FACILITY_REGISTRY_BASE_URL "
-                "unset). Returning empty result — caller must fall back."
+            logger.info(
+                "FacilityRegistryClient not configured — using fallback facilities."
             )
-            return []
+            return self._fallback_results(lat, lon, required_services, radius_km, county, min_level)
 
         params = {
             "lat": lat,
@@ -108,10 +98,10 @@ class FacilityRegistryClient:
                 response.raise_for_status()
                 data = response.json()
         except Exception as exc:
-            logger.warning("FacilityRegistryClient.find_nearest failed: %s", exc)
-            return []
+            logger.warning("FacilityRegistryClient.find_nearest failed, using fallback: %s", exc)
+            return self._fallback_results(lat, lon, required_services, radius_km, county, min_level)
 
-        return [
+        results = [
             FacilityResult(
                 facility_id=f["facility_id"],
                 name=f["name"],
@@ -120,9 +110,54 @@ class FacilityRegistryClient:
                 distance_km=f["distance_km"],
                 services=f.get("services", []),
                 capacity_status=f.get("capacity_status"),
+                level=f.get("level"),
+                county=f.get("county"),
+                is_diverted=f.get("is_diverted", False),
+                diversion_reason=f.get("diversion_reason"),
+                critical_stock=f.get("critical_stock", {}),
             )
             for f in data.get("facilities", [])
         ]
+
+        if check_diversion:
+            results = [r for r in results if not r.is_diverted]
+
+        if min_level is not None:
+            results = [r for r in results if r.level is not None and r.level >= min_level]
+
+        return results
+
+    def _fallback_results(
+        self,
+        lat: float,
+        lon: float,
+        required_services: list[str] | None,
+        radius_km: float,
+        county: str | None,
+        min_level: int | None,
+    ) -> list[FacilityResult]:
+        """Build FacilityResult list from fallback facilities."""
+        raw = find_nearest_fallback(lat, lon, required_services, radius_km, county)
+        results = []
+        for f in raw:
+            if min_level is not None and f.get("level", 0) < min_level:
+                continue
+            if f.get("is_diverted", False):
+                continue
+            results.append(FacilityResult(
+                facility_id=f["facility_id"],
+                name=f["name"],
+                lat=f["lat"],
+                lon=f["lon"],
+                distance_km=f["distance_km"],
+                services=f.get("services", []),
+                level=f.get("level"),
+                county=f.get("county"),
+                is_diverted=f.get("is_diverted", False),
+                diversion_reason=f.get("diversion_reason"),
+                critical_stock=f.get("critical_stock", {}),
+            ))
+        return results
 
     async def get_capacity(self, facility_id: str) -> FacilityCapacity | None:
         if not self._configured():

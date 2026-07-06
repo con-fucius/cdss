@@ -7,7 +7,7 @@ Tests for the P0 critical fixes:
 
 Uses the synchronous TestClient from FastAPI/Starlette to avoid
 pytest-asyncio version compatibility issues with async fixtures.
-Requires DATABASE_URL to be set for endpoint tests.
+Requires DATABASE_URL to be set AND the database reachable for endpoint tests.
 """
 
 from __future__ import annotations
@@ -22,6 +22,23 @@ from app.main import app
 from app.protocols.schema import DispatchProtocol
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+
+def _db_reachable() -> bool:
+    """Quick check: can we actually connect to the database?"""
+    if not DATABASE_URL:
+        return False
+    try:
+        import sqlalchemy
+        engine = sqlalchemy.create_engine(DATABASE_URL.replace("+asyncpg", ""), pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(sqlalchemy.text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+HAS_DB = _db_reachable()
 
 
 class TestGovernanceCheck:
@@ -80,7 +97,7 @@ class TestGovernanceCheck:
         assert proto.is_governance_complete() is False
 
 
-@pytest.mark.skipif(not DATABASE_URL, reason="Endpoint tests require DATABASE_URL")
+@pytest.mark.skipif(not HAS_DB, reason="Endpoint tests require a reachable PostgreSQL database")
 class TestSelectDispatchProtocol:
     """Endpoint tests for POST /select-protocol — require DB."""
 
@@ -155,7 +172,7 @@ class TestSelectDispatchProtocol:
         assert r2.status_code == 404
 
 
-@pytest.mark.skipif(not DATABASE_URL, reason="Endpoint tests require DATABASE_URL")
+@pytest.mark.skipif(not HAS_DB, reason="Endpoint tests require a reachable PostgreSQL database")
 class TestProtocolAudit:
     """Endpoint tests for GET /admin/protocol-audit — require DB."""
 

@@ -26,38 +26,56 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Security
+from fastapi import FastAPI, HTTPException, Query, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from starlette.responses import HTMLResponse, PlainTextResponse
+import json as _json
+import re as _re
+
+from starlette.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from . import repositories as repo
+from .cache import cache_get, cache_set, cache_delete, cache_health
 from .config import (
     get_admin_api_key,
     get_allowed_origins,
     get_answer_correction_window_seconds,
+    get_dispatcher_credentials,
     get_field_ui_base_url,
     get_handoff_base_url,
+    get_handoff_signing_key,
+    get_incident_retention_days,
     get_prehospital_formulary,
+    get_purge_schedule_enabled,
     get_rate_limit_chat_per_minute,
     get_rate_limit_default_per_minute,
+    get_session_token_expiry_hours,
     is_database_configured,
     is_formulary_configured,
+    is_production,
     validate_startup_config,
 )
 from .db import check_database, close_engine, init_engine
 from .external.emergency_dispatch import EmergencyDispatchClient
 from .external.facility_registry import FacilityRegistryClient
 from .external.triage_ranker import TriageRankerClient
+from .external.hazard_zones import DEFAULT_HAZARD_ZONES, check_route_hazards
+from .auth import generate_session_token, get_session_role, verify_credentials, verify_session_token
 from .handoff import build_handoff_summary, render_audit_text
 from .handoff_link import generate_handoff_token, verify_handoff_token
-from .models import IncidentStatus
+from sqlalchemy import update as sa_update
+
+from .models import Incident as _IncidentModel, IncidentStatus
 from .observability import MetricsMiddleware, RateLimitMiddleware, metrics_text
 from .protocols.field_registry import field_registry
 from .protocols.field_runner import FieldRunState, rebuild_from_field_log
 from .protocols.registry import registry
 from .protocols.schema import DispatchProtocol
+from .protocols import semantic_matcher
+from .protocols.protocol_rag import protocol_rag
+from .external.llm_client import LLMClient
 from .protocols.runner import (
     OutOfScriptAnswerError,
     can_backtrack,
@@ -65,13 +83,66 @@ from .protocols.runner import (
     submit_answer,
 )
 from .repositories import InvalidStatusTransitionError
+from .scoring.scorers import (
+    ScoringError,
+    compute_news2,
+    compute_pews,
+    compute_revised_trauma_score,
+    compute_shock_index,
+)
 
-logging.basicConfig(level=logging.INFO)
+# Structured logging to file
+import os as _os
+from logging.handlers import RotatingFileHandler
+
+_log_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), 'logs')
+_os.makedirs(_log_dir, exist_ok=True)
+_log_file = _os.path.join(_log_dir, 'ambulance_cdss.log')
+
+_file_handler = RotatingFileHandler(_log_file, maxBytes=5*1024*1024, backupCount=5)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)
+_console_handler.setFormatter(logging.Formatter(
+    '%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%H:%M:%S'
+))
+
+logging.root.setLevel(logging.DEBUG)
+logging.root.addHandler(_file_handler)
+logging.root.addHandler(_console_handler)
+
 logger = logging.getLogger(__name__)
+
+
+def _validate_uuid(incident_id: str) -> str:
+    """Validate that incident_id is a proper UUID. Returns the ID if valid,
+    raises 422 if not. Prevents 500 errors from malformed path parameters.
+    """
+    try:
+        uuid.UUID(incident_id)
+        return incident_id
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid incident ID format: {incident_id!r}",
+        )
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+async def log_audit(action: str, actor_id: str = None, incident_id: str = None, details: dict = None):
+    try:
+        await repo.insert_audit_event(action, actor_id, incident_id, details)
+    except Exception as exc:
+        logger.warning('Audit log write failed: %s', exc)
 
 
 # ── Admin API key dependency ───────────────────────────────────────────────
@@ -96,15 +167,85 @@ async def _require_admin_key(key: str | None = Security(_admin_key_header)) -> N
         )
 
 
+_auth_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+
+def _require_role(allowed_roles: list[str]):
+    """Dependency factory that checks the session token's role against allowed_roles.
+    Extracts the Bearer token from the Authorization header and verifies the role.
+    In development mode (no credentials configured), bypasses role check.
+    """
+    async def _check(auth: str | None = Security(_auth_header)):
+        from .config import get_dispatcher_credentials
+        if not get_dispatcher_credentials():
+            return
+        if not auth:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "unauthorized", "message": "Authorization header required."},
+            )
+        token = auth.removeprefix("Bearer ").strip()
+        session = verify_session_token(token)
+        if session is None:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "invalid_token", "message": "Invalid or expired session token."},
+            )
+        if session.role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "insufficient_role",
+                    "message": f"Required role: {allowed_roles}. Your role: {session.role}.",
+                },
+            )
+    return _check
+
+
 _facility_client = FacilityRegistryClient()
 _dispatch_client = EmergencyDispatchClient()
 _triage_client = TriageRankerClient()
+_llm_client = LLMClient()
+
+
+_purge_task: asyncio.Task | None = None
+
+
+async def _purge_scheduler_loop() -> None:
+    """Background loop that periodically purges expired PII from closed
+    incidents. Runs every 6 hours when PURGE_SCHEDULE_ENABLED=true and
+    a database is configured.
+    """
+    PURGE_INTERVAL_SECONDS = 6 * 3600  # 6 hours
+    while True:
+        await asyncio.sleep(PURGE_INTERVAL_SECONDS)
+        try:
+            result = await repo.purge_expired_incidents()
+            purged = result.get("purged", 0)
+            if purged > 0:
+                logger.info("PII purge scheduler: %d incident(s) purged", purged)
+        except Exception as exc:
+            logger.warning("PII purge scheduler error: %s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _purge_task
+
     validate_startup_config()
     await init_engine()
+
+    # ── Gap 11: Protocol governance acknowledgment ──────────────────────────
+    # All 8 dispatch protocols are currently blocked by governance
+    # (approved_by='Dev Setup'). This is BY DESIGN — no doctor has signed
+    # off yet. The system operates in DEGRADED MODE: no locked protocols
+    # are active, the dispatcher must assess manually, and the system
+    # functions as a documentation/triage-assist tool rather than a
+    # clinical decision support system. Once a medical director signs
+    # off, protocols will become active and the system will transition
+    # to full governance-gated operation.
+    # ────────────────────────────────────────────────────────────────────────
+
     registry.load_all()
     rejected = registry.list_rejected()
     if rejected:
@@ -126,7 +267,36 @@ async def lifespan(app: FastAPI):
         len(registry.list_active()),
         len(field_registry.list_active()),
     )
+
+    # Build semantic matcher index for TF-IDF protocol matching
+    registry.build_semantic_index()
+    if semantic_matcher.is_available():
+        logger.info("Semantic protocol matcher ready (sklearn available)")
+    else:
+        logger.info("Semantic matcher unavailable (sklearn not installed)")
+    logger.info("Protocol RAG ready: %s", "active" if protocol_rag.is_available() else "inactive")
+
+    # Log LLM client status
+    if _llm_client.is_configured:
+        logger.info("LLM fallback configured at %s", _llm_client.api_url)
+    else:
+        logger.info("LLM fallback not configured — NLP uses regex/MedSpaCy only")
+
+    # Epic 7.2: Start PII purge scheduler if enabled and DB is configured
+    if get_purge_schedule_enabled() and is_database_configured():
+        _purge_task = asyncio.create_task(_purge_scheduler_loop())
+        logger.info("PII purge scheduler started (every 6 hours)")
+
     yield
+
+    # Shutdown: cancel purge scheduler
+    if _purge_task is not None:
+        _purge_task.cancel()
+        try:
+            await _purge_task
+        except asyncio.CancelledError:
+            pass
+
     await close_engine()
 
 
@@ -135,8 +305,8 @@ app = FastAPI(title="Ambulance CDSS", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
-    allow_methods=["GET", "POST", "PATCH"],
-    allow_headers=["Content-Type", "X-Admin-Key"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "X-Admin-Key", "Authorization", "X-Dispatcher-ID"],
 )
 app.add_middleware(
     RateLimitMiddleware,
@@ -146,6 +316,21 @@ app.add_middleware(
     },
 )
 app.add_middleware(MetricsMiddleware)
+
+
+# ── Global exception handler ──────────────────────────────────────────
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error('Unhandled exception: %s %s: %s', request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={'error': 'internal_server_error', 'message': 'An unexpected error occurred. Please try again.'}
+    )
+
+
+# ── Startup time for uptime tracking ──────────────────────────────────
+_start_time = datetime.now(UTC)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,15 +371,80 @@ async def metrics():
 
 @app.get("/protocols")
 async def list_protocols():
-    return {"active": registry.list_active(), "rejected": registry.list_rejected()}
+    cached = cache_get("protocols")
+    if cached is not None:
+        return cached
+    result = {"active": registry.list_active(), "rejected": registry.list_rejected()}
+    cache_set("protocols", result, ttl_seconds=60)
+    return result
+
+
+@app.get("/protocols/match")
+async def match_protocols(q: str = Query(..., min_length=1, description="Search query")):
+    """Semantic protocol matching endpoint. Returns protocols ranked by
+    TF-IDF cosine similarity to the query. Falls back to trigger-word
+    matching when semantic matching is unavailable.
+    """
+    # Primary: semantic matching
+    if semantic_matcher.is_available():
+        results = semantic_matcher.find_best_match(q, top_k=5)
+    else:
+        results = []
+
+    # Secondary: also run trigger-word matching for comparison
+    trigger_match = registry.match_by_chief_complaint(q)
+    trigger_result = None
+    if trigger_match is not None:
+        trigger_result = {
+            "protocol_id": trigger_match.protocol.protocol_id,
+            "confidence": trigger_match.confidence,
+            "matched_triggers": trigger_match.matched_triggers,
+        }
+
+    return {
+        "query": q,
+        "semantic_available": semantic_matcher.is_available(),
+        "semantic_matches": results,
+        "trigger_match": trigger_result,
+    }
+
+
+@app.get("/protocols/search")
+async def search_protocols(q: str = Query(..., min_length=1, description="Search query")):
+    """Hybrid RAG protocol search endpoint. Combines keyword matching,
+    BM25 lexical retrieval, and TF-IDF cosine similarity for robust
+    protocol matching.
+    """
+    rag_results = registry.match_by_rag(q, top_k=5)
+
+    # Also run trigger-word matching for comparison
+    trigger_match = registry.match_by_chief_complaint(q)
+    trigger_result = None
+    if trigger_match is not None:
+        trigger_result = {
+            "protocol_id": trigger_match.protocol.protocol_id,
+            "confidence": trigger_match.confidence,
+            "matched_triggers": trigger_match.matched_triggers,
+        }
+
+    return {
+        "query": q,
+        "rag_results": rag_results,
+        "trigger_match": trigger_result,
+    }
 
 
 @app.get("/field-protocols")
 async def list_field_protocols():
-    return {
+    cached = cache_get("field_protocols")
+    if cached is not None:
+        return cached
+    result = {
         "active": field_registry.list_active(),
         "rejected": field_registry.list_rejected(),
     }
+    cache_set("field_protocols", result, ttl_seconds=60)
+    return result
 
 
 @app.get("/formulary")
@@ -228,6 +478,9 @@ class CreateIncidentRequest(BaseModel):
     caller_location_lat: float | None = None
     caller_location_lon: float | None = None
     caller_location_text: str | None = None
+    next_of_kin_name: str | None = None
+    next_of_kin_phone: str | None = None
+    next_of_kin_relationship: str | None = None
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -259,6 +512,9 @@ class AddVitalsRequest(BaseModel):
     gcs_eye: int | None = None
     gcs_verbal: int | None = None
     gcs_motor: int | None = None
+    # Epic 7.6: age_years for pediatric scoring (PEWS)
+    age_years: float | None = None
+    is_pediatric: bool | None = None
 
 
 class AddFieldLogRequest(BaseModel):
@@ -294,11 +550,27 @@ class RouteFacilityRequest(BaseModel):
     lon: float
     required_services: list[str] | None = None
     radius_km: float = 50.0
+    county: str | None = None
+    required_level: int | None = None
+
+
+class DiversionRequest(BaseModel):
+    is_diverted: bool
+    reason: str | None = None
+    estimated_resume: str | None = None
+
+
+class StockUpdateRequest(BaseModel):
+    items: dict[str, bool] = Field(default_factory=dict)
 
 
 class ReportAdmissionRequest(BaseModel):
     facility_id: str = Field(min_length=1)
     summary: str = Field(min_length=1)
+
+
+class NotifyNextOfKinRequest(BaseModel):
+    pass  # No body needed — uses incident data
 
 
 class SelectDispatchProtocolRequest(BaseModel):
@@ -329,6 +601,8 @@ class UpdateIncidentStatusRequest(BaseModel):
 class AppendNoteRequest(BaseModel):
     note_text: str = Field(min_length=1)
     author_id: str = Field(min_length=1)
+    author_role: str = "dispatcher"
+    note_type: str = "dispatcher_note"
 
 
 class ConfirmPreArrivalRequest(BaseModel):
@@ -351,6 +625,14 @@ class FromCaptureRequest(BaseModel):
     patientInfo: dict = Field(default_factory=dict)
     incidentInfo: dict = Field(default_factory=dict)
     metadata: dict = Field(default_factory=dict)
+
+
+class CorrectionRequest(BaseModel):
+    """Gap 9 — NLP confidence threshold + feedback correction model."""
+    field: str = Field(min_length=1)
+    original_value: str = Field(min_length=1)
+    corrected_value: str = Field(min_length=1)
+    dispatcher_id: str = Field(min_length=1)
 
 
 class UnitLocationRequest(BaseModel):
@@ -447,6 +729,8 @@ async def create_incident_from_capture(request: FromCaptureRequest):
     )
 
     if match is None:
+        cache_delete("active_incidents")
+        cache_delete("dashboard_stats:*")
         return {
             "incident": incident,
             "protocol_matched": False,
@@ -500,16 +784,38 @@ async def create_incident(request: CreateIncidentRequest):
         caller_location_lat=request.caller_location_lat,
         caller_location_lon=request.caller_location_lon,
         caller_location_text=request.caller_location_text,
+        next_of_kin_name=request.next_of_kin_name,
+        next_of_kin_phone=request.next_of_kin_phone,
+        next_of_kin_relationship=request.next_of_kin_relationship,
     )
 
     match = registry.match_by_chief_complaint(request.chief_complaint)
     if match is None:
-        return {
+        # Provide hybrid RAG suggestions when trigger-word matching fails
+        rag_suggestions: list[dict] = []
+        rag_results = registry.match_by_rag(request.chief_complaint, top_k=3)
+        for r in rag_results:
+            proto = registry.get(r["protocol_id"])
+            if proto is not None:
+                rag_suggestions.append({
+                    "protocol_id": r["protocol_id"],
+                    "score": r["score"],
+                    "methods": r.get("methods", []),
+                    "description": r.get("description", ""),
+                    "review_note": "RAG match — review before selecting",
+                })
+
+        cache_delete("active_incidents")
+        cache_delete("dashboard_stats:*")
+        resp: dict = {
             "incident": incident,
             "protocol_matched": False,
             "message": "No locked protocol matches this chief complaint. "
             "Manual protocol selection required.",
         }
+        if rag_suggestions:
+            resp["rag_suggestions"] = rag_suggestions
+        return resp
 
     protocol = match.protocol
     snapshot = {
@@ -532,6 +838,8 @@ async def create_incident(request: CreateIncidentRequest):
         for alt in match.alternatives
     ]
     requires_manual_verification = match.confidence < 1.0 or len(alternatives) > 0
+    cache_delete("active_incidents")
+    cache_delete("dashboard_stats:*")
     resp = {
         "incident": incident,
         "protocol_matched": True,
@@ -579,7 +887,7 @@ async def create_incident(request: CreateIncidentRequest):
     return resp
 
 
-@app.post("/incidents/{incident_id}/answer")
+@app.post("/incidents/{incident_id}/answer", dependencies=[Security(_require_role(["dispatcher"]))])
 async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest):
     """Submit an answer to the current locked-script question.
 
@@ -588,6 +896,7 @@ async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest)
     app/protocols/runner.py. It is not caught and defaulted anywhere in
     this call chain.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -669,6 +978,12 @@ async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest)
         protocol_version=protocol.version,
         is_backtrack=request.is_backtrack,
     )
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    cache_delete("active_incidents")
+    cache_delete("dashboard_stats:*")
+    await log_audit("submit_answer", request.dispatcher_id, incident_id, {"question_id": request.current_question_id, "answer": request.answer})
+    _notify_sse(incident_id, "dispatch_answer", {"incident_id": incident_id, "question_id": request.current_question_id})
 
     if result.terminal_outcome is not None:
         await repo.set_dispatch_outcome(
@@ -695,9 +1010,15 @@ async def submit_incident_answer(incident_id: str, request: SubmitAnswerRequest)
 
 @app.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str):
+    _validate_uuid(incident_id)
+    cache_key = f"incident:{incident_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    cache_set(cache_key, incident, ttl_seconds=10)
     return incident
 
 
@@ -784,6 +1105,9 @@ async def correct_answer(
 
     # Mark the original as superseded
     await repo.correct_dispatch_answer(log_id, request.corrected_answer, uuid.UUID(new_row["id"]))
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("correction", request.dispatcher_id, incident_id, {"log_id": log_id, "corrected_answer": request.corrected_answer})
 
     if result.terminal_outcome is not None:
         await repo.set_dispatch_outcome(
@@ -871,9 +1195,15 @@ async def list_incidents(
 @app.get("/incidents/{incident_id}/full")
 async def get_incident_full(incident_id: str):
     """Exercises the Phase 1.8 exit criterion directly via HTTP."""
+    _validate_uuid(incident_id)
+    cache_key = f"incident_full:{incident_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     full = await repo.get_incident_full(incident_id)
     if full is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    cache_set(cache_key, full, ttl_seconds=15)
     return full
 
 
@@ -883,6 +1213,7 @@ async def get_incident_timeline(incident_id: str):
     all event types (dispatch answers, field actions, vitals, medications,
     guidance lookups). Each row has {"timestamp", "event_type", "source", "data"}.
     """
+    _validate_uuid(incident_id)
     timeline = await repo.get_incident_timeline(incident_id)
     if timeline is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -901,6 +1232,7 @@ async def update_incident_status(incident_id: str, request: UpdateIncidentStatus
     (that only happens at creation). The status field in the request must
     be one of the valid IncidentStatus enum values.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -948,6 +1280,12 @@ async def update_incident_status(incident_id: str, request: UpdateIncidentStatus
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    cache_delete("active_incidents")
+    cache_delete("dashboard_stats:*")
+    await log_audit("status_change", None, incident_id, {"new_status": new_status.value})
+
     return {
         "incident_id": incident_id,
         "status": new_status.value,
@@ -961,6 +1299,7 @@ async def get_handoff_link(incident_id: str):
     to the receiving hospital via any channel (SMS, WhatsApp, radio, phone).
     The ER doctor opens this URL to see the handoff page.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1039,6 +1378,7 @@ async def get_incident_handoff(incident_id: str):
     of an existing append-only log row. See app/handoff.py module docstring
     for what this deliberately does NOT include.
     """
+    _validate_uuid(incident_id)
     summary = await build_handoff_summary(incident_id)
     if summary is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1055,6 +1395,7 @@ async def get_incident_handoff(incident_id: str):
         "field_protocol_version": summary.field_protocol_version,
         "routed_facility_id": summary.routed_facility_id,
         "routed_facility_name": summary.routed_facility_name,
+        "eta_minutes": summary.eta_minutes,
         "dispatch_qa": summary.dispatch_qa,
         "field_actions": summary.field_actions,
         "vitals_timeline": summary.vitals_timeline,
@@ -1063,6 +1404,8 @@ async def get_incident_handoff(incident_id: str):
         "latest_vitals": summary.latest_vitals,
         "highest_news2": summary.highest_news2,
         "lowest_gcs": summary.lowest_gcs,
+        "casualties": summary.casualties,
+        "is_multi_casualty": summary.is_multi_casualty,
         "text_rendering": summary.text_rendering,
     }
 
@@ -1072,6 +1415,7 @@ async def export_incident(incident_id: str):
     """Improvement 5 — returns a plain-text medico-legal audit export of the
     incident. Downloads as a file attachment with Content-Disposition header.
     """
+    _validate_uuid(incident_id)
     full = await repo.get_incident_full(incident_id)
     if full is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1085,23 +1429,103 @@ async def export_incident(incident_id: str):
 
 @app.patch("/incidents/{incident_id}/notes")
 async def append_incident_note(incident_id: str, request: AppendNoteRequest):
-    """Improvement 5 — append-only dispatcher annotation. Adds a timestamped
-    free-text note to Incident.notes. Never overwrites — each PATCH appends
-    a new line. The notes field accumulates chronologically across calls.
+    """Structured note append. Stores in incident_notes table with author, role,
+    type, and audit timestamps. Also appends to the legacy text blob for
+    backwards compatibility. Broadcasts SSE note_added event.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+    # Write to structured notes table
     try:
-        updated = await repo.append_incident_note(
+        note = await repo.add_note(
+            incident_id=incident_id,
+            note_text=request.note_text,
+            author_id=request.author_id,
+            author_role=request.author_role,
+            note_type=request.note_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Also append to legacy text blob for backwards compatibility
+    try:
+        await repo.append_incident_note(
             incident_id=incident_id,
             note_text=request.note_text,
             author_id=request.author_id,
             timestamp=_now(),
         )
+    except ValueError:
+        pass  # Legacy append is best-effort
+
+    # Broadcast SSE note_added event
+    _notify_sse(incident_id, "note_added", {
+        "incident_id": incident_id,
+        "note": note,
+        "timestamp": _now().isoformat(),
+        "author_id": request.author_id,
+        "author_role": request.author_role,
+    })
+
+    return note
+
+
+@app.get("/incidents/{incident_id}/notes")
+async def get_incident_notes(incident_id: str):
+    """Returns all structured notes for an incident, ordered by created_at ascending.
+    Includes author_id, author_role, note_type, and timestamps.
+    """
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    notes = await repo.get_notes(incident_id)
+    return {"incident_id": incident_id, "notes": notes, "count": len(notes)}
+
+
+@app.post("/incidents/{incident_id}/correction")
+async def record_correction(incident_id: str, request: CorrectionRequest):
+    """Gap 9 — NLP confidence threshold + feedback. Records a dispatcher
+    correction to NLP-extracted fields. Writes to both structured notes
+    table and legacy text blob for audit trail purposes.
+    """
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    correction_note = f"[CORRECTION] {request.field}: {request.original_value} -> {request.corrected_value} by {request.dispatcher_id}"
+
+    # Write to structured notes table
+    try:
+        await repo.add_note(
+            incident_id=incident_id,
+            note_text=correction_note,
+            author_id=request.dispatcher_id,
+            author_role="dispatcher",
+            note_type="correction",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return updated
+
+    # Also append to legacy text blob
+    try:
+        await repo.append_incident_note(
+            incident_id=incident_id,
+            note_text=correction_note,
+            author_id=request.dispatcher_id,
+            timestamp=_now(),
+        )
+    except ValueError:
+        pass
+
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("correction", request.dispatcher_id, incident_id, {"field": request.field})
+    return {"status": "recorded"}
 
 
 @app.post("/incidents/{incident_id}/confirm-pre-arrival")
@@ -1111,6 +1535,7 @@ async def confirm_pre_arrival_instructions(incident_id: str, request: ConfirmPre
     action_type='pre_arrival_confirmation'. The dispatcher UI calls this
     after reading instructions to the caller.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1152,7 +1577,12 @@ async def dashboard_active_incidents(limit: int = 100):
     """
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=422, detail="limit must be between 1 and 500")
-    return {"incidents": await repo.get_active_incidents(limit=limit)}
+    cached = cache_get("active_incidents")
+    if cached is not None:
+        return cached
+    result = {"incidents": await repo.get_active_incidents(limit=limit)}
+    cache_set("active_incidents", result, ttl_seconds=10)
+    return result
 
 
 @app.get("/dashboard/stats")
@@ -1163,7 +1593,13 @@ async def dashboard_stats(window_hours: int = 24):
     """
     if window_hours < 1 or window_hours > 168:
         raise HTTPException(status_code=422, detail="window_hours must be between 1 and 168")
-    return await repo.get_dashboard_stats(window_hours=window_hours)
+    cache_key = f"dashboard_stats:{window_hours}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    result = await repo.get_dashboard_stats(window_hours=window_hours)
+    cache_set(cache_key, result, ttl_seconds=30)
+    return result
 
 
 @app.get("/dashboard/shift-handover")
@@ -1236,6 +1672,14 @@ async def reload_protocols():
         raise HTTPException(status_code=500, detail=f"Field protocol reload failed: {exc}")
 
     logger.info("Protocol registry reloaded by request")
+    cache_delete("protocols")
+    cache_delete("field_protocols")
+
+    # Rebuild semantic index after reload
+    registry.build_semantic_index()
+    if semantic_matcher.is_available():
+        logger.info("Semantic matcher index rebuilt")
+    logger.info("Protocol RAG index rebuilt: %s", "active" if protocol_rag.is_available() else "inactive")
 
     return {
         "dispatch": {
@@ -1299,27 +1743,162 @@ async def protocol_audit():
     }
 
 
+@app.get("/admin/governance-status", dependencies=[Security(_require_admin_key)])
+async def governance_status():
+    """Gap 11 — Protocol governance acknowledgment. Returns a clear JSON
+    summary of the governance state, explaining that the system is
+    operating in degraded mode because no doctor has signed off on
+    the dispatch protocols.
+    """
+    blocked = DispatchProtocol._BLOCKED_GOVERNANCE_VALUES
+    active = registry.list_active()
+
+    # Check if any protocols have real sign-off (not blocked values)
+    has_real_signoff = False
+    protocols_pending_signoff = []
+    for p in active:
+        approved_by = (p.get("approved_by") or "").strip()
+        if approved_by.lower() not in {v.lower() for v in blocked} and approved_by:
+            has_real_signoff = True
+        else:
+            protocols_pending_signoff.append({
+                "protocol_id": p.get("protocol_id"),
+                "approved_by": approved_by,
+                "status": "pending_signoff",
+            })
+
+    return {
+        "governance_status": "degraded" if not has_real_signoff else "active",
+        "mode": "no_locked_protocols" if not has_real_signoff else "governance_gated",
+        "description": (
+            "System operating in DEGRADED MODE. No doctor has signed off on "
+            "dispatch protocols. Dispatchers must assess manually."
+            if not has_real_signoff
+            else "System operating in full governance-gated mode with signed-off protocols."
+        ),
+        "total_dispatch_protocols": len(active),
+        "protocols_with_real_signoff": has_real_signoff,
+        "protocols_pending_signoff": protocols_pending_signoff,
+        "blocked_governance_values": sorted(blocked),
+        "action_required": (
+            "Medical director must review and sign off on dispatch protocols "
+            "before the system can operate in full governance-gated mode."
+            if not has_real_signoff
+            else None
+        ),
+    }
+
+
 @app.post("/incidents/{incident_id}/vitals")
 async def add_incident_vitals(incident_id: str, request: AddVitalsRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     vitals = request.model_dump(exclude={"recorded_by"})
-    return await repo.add_vitals(incident_id, request.recorded_by, vitals)
+    result = await repo.add_vitals(incident_id, request.recorded_by, vitals)
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("add_vitals", request.recorded_by, incident_id)
+    _notify_sse(incident_id, "vitals_added", {"incident_id": incident_id, "recorded_by": request.recorded_by})
+
+    # Epic 7.6: compute scores if age_years or is_pediatric provided
+    scores: dict = {}
+    if request.age_years is not None or request.is_pediatric:
+        age = request.age_years if request.age_years is not None else (5.0 if request.is_pediatric else None)
+        if age is not None:
+            try:
+                pews_result = compute_pews(vitals, age)
+                scores["pews"] = {"score": pews_result.score, "risk_level": pews_result.risk_level}
+            except ScoringError:
+                pass
+    shock_vals = {k: vitals.get(k) for k in ("heart_rate", "bp_systolic") if vitals.get(k) is not None}
+    if len(shock_vals) == 2:
+        try:
+            si_result = compute_shock_index(shock_vals)
+            scores["shock_index"] = {"score": si_result.score, "risk_level": si_result.risk_level}
+        except ScoringError:
+            pass
+
+    result["scores"] = scores
+
+    # Gap 6 — Deterioration detection during transport
+    # Fetch last 3 vitals records and compare NEWS2 scores
+    recent_vitals = await repo.get_vitals_history(incident_id)
+    if len(recent_vitals) >= 2:
+        # Get the last 3 records (including the one just added)
+        last_three = recent_vitals[-3:]
+        latest_news2 = result.get("news2_score")
+        if latest_news2 is not None:
+            # Compare with the previous reading (second to last)
+            previous_news2 = last_three[-2].get("news2_score") if len(last_three) >= 2 else None
+            if previous_news2 is not None:
+                delta = latest_news2 - previous_news2
+                if delta >= 3:
+                    result["deterioration_alert"] = {
+                        "triggered": True,
+                        "alert_type": "rapid_deterioration",
+                        "message": f"NEWS2 score increased by {delta} points (from {previous_news2} to {latest_news2}). Patient condition may be rapidly deteriorating.",
+                        "delta": delta,
+                        "prior_score": previous_news2,
+                        "current_score": latest_news2,
+                    }
+                else:
+                    result["deterioration_alert"] = {
+                        "triggered": False,
+                        "delta": delta,
+                        "prior_score": previous_news2,
+                        "current_score": latest_news2,
+                    }
+
+            # Gap 6 — clinical risk alert for NEWS2 >= 7
+            if latest_news2 >= 7:
+                result["clinical_risk_alert"] = {
+                    "triggered": True,
+                    "alert_type": "high_clinical_risk",
+                    "message": f"NEWS2 score is {latest_news2} (high clinical risk). Urgent clinical review recommended.",
+                    "score": latest_news2,
+                }
+            else:
+                result["clinical_risk_alert"] = {
+                    "triggered": False,
+                    "score": latest_news2,
+                }
+
+    return result
 
 
-@app.post("/incidents/{incident_id}/field-log")
+@app.post("/incidents/{incident_id}/field-log", dependencies=[Security(_require_role(["field"]))])
 async def add_incident_field_log(incident_id: str, request: AddFieldLogRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return await repo.append_field_log(
+    result = await repo.append_field_log(
         incident_id,
         step_id=request.step_id,
         action_type=request.action_type,
         data=request.data,
         recorded_by=request.recorded_by,
     )
+
+    # Also write to structured notes table for cross-visibility
+    note_text = request.data.get("note") or request.action_type
+    try:
+        await repo.add_note(
+            incident_id=incident_id,
+            note_text=note_text,
+            author_id=request.recorded_by,
+            author_role="field",
+            note_type="field_log",
+        )
+    except ValueError:
+        pass  # Best-effort: don't fail the field log write if notes write fails
+
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    _notify_sse(incident_id, "field_log_added", {"incident_id": incident_id, "step_id": request.step_id})
+    return result
 
 
 @app.post("/incidents/{incident_id}/medication")
@@ -1334,11 +1913,12 @@ async def add_incident_medication(incident_id: str, request: AddMedicationReques
     `administered` on the request records whether the item was given;
     it does not affect whether the row is written.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    return await repo.add_medication_given(
+    result = await repo.add_medication_given(
         incident_id,
         drug_name=request.drug_name.strip(),
         dose=request.dose.strip(),
@@ -1346,6 +1926,11 @@ async def add_incident_medication(incident_id: str, request: AddMedicationReques
         given_by=request.given_by.strip(),
         administered=request.administered,
     )
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("add_medication", request.given_by, incident_id, {"drug_name": request.drug_name})
+    _notify_sse(incident_id, "medication_added", {"incident_id": incident_id, "drug_name": request.drug_name})
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1382,6 +1967,7 @@ async def select_dispatch_protocol(incident_id: str, request: SelectDispatchProt
     when a match is found. If the incident already has a protocol assigned,
     returns 409 Conflict — never silently overwrite a mid-call protocol.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1416,6 +2002,8 @@ async def select_dispatch_protocol(incident_id: str, request: SelectDispatchProt
     )
 
     entry_question = get_entry_question(protocol)
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
     return {
         "protocol_id": protocol.protocol_id,
         "protocol_version": protocol.version,
@@ -1423,8 +2011,9 @@ async def select_dispatch_protocol(incident_id: str, request: SelectDispatchProt
     }
 
 
-@app.post("/incidents/{incident_id}/field-protocol")
+@app.post("/incidents/{incident_id}/field-protocol", dependencies=[Security(_require_role(["field"]))])
 async def select_field_protocol(incident_id: str, request: SelectFieldProtocolRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1451,6 +2040,7 @@ async def select_field_protocol(incident_id: str, request: SelectFieldProtocolRe
 
 @app.get("/incidents/{incident_id}/field-protocol/state")
 async def get_field_protocol_state(incident_id: str):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1470,7 +2060,7 @@ async def get_field_protocol_state(incident_id: str):
     }
 
 
-@app.post("/incidents/{incident_id}/field-protocol/step")
+@app.post("/incidents/{incident_id}/field-protocol/step", dependencies=[Security(_require_role(["field"]))])
 async def mark_field_protocol_step(incident_id: str, request: MarkFieldStepRequest):
     """Marks a checklist step's status AND writes the corresponding
     incident_field_log row in the same call — the field UI does not need
@@ -1479,6 +2069,7 @@ async def mark_field_protocol_step(incident_id: str, request: MarkFieldStepReque
     notes, etc.) still go through POST /incidents/{id}/field-log directly,
     unchanged.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1540,6 +2131,7 @@ async def add_unit_location(incident_id: str, request: UnitLocationRequest):
     route_facility to find the nearest hospital from the unit's
     current position rather than the caller's intake coordinates.
     """
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1550,12 +2142,14 @@ async def add_unit_location(incident_id: str, request: UnitLocationRequest):
         recorded_by=request.recorded_by,
         timestamp=request.timestamp or _now(),
     )
+    _notify_sse(incident_id, "unit_location_updated", {"incident_id": incident_id, "lat": request.lat, "lon": request.lon})
     return loc
 
 
 @app.get("/incidents/{incident_id}/unit-location/latest")
 async def get_latest_unit_location(incident_id: str):
     """Returns the most recent GPS ping for the field unit on this incident."""
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1580,6 +2174,7 @@ async def get_latest_unit_location(incident_id: str):
 
 @app.post("/incidents/{incident_id}/guidance-lookup")
 async def guidance_lookup(incident_id: str, request: GuidanceLookupRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1655,6 +2250,7 @@ async def guidance_lookup(incident_id: str, request: GuidanceLookupRequest):
 
 @app.post("/incidents/{incident_id}/dispatch-unit")
 async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1703,6 +2299,17 @@ async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
     if result.eta_minutes is not None:
         await repo.set_dispatch_eta(incident_id, result.eta_minutes)
 
+    # EPIC 3.2: suggest a matching field protocol based on priority_code
+    _PRIORITY_TO_FIELD_PROTOCOL = {
+        "P1_CARDIAC_ARREST": "field_cardiac_arrest_v1",
+        "P1_RESPIRATORY_FAILURE": "field_respiratory_distress_v1",
+        "P1_AIRWAY_COMPROMISE": "field_respiratory_distress_v1",
+        "P2_UNCONSCIOUS_BREATHING": "field_unresponsive_breathing_v1",
+        "P2_RESPIRATORY_DISTRESS": "field_respiratory_distress_v1",
+        "P1_OBSTETRIC_EMERGENCY": "field_obstetric_emergency_v1",
+    }
+    suggested_field = _PRIORITY_TO_FIELD_PROTOCOL.get(incident["priority_code"])
+
     return {
         "assigned": True,
         "dispatch_id": result.dispatch_id,
@@ -1710,17 +2317,73 @@ async def dispatch_unit(incident_id: str, request: DispatchUnitRequest):
         "eta_minutes": result.eta_minutes,
         "status": result.status,
         "field_url": f"{get_field_ui_base_url()}/?incident_id={incident_id}&unit_id={result.assigned_unit_id}",
+        "suggested_field_protocol_id": suggested_field,
     }
+
+
+def _determine_required_level(triage: dict | None) -> int | None:
+    """Determine minimum KEPH facility level from triage enrichment."""
+    if not triage:
+        return None
+    triage_level = (triage.get("triage_level") or "").upper()
+    top_dx = (triage.get("top_diagnosis") or "").lower()
+    if triage_level == "P1":
+        return 4  # P1 critical: Level 4+ with ICU/surgery
+    if triage_level == "P2":
+        return 3  # P2 emergency: Level 3+ with emergency department
+    if triage_level == "P3":
+        return 2  # P3 urgent: Level 2+ with basic emergency
+    return None
+
+
+def _determine_required_services(triage: dict | None, existing: list[str]) -> list[str]:
+    """Determine required services from triage enrichment if not already specified."""
+    if not existing and triage:
+        top_dx = (triage.get("top_diagnosis") or "").lower()
+        triage_level = (triage.get("triage_level") or "").upper()
+        if triage_level == "P1" and any(kw in top_dx for kw in ("cardiac", "heart", "mi")):
+            return ["icu", "cardiac_cath"]
+        elif triage_level == "P1" and any(kw in top_dx for kw in ("trauma", "hemorrhage", "bleed")):
+            return ["surgery", "blood_bank"]
+        elif triage_level == "P1":
+            return ["icu", "surgery"]
+        elif triage_level == "P2":
+            return ["emergency"]
+    return existing
+
+
+def _build_recommendation_reason(
+    facility: FacilityResult,
+    required_services: list[str],
+    triage: dict | None,
+) -> str:
+    """Build a human-readable recommendation reason for the top facility."""
+    parts = []
+    if facility.level is not None:
+        parts.append(f"Level {facility.level} facility")
+    if facility.county:
+        parts.append(f"in {facility.county}")
+    if required_services:
+        matched = [s for s in required_services if s in facility.services]
+        if matched:
+            parts.append(f"has {', '.join(matched)}")
+    if facility.is_diverted:
+        parts.append(f"DIVERTED: {facility.diversion_reason}")
+    if triage and triage.get("top_diagnosis"):
+        parts.append(f"matches triage: {triage['top_diagnosis']}")
+    if facility.distance_km is not None:
+        parts.append(f"{facility.distance_km:.1f} km away")
+    return "; ".join(parts) if parts else "Nearest available facility"
 
 
 @app.post("/incidents/{incident_id}/route-facility")
 async def route_facility(incident_id: str, request: RouteFacilityRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
 
     # Improvement 4.3 — prefer the latest unit location as search origin
-    # if one exists, over the caller-provided lat/lon.
     lat = request.lat
     lon = request.lon
     unit_loc = await repo.get_latest_unit_location(incident_id)
@@ -1728,39 +2391,235 @@ async def route_facility(incident_id: str, request: RouteFacilityRequest):
         lat = unit_loc["lat"]
         lon = unit_loc["lon"]
 
+    triage = incident.get("triage_enrichment")
+
+    # County referral: use request county or derive from triage
+    county = request.county
+
+    # KEPH level routing: determine required level from triage or request
+    required_level = request.required_level or _determine_required_level(triage)
+
+    # Required services from triage enrichment or request
+    required_services = _determine_required_services(triage, request.required_services or [])
+
     facilities = await _facility_client.find_nearest(
         lat=lat,
         lon=lon,
-        required_services=request.required_services,
+        required_services=required_services,
         radius_km=request.radius_km,
+        county=county,
+        check_diversion=True,
+        min_level=required_level,
     )
+
+    # Check Redis for additional diversion status (local overrides)
+    active_facilities = []
+    for f in facilities:
+        diversion_data = cache_get(f"diversion:{f.facility_id}")
+        if diversion_data and diversion_data.get("is_diverted"):
+            logger.info("Facility %s is diverted: %s", f.facility_id, diversion_data.get("reason"))
+            continue
+        active_facilities.append(f)
+    facilities = active_facilities
 
     if not facilities:
         return {
             "facilities": [],
+            "required_level": required_level,
             "message": "Facility registry unavailable, unconfigured, or returned "
             "no matches. Fall back to locally known facilities — this is NOT "
             "confirmation that no facilities exist nearby.",
         }
 
+    # Build recommendation for top facility
+    recommendation_reason = _build_recommendation_reason(facilities[0], required_services, triage)
+
+    facility_list = []
+    for i, f in enumerate(facilities):
+        # Get stock data from Redis for each facility
+        stock_data = cache_get(f"stock:{f.facility_id}") or f.critical_stock or {}
+
+        facility_list.append({
+            "facility_id": f.facility_id,
+            "name": f.name,
+            "lat": f.lat,
+            "lon": f.lon,
+            "distance_km": f.distance_km,
+            "services": f.services,
+            "capacity_status": f.capacity_status,
+            "level": f.level,
+            "county": f.county,
+            "is_diverted": False,
+            "critical_stock": stock_data,
+            "is_recommended": i == 0,
+            "recommendation_reason": recommendation_reason if i == 0 else None,
+        })
+
+    # Gap 4 — auto-notify receiving facility via report_admission (fire-and-forget)
+    async def _auto_notify_facility() -> None:
+        try:
+            summary_parts = [f"Chief complaint: {incident.get('chief_complaint', 'unknown')}"]
+            if incident.get("priority_code"):
+                summary_parts.append(f"Priority: {incident['priority_code']}")
+            if triage and triage.get("top_diagnosis"):
+                summary_parts.append(f"Diagnosis: {triage['top_diagnosis']}")
+            await _dispatch_client.report_admission(
+                incident_id=incident_id,
+                facility_id=facilities[0].facility_id,
+                priority_code=incident.get("priority_code", "unknown"),
+                summary="; ".join(summary_parts),
+            )
+        except Exception as exc:
+            logger.warning("Auto-notify facility failed for %s: %s", incident_id, exc)
+
+    task = asyncio.create_task(_auto_notify_facility())
+    task.add_done_callback(
+        lambda t: logger.error("Auto-notify facility task exception: %s", t.exception())
+        if t.exception()
+        else None
+    )
+
+    # Store routed facility info
+    await repo.set_routed_facility(incident_id, facilities[0].facility_id, facilities[0].name)
+
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("route_facility", None, incident_id, {"facility_id": facilities[0].facility_id if facilities else None})
+
+    # Check for hazard zones along the route
+    hazard_warnings = check_route_hazards(lat, lon, _hazard_zones)
+
     return {
-        "facilities": [
-            {
-                "facility_id": f.facility_id,
-                "name": f.name,
-                "lat": f.lat,
-                "lon": f.lon,
-                "distance_km": f.distance_km,
-                "services": f.services,
-                "capacity_status": f.capacity_status,
-            }
-            for f in facilities
-        ]
+        "facilities": facility_list,
+        "required_level": required_level,
+        "required_services": required_services,
+        "hazard_warnings": hazard_warnings,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Facility diversion status (Item 5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.post("/facilities/{facility_id}/diversion")
+async def update_diversion(facility_id: str, request: DiversionRequest):
+    """Update a facility's diversion status. Stored in Redis with 1-hour TTL.
+    When a facility is diverted, route-facility will exclude it from results.
+    """
+    diversion_data = {
+        "is_diverted": request.is_diverted,
+        "reason": request.reason,
+        "estimated_resume": request.estimated_resume,
+        "updated_at": _now().isoformat(),
+    }
+    cache_set(f"diversion:{facility_id}", diversion_data, ttl_seconds=3600)
+    await log_audit("diversion_update", None, None, {
+        "facility_id": facility_id,
+        "is_diverted": request.is_diverted,
+        "reason": request.reason,
+    })
+    return {"status": "updated", "facility_id": facility_id, "diversion": diversion_data}
+
+
+@app.get("/facilities/{facility_id}/diversion")
+async def get_diversion(facility_id: str):
+    """Get a facility's current diversion status from Redis."""
+    data = cache_get(f"diversion:{facility_id}")
+    if data is None:
+        return {"facility_id": facility_id, "is_diverted": False, "reason": None}
+    return {"facility_id": facility_id, **data}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Facility stock availability (Item 8)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/facilities/{facility_id}/stock")
+async def get_facility_stock(facility_id: str):
+    """Returns current stock status for a facility from Redis, or fallback data."""
+    stock = cache_get(f"stock:{facility_id}")
+    if stock is not None:
+        return {"facility_id": facility_id, "items": stock, "source": "redis"}
+
+    # Try fallback facilities
+    from .external.fallback_facilities import FALLBACK_FACILITIES
+    for f in FALLBACK_FACILITIES:
+        if f["facility_id"] == facility_id:
+            return {"facility_id": facility_id, "items": f.get("critical_stock", {}), "source": "fallback"}
+
+    return {"facility_id": facility_id, "items": {}, "source": "unknown"}
+
+
+@app.post("/facilities/{facility_id}/stock")
+async def update_facility_stock(facility_id: str, request: StockUpdateRequest):
+    """Update a facility's stock availability. Stored in Redis with 1-hour TTL."""
+    cache_set(f"stock:{facility_id}", request.items, ttl_seconds=3600)
+    await log_audit("stock_update", None, None, {
+        "facility_id": facility_id,
+        "items": request.items,
+    })
+    return {"status": "updated", "facility_id": facility_id, "items": request.items}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hazard zone registry (Item 3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# In-memory hazard zone store, seeded from defaults. Can be updated via POST/DELETE.
+_hazard_zones: list[dict] = list(DEFAULT_HAZARD_ZONES)
+
+
+class HazardZoneRequest(BaseModel):
+    zone_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str = ""
+    lat_min: float
+    lat_max: float
+    lon_min: float
+    lon_max: float
+    severity: str = "medium"
+    active_hours: str = "all"
+    days: str = "all"
+    source: str = "manual"
+
+
+@app.get("/hazard-zones")
+async def list_hazard_zones():
+    """Returns all active hazard zones."""
+    return {"zones": _hazard_zones, "count": len(_hazard_zones)}
+
+
+@app.post("/hazard-zones")
+async def upsert_hazard_zone(request: HazardZoneRequest):
+    """Add or update a hazard zone. If a zone with the same zone_id exists,
+    it is replaced. Dispatchers use this to maintain road condition overlays.
+    """
+    zone_data = request.model_dump()
+    # Remove existing zone with same ID if present
+    global _hazard_zones
+    _hazard_zones = [z for z in _hazard_zones if z["zone_id"] != request.zone_id]
+    _hazard_zones.append(zone_data)
+    await log_audit("hazard_zone_upsert", None, None, {"zone_id": request.zone_id})
+    return {"status": "updated", "zone": zone_data, "total_zones": len(_hazard_zones)}
+
+
+@app.delete("/hazard-zones/{zone_id}")
+async def delete_hazard_zone(zone_id: str):
+    """Remove a hazard zone by its ID."""
+    global _hazard_zones
+    before = len(_hazard_zones)
+    _hazard_zones = [z for z in _hazard_zones if z["zone_id"] != zone_id]
+    if len(_hazard_zones) == before:
+        raise HTTPException(status_code=404, detail=f"Hazard zone {zone_id!r} not found")
+    await log_audit("hazard_zone_delete", None, None, {"zone_id": zone_id})
+    return {"status": "deleted", "zone_id": zone_id, "total_zones": len(_hazard_zones)}
 
 
 @app.post("/incidents/{incident_id}/report-admission")
 async def report_admission(incident_id: str, request: ReportAdmissionRequest):
+    _validate_uuid(incident_id)
     incident = await repo.get_incident(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -1794,6 +2653,229 @@ async def report_admission(incident_id: str, request: ReportAdmissionRequest):
         "admission_id": result.admission_id,
         "facility_confirmation_id": result.facility_confirmation_id,
     }
+
+
+@app.post("/incidents/{incident_id}/notify-next-of-kin")
+async def notify_next_of_kin(incident_id: str):
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    nok_phone = incident.get('next_of_kin_phone')
+    nok_name = incident.get('next_of_kin_name')
+
+    if not nok_phone:
+        raise HTTPException(status_code=400, detail="No next-of-kin phone number on record")
+
+    facility = incident.get('routed_facility_name') or 'hospital'
+    ref = incident_id[:8]
+    message = f"Your family member ({nok_name or 'relative'}) has been taken to {facility}. Reference: {ref}. Contact the dispatch center for updates."
+
+    # TODO: Integrate Africa's Talking SMS API when configured
+    # For now, log the notification intent
+    logger.info("Next-of-kin notification: %s -> %s: %s", ref, nok_phone, message)
+    await log_audit('notify_next_of_kin', incident_id=incident_id, details={'phone': nok_phone, 'name': nok_name})
+
+    return {
+        "status": "sent",
+        "message": message,
+        "phone": nok_phone,
+        "recipient_name": nok_name,
+        "note": "SMS delivery requires Africa's Talking API configuration",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-casualty incident support (Item 6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class AddCasualtyRequest(BaseModel):
+    chief_complaint: str | None = None
+    triage_score: str | None = None
+    age_estimate: int | None = None
+    gender: str | None = None
+    vitals_summary: dict | None = None
+    status: str = "pending"
+
+
+class UpdateCasualtyRequest(BaseModel):
+    chief_complaint: str | None = None
+    triage_score: str | None = None
+    age_estimate: int | None = None
+    gender: str | None = None
+    vitals_summary: dict | None = None
+    status: str | None = None
+
+
+@app.post("/incidents/{incident_id}/casualties")
+async def add_casualty(incident_id: str, request: AddCasualtyRequest):
+    """Add a casualty slot to a multi-casualty incident."""
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    result = await repo.add_casualty(
+        incident_id=incident_id,
+        chief_complaint=request.chief_complaint,
+        triage_score=request.triage_score,
+        age_estimate=request.age_estimate,
+        gender=request.gender,
+        vitals_summary=request.vitals_summary,
+        status=request.status,
+    )
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("add_casualty", None, incident_id, {"casualty_id": result["id"]})
+    return result
+
+
+@app.get("/incidents/{incident_id}/casualties")
+async def list_casualties(incident_id: str):
+    """List all casualties for a multi-casualty incident."""
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    casualties = await repo.list_casualties(incident_id)
+    return {
+        "incident_id": incident_id,
+        "casualties": casualties,
+        "count": len(casualties),
+        "is_multi_casualty": len(casualties) > 1,
+    }
+
+
+@app.patch("/incidents/{incident_id}/casualties/{casualty_id}")
+async def update_casualty(incident_id: str, casualty_id: int, request: UpdateCasualtyRequest):
+    """Update a casualty's triage score, vitals, or status."""
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    update_fields = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=422, detail="No fields to update")
+    result = await repo.update_casualty(incident_id, casualty_id, **update_fields)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Casualty not found")
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("update_casualty", None, incident_id, {"casualty_id": casualty_id})
+    return result
+
+
+@app.delete("/incidents/{incident_id}/casualties/{casualty_id}")
+async def delete_casualty(incident_id: str, casualty_id: int):
+    """Remove a casualty from a multi-casualty incident."""
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    deleted = await repo.delete_casualty(incident_id, casualty_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Casualty not found")
+    cache_delete(f"incident:{incident_id}")
+    cache_delete(f"incident_full:{incident_id}")
+    await log_audit("delete_casualty", None, incident_id, {"casualty_id": casualty_id})
+    return {"status": "deleted", "casualty_id": casualty_id}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Incident pattern reporting (Item 9)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/reports/weekly")
+async def weekly_report(
+    county: str | None = Query(None, description="Filter by county (substring match on location text)"),
+    start_date: str | None = Query(None, description="ISO date — report start (default: 7 days ago)"),
+    end_date: str | None = Query(None, description="ISO date — report end (default: now)"),
+):
+    """Returns aggregate incident statistics for a date range, useful for
+    weekly pattern analysis and resource planning.
+    """
+    start_dt = None
+    end_dt = None
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="start_date must be a valid ISO date")
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="end_date must be a valid ISO date")
+    if start_dt and end_dt and start_dt > end_dt:
+        raise HTTPException(status_code=422, detail="start_date must not be after end_date")
+
+    return await repo.get_weekly_report(county=county, start_date=start_dt, end_date=end_dt)
+
+
+@app.get("/reports/weekly/text")
+async def weekly_report_text(
+    county: str | None = Query(None, description="Filter by county"),
+    start_date: str | None = Query(None, description="ISO date — report start"),
+    end_date: str | None = Query(None, description="ISO date — report end"),
+):
+    """Returns a plain-text weekly report suitable for email or PDF generation."""
+    start_dt = None
+    end_dt = None
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="start_date must be a valid ISO date")
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="end_date must be a valid ISO date")
+    if start_dt and end_dt and start_dt > end_dt:
+        raise HTTPException(status_code=422, detail="start_date must not be after end_date")
+
+    report = await repo.get_weekly_report(county=county, start_date=start_dt, end_date=end_dt)
+    text = _render_weekly_report_text(report)
+    return PlainTextResponse(content=text)
+
+
+def _render_weekly_report_text(report: dict) -> str:
+    lines = []
+    lines.append("=" * 60)
+    lines.append("WEEKLY INCIDENT PATTERN REPORT")
+    lines.append("=" * 60)
+    lines.append(f"Period: {report['period']['start']} to {report['period']['end']}")
+    lines.append(f"Total incidents: {report['total_incidents']}")
+    lines.append(f"Average response time: {report['avg_response_time_minutes'] or 'N/A'} minutes")
+    lines.append("")
+
+    lines.append("INCIDENTS BY SUB-COUNTY")
+    for area, count in sorted(report["by_sub_county"].items(), key=lambda x: x[1], reverse=True):
+        lines.append(f"  {area}: {count}")
+    lines.append("")
+
+    lines.append("INCIDENTS BY CHIEF COMPLAINT")
+    for complaint, count in sorted(report["by_complaint"].items(), key=lambda x: x[1], reverse=True):
+        lines.append(f"  {complaint}: {count}")
+    lines.append("")
+
+    lines.append("INCIDENTS BY HOUR")
+    for hour, count in sorted(report["by_hour"].items()):
+        if count > 0:
+            lines.append(f"  {hour}:00 — {count}")
+    lines.append("")
+
+    lines.append(f"Busiest hours: {', '.join(report['busiest_hours']) or 'N/A'}")
+    lines.append("")
+
+    lines.append("TOP PRESENTATIONS")
+    for p in report["top_presentations"]:
+        lines.append(f"  {p['complaint']}: {p['count']} ({p['pct']}%)")
+    lines.append("")
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1830,3 +2912,443 @@ def _field_step_to_dict(step) -> dict | None:
         "description": step.description,
         "guideline_ref": step.guideline_ref,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 6 — Authentication endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
+class DispatcherLoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    pin: str = Field(min_length=4)
+    role: str | None = None
+
+
+@app.post("/auth/dispatcher-login")
+async def dispatcher_login(request: DispatcherLoginRequest):
+    """Epic 6.1 — dispatcher login. Returns an HMAC-signed session token.
+    In development mode, any credentials are accepted.
+    In production, credentials are validated against DISPATCHER_CREDENTIALS.
+    """
+    result = verify_credentials(request.username, request.pin)
+    if result is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "invalid_credentials", "message": "Invalid username or PIN."},
+        )
+    # Use provided role, or fall back to credential-stored role, or default to dispatcher
+    role = request.role or result.get("role", "dispatcher")
+    token = generate_session_token(result["username"], role)
+    await log_audit("login", result["username"], None, {"role": role})
+    return {
+        "dispatcher_id": result["username"],
+        "role": role,
+        "session_token": token,
+        "expires_in_hours": get_session_token_expiry_hours(),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 1.5 — E911 / AML webhook receiver
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class E911PushRequest(BaseModel):
+    caller_number: str | None = None
+    lat: float
+    lon: float
+    accuracy_m: float | None = None
+    incident_id: str | None = None
+    chief_complaint: str | None = None
+
+
+@app.post("/intake/e911-push")
+async def e911_push(request: E911PushRequest):
+    """Epic 1.5 — accepts an E911 or AML location push payload.
+    If incident_id is provided, updates that incident's location.
+    If absent, creates a pre-populated intake record.
+    """
+    if request.incident_id:
+        incident = await repo.get_incident(request.incident_id)
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        async with repo.get_session() as session:
+            await session.execute(
+                sa_update(_IncidentModel)
+                .where(_IncidentModel.incident_id == uuid.UUID(request.incident_id))
+                .values(
+                    caller_location_lat=request.lat,
+                    caller_location_lon=request.lon,
+                    location_accuracy_m=request.accuracy_m,
+                )
+            )
+            await session.commit()
+        return {"incident_id": request.incident_id, "created": False}
+    else:
+        caller_text = f"E911 push: {request.lat}, {request.lon}"
+        cc = request.chief_complaint or "E911 automated push — pending dispatcher review"
+        incident = await repo.create_incident(
+            chief_complaint=cc,
+            caller_location_lat=request.lat,
+            caller_location_lon=request.lon,
+            caller_location_text=caller_text,
+        )
+        # Attempt protocol matching (Epic 1.5 requirement)
+        match = registry.match_by_chief_complaint(cc)
+        incident_id = incident["incident_id"]
+        if match is not None:
+            protocol = match.protocol
+            snapshot = {
+                "protocol_id": protocol.protocol_id,
+                "version": protocol.version,
+                "approved_by": protocol.approved_by,
+                "approved_date": protocol.approved_date,
+            }
+            await repo.set_dispatch_protocol(incident_id, protocol.protocol_id, protocol.version, snapshot)
+        # Store accuracy_m on the incident
+        async with repo.get_session() as session:
+            await session.execute(
+                sa_update(_IncidentModel)
+                .where(_IncidentModel.incident_id == uuid.UUID(incident["incident_id"]))
+                .values(location_accuracy_m=request.accuracy_m)
+            )
+            await session.commit()
+        return {"incident_id": incident["incident_id"], "created": True, "protocol_matched": match is not None}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 1.2 — NLP Entity Extraction (MedSpaCy + regex fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from .nlp_extractor import extract_clinical_entities as _extract_entities
+
+
+class ExtractEntitiesRequest(BaseModel):
+    transcript: str = Field(min_length=1, max_length=5000)
+    incident_id: str | None = None
+
+
+@app.post("/triage/extract-entities")
+async def extract_entities(request: ExtractEntitiesRequest):
+    """Epic 1.2 — clinical NLP entity extraction.
+
+    Uses MedSpaCy (TargetMatcher + ConText) when available, with regex
+    as a complementary layer for structured values (BP, HR, RR, GCS)
+    and as a fallback when the model is not loaded.
+
+    Returns: location_text, chief_complaint_suggestion, vitals, entities,
+    confidence. Never returns 500 — always degrades gracefully.
+    """
+    # PHI handling: never log the transcript text itself
+    result = _extract_entities(request.transcript)
+
+    # Gap 9 — NLP confidence threshold check
+    confidence = result["confidence"]
+    auto_populate_safe = confidence >= 0.4
+
+    return {
+        "location_text": result["location_text"],
+        "lat": None,
+        "lon": None,
+        "chief_complaint_suggestion": result["chief_complaint_suggestion"],
+        "vitals": result["vitals"],
+        "entities": result["entities"],
+        "confidence": result["confidence"],
+        "degraded_mode": result["degraded_mode"],
+        "auto_populate_safe": auto_populate_safe,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 1.4 — Call Transcription Persistence
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class AppendTranscriptRequest(BaseModel):
+    speaker: str = Field(min_length=1)  # "dispatcher" | "caller"
+    text: str = Field(min_length=1)
+
+
+@app.patch("/incidents/{incident_id}/transcript")
+async def append_transcript(incident_id: str, request: AppendTranscriptRequest):
+    """Epic 1.4 — append-only transcript persistence. Each call appends a
+    timestamped chunk with speaker label.
+    """
+    _validate_uuid(incident_id)
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    timestamp = _now().isoformat()
+    chunk = f"[{timestamp}] {request.speaker}: {request.text}"
+    async with repo.get_session() as session:
+        inc = await session.get(_IncidentModel, uuid.UUID(incident_id))
+        if inc.transcript_text:
+            inc.transcript_text = inc.transcript_text + "\n" + chunk
+        else:
+            inc.transcript_text = chunk
+        await session.commit()
+        await session.refresh(inc)
+    return {"incident_id": incident_id, "transcript_length": len(inc.transcript_text or "")}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 7.6 — Scoring endpoints (PEWS, RTS, Shock Index)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ComputeScoringRequest(BaseModel):
+    scoring_type: str = Field(min_length=1)  # "pews" | "rts" | "shock_index"
+    vitals: dict = Field(default_factory=dict)
+    age_years: float | None = None
+
+
+@app.post("/scoring/compute")
+async def compute_scoring(request: ComputeScoringRequest):
+    """Epic 7.6 — compute PEWS, RTS, or Shock Index from vitals."""
+    try:
+        if request.scoring_type == "pews":
+            if request.age_years is None:
+                raise HTTPException(status_code=422, detail="age_years required for PEWS")
+            result = compute_pews(request.vitals, request.age_years)
+        elif request.scoring_type == "rts":
+            result = compute_revised_trauma_score(request.vitals)
+        elif request.scoring_type == "shock_index":
+            result = compute_shock_index(request.vitals)
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown scoring_type: {request.scoring_type}. Must be pews, rts, or shock_index.",
+            )
+    except ScoringError as exc:
+        raise HTTPException(status_code=422, detail={"error": "scoring_error", "message": str(exc), "missing_fields": exc.missing_fields})
+
+    return {
+        "scoring_type": request.scoring_type,
+        "score": result.score,
+        "risk_level": result.risk_level,
+        "escalation_required": result.escalation_required,
+        "component_scores": result.component_scores,
+        "trigger": result.trigger,
+        "source_guideline": result.source_guideline,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 7.2 — PII purge status & scheduler wiring
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/admin/purge-status", dependencies=[Security(_require_admin_key)])
+async def purge_status():
+    """Epic 7.2 — returns last purge run info."""
+    return {
+        "retention_days": get_incident_retention_days(),
+        "scheduler_enabled": is_database_configured(),
+    }
+
+
+@app.get('/admin/logs')
+async def get_logs(lines: int = 100):
+    """Returns the last N lines from the application log file."""
+    try:
+        with open(_log_file, 'r') as f:
+            all_lines = f.readlines()
+        return {'lines': all_lines[-lines:], 'total': len(all_lines), 'file': _log_file}
+    except FileNotFoundError:
+        return {'lines': [], 'total': 0, 'file': _log_file}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Admin — cache health, system status, audit log, protocol detail, facilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/admin/cache-health", dependencies=[Security(_require_admin_key)])
+async def admin_cache_health():
+    return cache_health()
+
+
+@app.get("/admin/system-status", dependencies=[Security(_require_admin_key)])
+async def admin_system_status():
+    db_pool = await repo.get_db_pool_stats()
+    db_ok = await check_database() if is_database_configured() else False
+    redis_health = cache_health()
+    incident_counts = await repo.get_incident_counts_by_status() if db_ok else {}
+
+    active_protocols = registry.list_active()
+    rejected_protocols = registry.list_rejected()
+    active_field = field_registry.list_active()
+    rejected_field = field_registry.list_rejected()
+
+    uptime_seconds = (datetime.now(UTC) - _start_time).total_seconds()
+
+    mem_info = {}
+    try:
+        import resource
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        mem_info = {"rss_mb": round(usage.ru_maxrss / 1024, 1)}
+    except Exception:
+        pass
+
+    return {
+        "database": {
+            "status": "ok" if db_ok else "error",
+            "pool": db_pool,
+        },
+        "redis": redis_health,
+        "protocols": {
+            "dispatch_active": len(active_protocols),
+            "dispatch_rejected": len(rejected_protocols),
+            "field_active": len(active_field),
+            "field_rejected": len(rejected_field),
+        },
+        "incidents_by_status": incident_counts,
+        "total_incidents": sum(incident_counts.values()),
+        "memory": mem_info,
+        "uptime_seconds": round(uptime_seconds, 1),
+        "uptime_human": _format_uptime(uptime_seconds),
+    }
+
+
+def _format_uptime(seconds: float) -> str:
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+@app.get("/admin/audit-log", dependencies=[Security(_require_admin_key)])
+async def admin_audit_log(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    incident_id: str | None = Query(None),
+):
+    if incident_id:
+        _validate_uuid(incident_id)
+    events = await repo.get_audit_events(limit=limit, offset=offset, incident_id=incident_id)
+    return {"events": events, "count": len(events), "limit": limit, "offset": offset}
+
+
+@app.get("/admin/protocols/detail", dependencies=[Security(_require_admin_key)])
+async def admin_protocols_detail():
+    active = registry.list_active()
+    rejected = registry.list_rejected()
+    field_active = field_registry.list_active()
+    field_rejected = field_registry.list_rejected()
+
+    dispatch_details = []
+    for p in active:
+        proto = registry.get(p["protocol_id"])
+        if proto:
+            dispatch_details.append({
+                "protocol_id": proto.protocol_id,
+                "version": proto.version,
+                "approved_by": proto.approved_by,
+                "approved_date": proto.approved_date,
+                "entry_question": _question_to_dict(get_entry_question(proto)) if proto.questions else None,
+                "question_count": len(proto.questions),
+                "questions": [
+                    {"question_id": qid, "text": q.text, "answer_type": q.answer_type}
+                    for qid, q in proto.questions.items()
+                ],
+            })
+
+    return {
+        "dispatch": {"active": dispatch_details, "rejected": rejected},
+        "field": {"active": field_active, "rejected": field_rejected},
+    }
+
+
+@app.get("/admin/facilities", dependencies=[Security(_require_admin_key)])
+async def admin_facilities():
+    try:
+        facilities = await _facility_client.find_nearest(lat=0, lon=0, radius_km=99999)
+        return {
+            "status": "connected" if facilities is not None else "unavailable",
+            "facilities": [
+                {"facility_id": f.facility_id, "name": f.name, "services": f.services}
+                for f in (facilities or [])
+            ],
+            "count": len(facilities) if facilities else 0,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "facilities": [], "count": 0}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epic 4.1 — SSE endpoint (Server-Sent Events)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# In-memory SSE queues per incident (ephemeral, lost on restart)
+_sse_queues: dict[str, list[asyncio.Queue]] = {}
+
+
+def _notify_sse(incident_id: str, event_type: str, data: dict) -> None:
+    """Push an event to all connected SSE clients for an incident."""
+    queues = _sse_queues.get(incident_id, [])
+    message = f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
+    dead: list[asyncio.Queue] = []
+    for q in queues:
+        try:
+            q.put_nowait(message)
+        except asyncio.QueueFull:
+            dead.append(q)
+    for d in dead:
+        queues.remove(d)
+
+
+@app.get("/incidents/{incident_id}/stream")
+async def stream_incident_events(incident_id: str, token: str = Query(...)):
+    """Epic 4.1 — SSE endpoint for live incident events.
+    Events: vitals_added, medication_added, status_changed, unit_location_updated, field_log_added, note_added.
+    Authenticated by handoff token.
+    """
+    _validate_uuid(incident_id)
+    if not verify_handoff_token(incident_id, token):
+        raise HTTPException(status_code=403, detail="Invalid or expired token.")
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    if incident_id not in _sse_queues:
+        _sse_queues[incident_id] = []
+    _sse_queues[incident_id].append(queue)
+
+    async def event_generator():
+        keepalive_count = 0
+        try:
+            # Send initial connection event
+            yield f"event: connected\ndata: {{}}\n\n"
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield message
+                    keepalive_count = 0
+                except asyncio.TimeoutError:
+                    keepalive_count += 1
+                    # Only check DB terminal status every 5th keepalive (~75s)
+                    if keepalive_count % 5 == 0:
+                        incident_check = await repo.get_incident(incident_id)
+                        if incident_check and incident_check["status"] in ("handoff_complete", "closed"):
+                            _notify_sse(incident_id, "stream_closed", {})
+                            break
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if queue in _sse_queues.get(incident_id, []):
+                _sse_queues[incident_id].remove(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )

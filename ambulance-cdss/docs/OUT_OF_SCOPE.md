@@ -13,6 +13,8 @@ This document exists so that scope decisions made deliberately are not mistaken 
 - **Admin dashboards beyond the minimum governance/observability set** defined in Phase 6 of the implementation plan (protocol version history, guidance-lookup usage frequency, dispatch/routing latency metrics, out-of-script error counts).
 - **CDS Hooks / EHR integration surface.** Not relevant to this product's user (dispatcher, paramedic) or workflow (no EHR chart is open at the point of an emergency call).
 - **Drug interaction checking against a broad formulary.** Scoped strictly to the narrow prehospital medication list confirmed in Phase 0.5, if and when field protocols involve administering medication on scene.
+- **LLM in the dispatch path.** An LLM is available as an optional NLP fallback (when `LLM_API_URL` is configured) but NEVER in the critical dispatch path. Protocol matching uses keyword + TF-IDF, not LLM generation. The LLM is used only for entity extraction when MedSpaCy and regex both fail, and only when explicitly configured.
+- **Protocol RAG scope.** The protocol RAG is a lightweight keyword + TF-IDF matcher for the finite protocol set (8 dispatch + 7 field). It does NOT use vector databases, embeddings services, or external retrieval infrastructure. It loads once at startup and serves in-memory lookups.
 
 ## Why this list exists
 

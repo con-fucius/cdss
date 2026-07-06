@@ -1,0 +1,16 @@
+{
+  "name": "Ambulance CDSS — Field Console",
+  "short_name": "Field CDSS",
+  "description": "Prehospital field protocol checklist and vitals recording for paramedics",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0f12",
+  "theme_color": "#0c0f12",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230c0f12' width='100' height='100' rx='16'/><text x='50' y='68' text-anchor='middle' font-size='48' fill='%232f7de1'>🚑</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
