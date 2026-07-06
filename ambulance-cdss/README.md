@@ -15,23 +15,34 @@ Backend: FastAPI + PostgreSQL + Redis. Frontends: plain HTML/CSS/JS, no build st
 
 ## Quick Start
 
+> **Note:** Update paths below to match your local clone location.
+
 ```bash
-# Infrastructure
+# Terminal 1 — Docker infrastructure
 docker run -d --name ambulance-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ambulance_cdss_dev -p 5432:5432 postgres:16-alpine
 docker run -d --name ambulance-redis -p 6379:6379 redis:alpine
 
-# Migrate
+# Terminal 2 — Backend (from ambulance-cdss/)
 alembic upgrade head
-
-# Backend
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Frontends (open directly or serve as static files)
-dispatcher-ui/index.html
-field-ui/index.html
-receiving-ui/index.html?id={incident_id}&token={token}
-admin-ui/index.html
+# Terminal 3+ — Frontends (open in browser or serve with any static server)
+# Windows:
+start dispatcher-ui\index.html
+start field-ui\index.html
+start admin-ui\index.html
+# Receiving UI needs incident params:
+# receiving-ui/index.html?id={incident_id}&token={token}
+
+# Linux/Mac:
+open dispatcher-ui/index.html
+open field-ui/index.html
+open admin-ui/index.html
 ```
+
+**Docker services:** PostgreSQL on `localhost:5432`, Redis on `localhost:6379`.
+**Backend:** `http://localhost:8000` (API + admin dashboard).
+**Frontends:** open HTML files directly or serve via `python -m http.server` in each directory.
 
 ## Key Features
 
